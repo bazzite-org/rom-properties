@@ -6,7 +6,7 @@
  * a generic list, RomMetaData stores specific properties that can be used *
  * by the desktop environment's indexer.                                   *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -14,20 +14,18 @@
 
 #include "common.h"
 
-// C includes.
-#include <stdint.h>
-
-// C includes. (C++ namespace)
+// C includes (C++ namespace)
+#include <cstdint>
 #include <ctime>
 
-// C++ includes.
+// C++ includes
 #include <string>
 
 namespace LibRpBase {
 
 // Properties.
 // This matches KFileMetaData::Property.
-enum class Property : int {
+enum class Property : int8_t {
 	Invalid = -1,
 	FirstProperty = 0,
 	Empty = 0,
@@ -205,7 +203,7 @@ class RomMetaData
 				unsigned int uvalue;
 
 				// String property
-				const std::string *str;
+				const char *str;
 
 				// UNIX timestamp
 				time_t timestamp;
@@ -259,17 +257,37 @@ class RomMetaData
 
 		/**
 		 * Get a const iterator pointing to the beginning of the RomMetaData.
-		 * @return Const iterator.
+		 * @return Const iterator
 		 */
 		RP_LIBROMDATA_PUBLIC
 		const_iterator cbegin(void) const;
 
 		/**
 		 * Get a const iterator pointing to the end of the RomMetaData.
-		 * @return Const iterator.
+		 * @return Const iterator
 		 */
 		RP_LIBROMDATA_PUBLIC
 		const_iterator cend(void) const;
+
+		/**
+		 * Get a const iterator pointing to the beginning of the RomMetaData.
+		 * Alias function required for range-based `for` loops.
+		 * @return Const iterator
+		 */
+		const_iterator begin(void) const
+		{
+			return cbegin();
+		}
+
+		/**
+		 * Get a const iterator pointing to the end of the RomMetaData.
+		 * Alias function required for range-based `for` loops.
+		 * @return Const iterator
+		 */
+		const_iterator end(void) const
+		{
+			return cend();
+		}
 
 	public:
 		/** Convenience functions for RomData subclasses. **/
@@ -335,7 +353,14 @@ class RomMetaData
 		 * @param flags Formatting flags
 		 * @return Metadata index, or -1 on error.
 		 */
-		int addMetaData_string(Property name, const std::string &str, unsigned int flags = 0);
+		int addMetaData_string(Property name, const std::string &str, unsigned int flags = 0)
+		{
+			if (str.empty()) {
+				// Ignore empty strings.
+				return -1;
+			}
+			return addMetaData_string(name, str.c_str(), flags);
+		}
 
 		/**
 		 * Add a timestamp metadata property.
@@ -362,4 +387,4 @@ class RomMetaData
 		int addMetaData_double(Property name, double dvalue);
 };
 
-}
+} // namespace LibRpBase

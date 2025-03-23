@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (GTK+ 3.x)                         *
  * NautilusMenuProvider.c: Nautilus (and forks) Menu Provider Definition   *
  *                                                                         *
- * Copyright (c) 2017-2024 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -16,13 +16,13 @@
 #include "../RomDataView.hpp"
 
 // nautilus-extension.h mini replacement
-#if GTK_CHECK_VERSION(4,0,0)
+#if GTK_CHECK_VERSION(4, 0, 0)
 #  include "../gtk4/NautilusPlugin.hpp"
 #  include "../gtk4/nautilus-extension-mini.h"
-#else /* !GTK_CHECK_VERSION(4,0,0) */
+#else /* !GTK_CHECK_VERSION(4, 0, 0) */
 #  include "NautilusPlugin.hpp"
 #  include "nautilus-extension-mini.h"
-#endif /* GTK_CHECK_VERSION(4,0,0) */
+#endif /* GTK_CHECK_VERSION(4, 0, 0) */
 
 static GQuark rp_item_convert_to_png_quark;
 
@@ -30,9 +30,9 @@ static void	rp_nautilus_menu_provider_page_provider_init		(NautilusMenuProviderI
 
 static GList *rp_nautilus_menu_provider_get_file_items(
 	NautilusMenuProvider *provider,
-#if !GTK_CHECK_VERSION(4,0,0)
+#if !GTK_CHECK_VERSION(4, 0, 0)
 	GtkWidget *window,
-#endif /* !GTK_CHECK_VERSION(4,0,0) */
+#endif /* !GTK_CHECK_VERSION(4, 0, 0) */
 	GList *files) G_GNUC_MALLOC G_GNUC_WARN_UNUSED_RESULT;
 
 struct _RpNautilusMenuProviderClass {
@@ -43,13 +43,13 @@ struct _RpNautilusMenuProvider {
 	GObject __parent__;
 };
 
-#if !GLIB_CHECK_VERSION(2,59,1)
+#if !GLIB_CHECK_VERSION(2, 59, 1)
 #  if defined(__GNUC__) && __GNUC__ >= 8
 /* Disable GCC 8 -Wcast-function-type warnings. (Fixed in glib-2.59.1 upstream.) */
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wcast-function-type"
 #  endif
-#endif /* !GLIB_CHECK_VERSION(2,59,1) */
+#endif /* !GLIB_CHECK_VERSION(2, 59, 1) */
 
 // NOTE: G_DEFINE_TYPE() doesn't work in C++ mode with gcc-6.2
 // due to an implicit int to GTypeFlags conversion.
@@ -58,11 +58,11 @@ G_DEFINE_DYNAMIC_TYPE_EXTENDED(RpNautilusMenuProvider, rp_nautilus_menu_provider
 	G_IMPLEMENT_INTERFACE_DYNAMIC(NAUTILUS_TYPE_MENU_PROVIDER, rp_nautilus_menu_provider_page_provider_init)
 );
 
-#if !GLIB_CHECK_VERSION(2,59,1)
+#if !GLIB_CHECK_VERSION(2, 59, 1)
 #  if defined(__GNUC__) && __GNUC__ > 8
 #    pragma GCC diagnostic pop
 #  endif
-#endif /* !GLIB_CHECK_VERSION(2,59,1) */
+#endif /* !GLIB_CHECK_VERSION(2, 59, 1) */
 
 void
 rp_nautilus_menu_provider_register_type_ext(GTypeModule *g_module)
@@ -141,15 +141,16 @@ rp_item_convert_to_png(NautilusMenuItem *item, gpointer user_data)
 static GList*
 rp_nautilus_menu_provider_get_file_items(
 	NautilusMenuProvider *provider,
-#if !GTK_CHECK_VERSION(4,0,0)
+#if !GTK_CHECK_VERSION(4, 0, 0)
 	GtkWidget *window,
-#endif /* !GTK_CHECK_VERSION(4,0,0) */
+#endif /* !GTK_CHECK_VERSION(4, 0, 0) */
 	GList *files)
 {
-	RP_UNUSED(provider);
-#if !GTK_CHECK_VERSION(4,0,0)
+	assert(RP_IS_NAUTILUS_MENU_PROVIDER(provider));
+	g_return_val_if_fail(RP_IS_NAUTILUS_MENU_PROVIDER(provider), NULL);
+#if !GTK_CHECK_VERSION(4, 0, 0)
 	RP_UNUSED(window);
-#endif /* !GTK_CHECK_VERSION(4,0,0) */
+#endif /* !GTK_CHECK_VERSION(4, 0, 0) */
 
 	// Verify that all specified files are supported.
 	bool is_supported = false;

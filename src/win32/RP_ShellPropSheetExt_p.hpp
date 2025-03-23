@@ -3,11 +3,23 @@
  * RP_ShellPropSheetExt_p.hpp: IShellPropSheetExt implementation.          *
  * (Private class)                                                         *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
 #pragma once
+
+// TCHAR
+#include "tcharx.h"
+
+// C includes (C++ namespace)
+#include <cstdint>
+
+// C++ includes
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 // Control base IDs.
 #define IDC_STATIC_BANNER		0x0100
@@ -15,13 +27,29 @@
 #define IDC_TAB_WIDGET			0x0102
 #define IDC_CBO_LANGUAGE		0x0103
 #define IDC_MESSAGE_WIDGET		0x0104
-#define IDC_TAB_PAGE(idx)		(0x0200 + (idx))
-#define IDC_STATIC_DESC(idx)		(0x1000 + (idx))
-#define IDC_RFT_STRING(idx)		(0x1400 + (idx))
-#define IDC_RFT_LISTDATA(idx)		(0x1800 + (idx))
+
+static inline constexpr uint16_t IDC_TAB_PAGE(uint16_t idx)
+{
+	return 0x0200 + idx;
+}
+static inline constexpr uint16_t IDC_STATIC_DESC(uint16_t idx)
+{
+	return 0x1000 + idx;
+}
+static inline constexpr uint16_t IDC_RFT_STRING(uint16_t idx)
+{
+	return 0x1400 + idx;
+}
+static inline constexpr uint16_t IDC_RFT_LISTDATA(uint16_t idx)
+{
+	return 0x1800 + idx;
+}
 
 // Bitfield is last due to multiple controls per field.
-#define IDC_RFT_BITFIELD(idx, bit)	(0x7000 + ((idx) * 32) + (bit))
+static inline constexpr uint16_t IDC_RFT_BITFIELD(uint16_t idx, int bit)
+{
+	return 0x7000 + (idx * 32) + bit;
+}
 
 // librpbase
 namespace LibRpBase {
@@ -29,18 +57,9 @@ namespace LibRpBase {
 	class RomFields;
 }
 
-// TCHAR
-#include "tcharx.h"
-
-// C++ includes
-#include <string>
-#include <unordered_map>
-#include <vector>
-
 // Custom controls (pseudo-controls)
 class DragImageLabel;
 #include "FontHandler.hpp"
-
 
 // ListView Data
 #include "LvData.hpp"
@@ -55,11 +74,9 @@ public:
 	/**
 	 * RP_ShellPropSheetExt_Private constructor
 	 * @param q
-	 * @param tfilename tfilename (RP_ShellPropSheetExt_Private takes ownership)
+	 * @param tfilename
 	 */
-	explicit RP_ShellPropSheetExt_Private(RP_ShellPropSheetExt *q, TCHAR *tfilename);
-
-	~RP_ShellPropSheetExt_Private();
+	explicit RP_ShellPropSheetExt_Private(RP_ShellPropSheetExt *q, const TCHAR *tfilename);
 
 private:
 	RP_DISABLE_COPY(RP_ShellPropSheetExt_Private)
@@ -72,17 +89,15 @@ public:
 	static const TCHAR TAB_PTR_PROP[];
 
 public:
-	HWND hDlgSheet;		// Property sheet
+	HWND hDlgSheet;			// Property sheet
 
-	// ROM filename (malloc'd; free on delete)
-	TCHAR *tfilename;
-	// ROM data (Not opened until the properties tab is shown.)
-	LibRpBase::RomDataPtr romData;
+	std::tstring tfilename;		// ROM filename
+	LibRpBase::RomDataPtr romData;	// ROM data (Not opened until the properties tab is shown.)
 
 	// Font handler
 	FontHandler fontHandler;
 
-	// Header row widgets.
+	// Header row widgets
 	HWND lblSysInfo;
 	POINT ptSysInfo;
 	RECT rectHeader;
@@ -92,44 +107,44 @@ public:
 	// ListView controls (for toggling LVS_EX_DOUBLEBUFFER)
 	std::vector<HWND> hwndListViewControls;
 
-	// ListView data.
+	// ListView data
 	// - Key: ListView dialog ID
 	// - Value: LvData.
 	std::unordered_map<uint16_t, LvData> map_lvData;
 
 	/**
-	 * ListView GetDispInfo function.
+	 * ListView GetDispInfo function
 	 * @param plvdi	[in/out] NMLVDISPINFO
 	 * @return TRUE if handled; FALSE if not.
 	 */
 	inline BOOL ListView_GetDispInfo(NMLVDISPINFO *plvdi);
 
 	/**
-	 * ListView ColumnClick function.
+	 * ListView ColumnClick function
 	 * @param plv	[in] NMLISTVIEW (only iSubItem is significant)
 	 * @return TRUE if handled; FALSE if not.
 	 */
 	inline BOOL ListView_ColumnClick(const NMLISTVIEW *plv);
 
 	/**
-	 * Header DividerDblClick function.
+	 * Header DividerDblClick function
 	 * @param phd	[in] NMHEADER
 	 * @return TRUE if handled; FALSE if not.
 	 */
 	inline BOOL Header_DividerDblClick(const NMHEADER *phd);
 
 	/**
-	 * ListView CustomDraw function.
+	 * ListView CustomDraw function
 	 * @param plvcd	[in/out] NMLVCUSTOMDRAW
 	 * @return Return value.
 	 */
 	inline int ListView_CustomDraw(NMLVCUSTOMDRAW *plvcd) const;
 
-	// Banner and icon.
-	DragImageLabel *lblBanner;
-	DragImageLabel *lblIcon;
+	// Banner and icon
+	std::unique_ptr<DragImageLabel> lblBanner;
+	std::unique_ptr<DragImageLabel> lblIcon;
 
-	// Tab layout.
+	// Tab layout
 	HWND tabWidget;
 	struct tab {
 		HWND hDlg;		// Tab child dialog.
@@ -142,9 +157,8 @@ public:
 		}
 	};
 	std::vector<tab> tabs;
-	int curTabIndex;
 
-	// Sizes.
+	// Sizes
 	int lblDescHeight;	// Description label height.
 	SIZE dlgSize;		// Visible dialog size.
 
@@ -157,11 +171,11 @@ public:
 	int iTabHeightOrig;
 
 public:
-	// Multi-language functionality.
+	// Multi-language functionality
 	uint32_t def_lc;	// Default language code from RomFields.
 	HWND cboLanguage;
 
-	// RFT_STRING_MULTI value labels.
+	// RFT_STRING_MULTI value labels
 	typedef std::pair<HWND, const LibRpBase::RomFields::Field*> Data_StringMulti_t;
 	std::vector<Data_StringMulti_t> vecStringMulti;
 
@@ -190,30 +204,22 @@ public:
 
 private:
 	/**
-	 * Rescale an image to be as close to the required size as possible.
-	 * @param req_sz	[in] Required size.
-	 * @param sz		[in/out] Image size.
-	 * @return True if nearest-neighbor scaling should be used (size was kept the same or enlarged); false if shrunken (so use interpolation).
-	 */
-	static bool rescaleImage(SIZE req_sz, SIZE &sz);
-
-	/**
 	 * Create the header row.
-	 * @param pt_start	[in] Starting position, in pixels.
-	 * @param size		[in] Width and height for a full-width single line label.
+	 * @param pt_start	[in] Starting position, in pixels
+	 * @param size		[in] Width and height for a full-width single line label
 	 * @return Row height, in pixels.
 	 */
 	int createHeaderRow(_In_ POINT pt_start, _In_ SIZE size);
 
 	/**
 	 * Initialize a string field. (Also used for Date/Time.)
-	 * @param hWndTab	[in] Tab window. (for the actual control)
-	 * @param pt_start	[in] Starting position, in pixels.
-	 * @param size		[in] Width and height for a single line label.
+	 * @param hWndTab	[in] Tab window (for the actual control)
+	 * @param pt_start	[in] Starting position, in pixels
+	 * @param size		[in] Width and height for a single line label
 	 * @param field		[in] RomFields::Field
 	 * @param fieldIdx	[in] Field index
-	 * @param str		[in,opt] String data. (If nullptr, field data is used.)
-	 * @param pOutHWND	[out,opt] Retrieves the control's HWND.
+	 * @param str		[in,opt] String data (If nullptr, field data is used.)
+	 * @param pOutHWND	[out,opt] Retrieves the control's HWND
 	 * @return Field height, in pixels.
 	 */
 	int initString(_In_ HWND hWndTab,
@@ -222,9 +228,28 @@ private:
 		_In_ LPCTSTR str = nullptr, _Outptr_opt_ HWND *pOutHWND = nullptr);
 
 	/**
+	 * Initialize a string field. (Also used for Date/Time.)
+	 * @param hWndTab	[in] Tab window (for the actual control)
+	 * @param pt_start	[in] Starting position, in pixels
+	 * @param size		[in] Width and height for a single line label
+	 * @param field		[in] RomFields::Field
+	 * @param fieldIdx	[in] Field index
+	 * @param str		[in] String data
+	 * @param pOutHWND	[out,opt] Retrieves the control's HWND
+	 * @return Field height, in pixels.
+	 */
+	int initString(_In_ HWND hWndTab,
+		_In_ POINT pt_start, _In_ SIZE size,
+		_In_ const LibRpBase::RomFields::Field &field, _In_ int fieldIdx,
+		_In_ const std::tstring &str, _Outptr_opt_ HWND *pOutHWND = nullptr)
+	{
+		return initString(hWndTab, pt_start, size, field, fieldIdx, str.c_str(), pOutHWND);
+	}
+
+	/**
 	 * Initialize a bitfield layout.
-	 * @param hWndTab	[in] Tab window. (for the actual control)
-	 * @param pt_start	[in] Starting position, in pixels.
+	 * @param hWndTab	[in] Tab window (for the actual control)
+	 * @param pt_start	[in] Starting position, in pixels
 	 * @param field		[in] RomFields::Field
 	 * @param fieldIdx	[in] Field index
 	 * @return Field height, in pixels.
@@ -234,9 +259,9 @@ private:
 
 	/**
 	 * Initialize a ListData field.
-	 * @param hWndTab	[in] Tab window. (for the actual control)
-	 * @param pt_start	[in] Starting position, in pixels.
-	 * @param size		[in] Width and height for a default ListView.
+	 * @param hWndTab	[in] Tab window (for the actual control)
+	 * @param pt_start	[in] Starting position, in pixels
+	 * @param size		[in] Width and height for a default ListView
 	 * @param doResize	[in] If true, resize the ListView to accomodate rows_visible.
 	 * @param field		[in] RomFields::Field
 	 * @param fieldIdx	[in] Field index
@@ -249,9 +274,9 @@ private:
 	/**
 	 * Initialize a Date/Time field.
 	 * This function internally calls initString().
-	 * @param hWndTab	[in] Tab window. (for the actual control)
-	 * @param pt_start	[in] Starting position, in pixels.
-	 * @param size		[in] Width and height for a single line label.
+	 * @param hWndTab	[in] Tab window (for the actual control)
+	 * @param pt_start	[in] Starting position, in pixels
+	 * @param size		[in] Width and height for a single line label
 	 * @param field		[in] RomFields::Field
 	 * @param fieldIdx	[in] Field index
 	 * @return Field height, in pixels.
@@ -263,9 +288,9 @@ private:
 	/**
 	 * Initialize an Age Ratings field.
 	 * This function internally calls initString().
-	 * @param hWndTab	[in] Tab window. (for the actual control)
-	 * @param pt_start	[in] Starting position, in pixels.
-	 * @param size		[in] Width and height for a single line label.
+	 * @param hWndTab	[in] Tab window (for the actual control)
+	 * @param pt_start	[in] Starting position, in pixels
+	 * @param size		[in] Width and height for a single line label
 	 * @param field		[in] RomFields::Field
 	 * @param fieldIdx	[in] Field index
 	 * @return Field height, in pixels.
@@ -277,9 +302,9 @@ private:
 	/**
 	 * Initialize a Dimensions field.
 	 * This function internally calls initString().
-	 * @param hWndTab	[in] Tab window. (for the actual control)
-	 * @param pt_start	[in] Starting position, in pixels.
-	 * @param size		[in] Width and height for a single line label.
+	 * @param hWndTab	[in] Tab window (for the actual control)
+	 * @param pt_start	[in] Starting position, in pixels
+	 * @param size		[in] Width and height for a single line label
 	 * @param field		[in] RomFields::Field
 	 * @param fieldIdx	[in] Field index
 	 * @return Field height, in pixels.
@@ -290,9 +315,9 @@ private:
 
 	/**
 	 * Initialize a multi-language string field.
-	 * @param hWndTab	[in] Tab window. (for the actual control)
-	 * @param pt_start	[in] Starting position, in pixels.
-	 * @param size		[in] Width and height for a single line label.
+	 * @param hWndTab	[in] Tab window (for the actual control)
+	 * @param pt_start	[in] Starting position, in pixels
+	 * @param size		[in] Width and height for a single line label
 	 * @param field		[in] RomFields::Field
 	 * @param fieldIdx	[in] Field index
 	 * @return Field height, in pixels.

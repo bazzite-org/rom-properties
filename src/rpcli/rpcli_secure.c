@@ -36,11 +36,12 @@ int rpcli_do_security_options(void)
 		SCMP_SYS(close),
 		SCMP_SYS(dup),		// gzdopen()
 		SCMP_SYS(fcntl),     SCMP_SYS(fcntl64),		// gcc profiling
-		SCMP_SYS(fstat),     SCMP_SYS(fstat64),		// __GI___fxstat() [printf()]
-		SCMP_SYS(fstatat64), SCMP_SYS(newfstatat),	// Ubuntu 19.10 (32-bit)
-		SCMP_SYS(ftruncate),	// LibRpBase::RpFile::truncate() [from LibRpBase::RpPngWriterPrivate::init()]
+		SCMP_SYS(ftruncate),	// LibRpBase::RpFile::truncate() [from LibRpBase::RpPngWriterPrivate ctors]
 		SCMP_SYS(ftruncate64),
 		SCMP_SYS(futex),
+#if defined(__SNR_futex_time64) || defined(__NR_futex_time64)
+		SCMP_SYS(futex_time64),
+#endif /* __SNR_futex_time64 || __NR_futex_time64 */
 		SCMP_SYS(gettimeofday),	// 32-bit only?
 		SCMP_SYS(ioctl),	// for devices; also afl-fuzz
 		SCMP_SYS(lseek), SCMP_SYS(_llseek),
@@ -57,9 +58,6 @@ int rpcli_do_security_options(void)
 #endif /* __SNR_openat2 || __NR_openat2 */
 		SCMP_SYS(readlink),	// realpath() [LibRpBase::FileSystem::resolve_symlink()]
 
-		// KeyManager (keys.conf)
-		SCMP_SYS(access),	// LibUnixCommon::isWritableDirectory()
-		SCMP_SYS(stat), SCMP_SYS(stat64),	// LibUnixCommon::isWritableDirectory()
 		// ConfReader checks timestamps between rpcli runs.
 		// NOTE: Only seems to get triggered on PowerPC...
 		SCMP_SYS(clock_gettime),
@@ -68,11 +66,6 @@ int rpcli_do_security_options(void)
 #elif defined(__NR_clock_gettime64)
 		__NR_clock_gettime64,
 #endif /* __SNR_clock_gettime64 || __NR_clock_gettime64 */
-
-#if defined(__SNR_statx) || defined(__NR_statx)
-		SCMP_SYS(getcwd),	// called by glibc's statx()
-		SCMP_SYS(statx),
-#endif /* __SNR_statx || __NR_statx */
 
 		// glibc ncsd
 		// TODO: Restrict connect() to AF_UNIX.

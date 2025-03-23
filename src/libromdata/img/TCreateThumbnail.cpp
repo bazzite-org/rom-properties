@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * TCreateThumbnail.cpp: Thumbnail creator template.                       *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -32,6 +32,9 @@
 // C includes (C++ namespace)
 #include <cassert>
 #include <cstring>
+
+// C++ STL classes
+using std::array;
 
 namespace LibRomData {
 
@@ -130,7 +133,7 @@ ImgClass TCreateThumbnail<ImgClass>::getExternalImage(
 	// Synchronously download from the source URLs.
 	// TODO: Image size selection.
 	std::vector<RomData::ExtURL> extURLs;
-	int ret = romData->extURLs(imageType, &extURLs, reqSize);
+	int ret = romData->extURLs(imageType, extURLs, reqSize);
 	if (ret != 0 || extURLs.empty()) {
 		// No URLs.
 		if (sBIT) {
@@ -365,22 +368,22 @@ skip_image_check:
 	if (imgpf & RomData::IMGPF_RESCALE_RFT_DIMENSIONS_2) {
 		// Find the second RFT_DIMENSIONS field.
 		const RomFields *const fields = romData->fields();
-		const RomFields::Field *field[2] = {nullptr, nullptr};
-		const auto iter_end = fields->cend();
-		for (auto iter = fields->cbegin(); iter != iter_end; ++iter) {
-			if (iter->type != RomFields::RFT_DIMENSIONS)
+		assert(fields != nullptr);
+		array<const RomFields::Field*, 2> field = {{nullptr, nullptr}};
+		for (const RomFields::Field &pf : *fields) {
+			if (pf.type != RomFields::RFT_DIMENSIONS)
 				continue;
 			// Found an RFT_DIMENSIONS.
 			if (!field[0]) {
-				field[0] = &(*iter);
+				field[0] = &pf;
 			} else {
-				field[1] = &(*iter);
+				field[1] = &pf;
 				break;
 			}
 		}
 
 		if (field[1]) {
-			// Found dimensions.
+			// Found rescale dimensions.
 			ImgSize rescaleSize = {
 				field[1]->data.dimensions[0],
 				field[1]->data.dimensions[1],
@@ -582,4 +585,4 @@ int TCreateThumbnail<ImgClass>::getThumbnail(const char *filename, int reqSize, 
 	return getThumbnail(romData, reqSize, pOutParams);
 }
 
-}
+} // namespace LibRomData

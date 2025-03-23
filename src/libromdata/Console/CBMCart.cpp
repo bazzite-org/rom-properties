@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * CBMCart.cpp: Commodore ROM cartridge reader.                            *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -18,6 +18,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -27,7 +28,7 @@ namespace LibRomData {
 class CBMCartPrivate final : public RomDataPrivate
 {
 public:
-	CBMCartPrivate(const IRpFilePtr &file);
+	explicit CBMCartPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -35,8 +36,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 5+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -68,12 +69,12 @@ ROMDATA_IMPL_IMG(CBMCart)
 /** CBMCartPrivate **/
 
 /* RomDataInfo */
-const char *const CBMCartPrivate::exts[] = {
+const array<const char*, 1+1> CBMCartPrivate::exts = {{
 	".crt",
 
 	nullptr
-};
-const char *const CBMCartPrivate::mimeTypes[] = {
+}};
+const array<const char*, 5+1> CBMCartPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-c64-cartridge",
@@ -83,9 +84,9 @@ const char *const CBMCartPrivate::mimeTypes[] = {
 	"application/x-plus4-cartridge",
 
 	nullptr
-};
+}};
 const RomDataInfo CBMCartPrivate::romDataInfo = {
-	"CBMCart", exts, mimeTypes
+	"CBMCart", exts.data(), mimeTypes.data()
 };
 
 CBMCartPrivate::CBMCartPrivate(const IRpFilePtr &file)
@@ -220,14 +221,14 @@ const char *CBMCart::systemName(unsigned int type) const
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"CBMCart::systemName() array index optimization needs to be updated.");
 
-	static const char *const sysNames[][4] = {
-		{"Commodore 64", "C64", "C64", nullptr},
-		{"Commodore 128", "C128", "C128", nullptr},
-		{"Commodore CBM-II", "CBM-II", "CBM-II", nullptr},
-		{"Commodore VIC-20", "VIC-20", "VIC-20", nullptr},
-		{"Commodore Plus/4", "Plus/4", "Plus/4", nullptr},
-	};
-	static_assert(ARRAY_SIZE(sysNames) == static_cast<int>(CBMCartPrivate::RomType::Max),
+	static const array<array<const char*, 4>, 5> sysNames = {{
+		{{"Commodore 64", "C64", "C64", nullptr}},
+		{{"Commodore 128", "C128", "C128", nullptr}},
+		{{"Commodore CBM-II", "CBM-II", "CBM-II", nullptr}},
+		{{"Commodore VIC-20", "VIC-20", "VIC-20", nullptr}},
+		{{"Commodore Plus/4", "Plus/4", "Plus/4", nullptr}},
+	}};
+	static_assert(sysNames.size() == static_cast<int>(CBMCartPrivate::RomType::Max),
 		"CBMCart: sysNames[] is missing entries!");
 
 	int i = static_cast<int>(d->romType);
@@ -386,7 +387,7 @@ int CBMCart::loadFieldData(void)
 			d->fields.addField_string(s_type_title, s_type);
 		} else {
 			d->fields.addField_string(s_type_title,
-				rp_sprintf(C_("RomData", "Unknown (%u)"), type));
+				fmt::format(FRUN(C_("RomData", "Unknown ({:d})")), type));
 		}
 	}
 
@@ -402,7 +403,7 @@ int CBMCart::loadFieldData(void)
 int CBMCart::loadMetaData(void)
 {
 	RP_D(CBMCart);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -413,22 +414,19 @@ int CBMCart::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
 	// ROM header is read in the constructor.
 	const CBM_CRTHeader *const romHeader = &d->romHeader;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Title
 	if (romHeader->title[0] != '\0') {
-		d->metaData->addMetaData_string(Property::Title,
+		d->metaData.addMetaData_string(Property::Title,
 			cp1252_to_utf8(romHeader->title, sizeof(romHeader->title)),
 			RomMetaData::STRF_TRIM_END);
 	}
 
 	// Finished reading the metadata.
-	return (d->metaData ? static_cast<int>(d->metaData->count()) : -ENOENT);
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -439,20 +437,20 @@ int CBMCart::loadMetaData(void)
  * try to get the size that most closely matches the
  * requested size.
  *
- * @param imageType	[in]     Image type.
- * @param pExtURLs	[out]    Output vector.
+ * @param imageType	[in]     Image type
+ * @param extURLs	[out]    Output vector
  * @param size		[in,opt] Requested image size. This may be a requested
  *                               thumbnail size in pixels, or an ImageSizeType
  *                               enum value.
  * @return 0 on success; negative POSIX error code on error.
  */
-int CBMCart::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
+int CBMCart::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) const
 {
-	ASSERT_extURLs(imageType, pExtURLs);
-	pExtURLs->clear();
+	extURLs.clear();
+	ASSERT_extURLs(imageType);
 
 	RP_D(CBMCart);
-	if (!d->isValid || (int)d->romType < 0) {
+	if (!d->isValid || static_cast<int>(d->romType) < 0) {
 		// ROM image isn't valid.
 		return -EIO;
 	}
@@ -497,7 +495,7 @@ int CBMCart::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) co
 			return err;
 		}
 
-#define CBM_ROM_BUF_SIZ (16*1024)
+		static constexpr size_t CBM_ROM_BUF_SIZ = 16U * 1024U;
 		unique_ptr<uint8_t[]> buf(new uint8_t[CBM_ROM_BUF_SIZ]);
 		while (sz_rd_total < CBM_ROM_BUF_SIZ) {
 			CBM_CRT_CHIPHeader chipHeader;
@@ -546,8 +544,7 @@ int CBMCart::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) co
 	}
 
 	// Lowercase hex CRC32s are used.
-	char s_crc32[16];
-	snprintf(s_crc32, sizeof(s_crc32), "%08x", d->rom_16k_crc32);
+	const string s_crc32 = fmt::format(FSTR("{:0>2x}"), d->rom_16k_crc32);
 
 	// NOTE: We only have one size for CBMCart right now.
 	// TODO: Determine the actual image size.
@@ -579,25 +576,25 @@ int CBMCart::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) co
 	// FIXME: Use a better subdirectory scheme instead of just "crt" for cartridge?
 	// NOTE: For C64 cartridges, using a second level subdirectory
 	// for the cartridge type.
-	char s_subdir[16];
+	string s_subdir;
 	if (d->romType == CBMCartPrivate::RomType::C64) {
 		// TODO: Separate dir for UltiMax?
-		snprintf(s_subdir, sizeof(s_subdir), "crt/%u", be16_to_cpu(romHeader->type));
+		s_subdir = fmt::format(FSTR("crt/{:d}"), be16_to_cpu(romHeader->type));
 	} else {
-		memcpy(s_subdir, "crt", 4);
+		s_subdir = "crt";
 	}
 
 	// Add the URLs.
-	pExtURLs->resize(1);
-	auto extURL_iter = pExtURLs->begin();
-	extURL_iter->url = d->getURL_RPDB(sys, imageTypeName, s_subdir, s_crc32, ext);
-	extURL_iter->cache_key = d->getCacheKey_RPDB(sys, imageTypeName, s_subdir, s_crc32, ext);
-	extURL_iter->width = sizeDefs[0].width;
-	extURL_iter->height = sizeDefs[0].height;
-	extURL_iter->high_res = (sizeDefs[0].index >= 2);
+	extURLs.resize(1);
+	ExtURL &extURL = extURLs[0];
+	extURL.url = d->getURL_RPDB(sys, imageTypeName, s_subdir.c_str(), s_crc32.c_str(), ext);
+	extURL.cache_key = d->getCacheKey_RPDB(sys, imageTypeName, s_subdir.c_str(), s_crc32.c_str(), ext);
+	extURL.width = sizeDefs[0].width;
+	extURL.height = sizeDefs[0].height;
+	extURL.high_res = (sizeDefs[0].index >= 2);
 
 	// All URLs added.
 	return 0;
 }
 
-}
+} // namespace LibRomData

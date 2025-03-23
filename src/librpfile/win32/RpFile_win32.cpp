@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpfile)                        *
  * RpFile_win32.cpp: Standard file object. (Win32 implementation)          *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -33,14 +33,6 @@ using std::wstring;
 #include "libwin32common/DelayLoadHelper.h"
 #endif /* _MSC_VER */
 
-#define ISDRIVELETTERA(x) ((x) >= 'A' && (x) <= 'Z')
-#define ISDRIVELETTERW(x) ((x) >= L'A' && (x) <= L'Z')
-#ifdef _UNICODE
-#  define ISDRIVELETTER(x) ISDRIVELETTERW(x)
-#else /* !_UNICODE */
-#  define ISDRIVELETTER(x) ISDRIVELETTERA(x)
-#endif /* _UNICODE */
-
 namespace LibRpFile {
 
 #ifdef _MSC_VER
@@ -51,11 +43,14 @@ DELAYLOAD_TEST_FUNCTION_IMPL0(get_crc_table);
 /** RpFilePrivate **/
 
 RpFilePrivate::RpFilePrivate(RpFile *q, const wchar_t *filenameW, RpFile::FileMode mode)
-	: q_ptr(q), file(INVALID_HANDLE_VALUE), filename(nullptr)
-	, mode(mode), gzfd(nullptr), gzsz(-1), devInfo(nullptr)
+	: q_ptr(q)
+	, file(INVALID_HANDLE_VALUE)
+	, mode(mode)
+	, gzfd(nullptr)
+	, gzsz(-1)
 {
 	assert(filenameW != nullptr);
-	this->filenameW = wcsdup(filenameW);
+	this->filenameW.assign(filenameW);
 }
 
 RpFilePrivate::~RpFilePrivate()
@@ -66,9 +61,6 @@ RpFilePrivate::~RpFilePrivate()
 	if (file && file != INVALID_HANDLE_VALUE) {
 		CloseHandle(file);
 	}
-	free(filename);
-	free(filenameW);
-	delete devInfo;
 }
 
 /**
@@ -122,7 +114,7 @@ inline int RpFilePrivate::mode_to_win32(RpFile::FileMode mode,
 int RpFilePrivate::reOpenFile(void)
 {
 	RP_Q(RpFile);
-	if (!filenameW || filenameW[0] == L'\0') {
+	if (unlikely(filenameW.empty())) {
 		// No filename...
 		q->m_lastError = EINVAL;
 		return -EINVAL;
@@ -139,29 +131,20 @@ int RpFilePrivate::reOpenFile(void)
 	}
 
 	// If the filename is "X:", change it to "X:\\".
-	if (ISDRIVELETTERW(filenameW[0]) &&
+	if (IsDriveLetterW(filenameW[0]) &&
 	    filenameW[1] == L':' && filenameW[2] == L'\0')
 	{
 		// Drive letter. Append '\\'.
-		wchar_t *drvfilename = static_cast<wchar_t*>(malloc(4*sizeof(wchar_t)));
-		drvfilename[0] = filenameW[0];
-		drvfilename[1] = _T(':');
-		drvfilename[2] = _T('\\');
-		drvfilename[3] = _T('\0');
-
-		std::swap(drvfilename, this->filenameW);
-		free(drvfilename);
-		if (this->filename) {
-			free(this->filename);
-			this->filename = nullptr;
-		}
+		const wchar_t drvfilename[4] = {filenameW[0], L':', L'\\', L'\0'};
+		filenameW.assign(drvfilename);
+		filename.clear();
 	}
 
 	// Adjusted filename for Windows.
 	tstring tfilename;
 
 	// Check if the path starts with a drive letter.
-	if (ISDRIVELETTERW(filenameW[0]) &&
+	if (IsDriveLetterW(filenameW[0]) &&
 	    filenameW[1] == L':' && filenameW[2] == L'\\')
 	{
 		// Is it only a drive letter?
@@ -172,7 +155,7 @@ int RpFilePrivate::reOpenFile(void)
 			// or if we have to resolve the physical device name.
 			// NOTE: filename is UTF-8, but we can use it as if
 			// it's ANSI for a drive letter.
-			const UINT driveType = GetDriveType(filenameW);
+			const UINT driveType = GetDriveType(filenameW.c_str());
 			switch (driveType) {
 				case DRIVE_CDROM:
 					// CD-ROM works.
@@ -208,7 +191,7 @@ int RpFilePrivate::reOpenFile(void)
 		// This is a device. Allocate devInfo.
 		// NOTE: This is kept around until RpFile is deleted,
 		// even if the device can't be opeend for some reason.
-		devInfo = new DeviceInfo();
+		devInfo.reset(new DeviceInfo());
 
 		if (mode & RpFile::FM_WRITE) {
 			// Writing to block devices is not allowed.
@@ -299,60 +282,11 @@ int RpFilePrivate::reOpenFile(void)
 /**
  * Open a file.
  * NOTE: Files are always opened in binary mode.
- * @param filename Filename (UTF-8)
- * @param mode File mode
- */
-RpFile::RpFile(const char *filename, FileMode mode)
-	: super()
-	, d_ptr(new RpFilePrivate(this, U82W_c(filename), mode))
-{
-	init();
-}
-
-/**
- * Open a file.
- * NOTE: Files are always opened in binary mode.
- * @param filename Filename (UTF-8)
- * @param mode File mode
- */
-RpFile::RpFile(const string &filename, FileMode mode)
-	: super()
-	, d_ptr(new RpFilePrivate(this, U82W_s(filename), mode))
-{
-	init();
-}
-
-/**
- * Open a file.
- * NOTE: Files are always opened in binary mode.
  * @param filename Filename (UTF-16)
  * @param mode File mode
  */
 RpFile::RpFile(const wchar_t *filenameW, FileMode mode)
-	: super()
-	, d_ptr(new RpFilePrivate(this, filenameW, mode))
-{
-	init();
-}
-
-/**
- * Open a file.
- * NOTE: Files are always opened in binary mode.
- * @param filename Filename (UTF-16)
- * @param mode File mode
- */
-RpFile::RpFile(const wstring &filenameW, FileMode mode)
-	: super()
-	, d_ptr(new RpFilePrivate(this, filenameW.c_str(), mode))
-{
-	init();
-}
-
-/**
- * Common initialization function for RpFile's constructors.
- * Filename must be set in d->filename.
- */
-void RpFile::init(void)
+	: d_ptr(new RpFilePrivate(this, filenameW, mode))
 {
 	RP_D(RpFile);
 
@@ -393,26 +327,24 @@ void RpFile::init(void)
 		DWORD bytesRead;
 		uint16_t gzmagic;
 		BOOL bRet = ReadFile(d->file, &gzmagic, sizeof(gzmagic), &bytesRead, nullptr);
-		if (!bRet || bytesRead != sizeof(gzmagic) || gzmagic != be16_to_cpu(0x1F8B))
+		if (!bRet || bytesRead != sizeof(gzmagic) || gzmagic != be16_to_cpu(0x1F8B)) {
 			break;
+		}
 
 		// This is a gzipped file.
 		// Get the uncompressed size at the end of the file.
-		LARGE_INTEGER liFileSize;
-		bRet = GetFileSizeEx(d->file, &liFileSize);
-		if (!bRet || liFileSize.QuadPart <= 10+8)
-			break;
-
 		LARGE_INTEGER liSeekPos;
-		liSeekPos.QuadPart = liFileSize.QuadPart - 4;
-		if (!SetFilePointerEx(d->file, liSeekPos, nullptr, FILE_BEGIN))
+		liSeekPos.QuadPart = -4;
+		if (!SetFilePointerEx(d->file, liSeekPos, nullptr, FILE_END)) {
 			break;
+		}
 
 		uint32_t uncomp_sz;
 		bRet = ReadFile(d->file, &uncomp_sz, sizeof(uncomp_sz), &bytesRead, nullptr);
 		uncomp_sz = le32_to_cpu(uncomp_sz);
-		if (!bRet || bytesRead != sizeof(uncomp_sz) /*|| uncomp_sz < liFileSize.QuadPart-(10+8)*/)
+		if (!bRet || bytesRead != sizeof(uncomp_sz) /*|| uncomp_sz < liFileSize.QuadPart-(10+8)*/) {
 			break;
+		}
 
 		// NOTE: Uncompressed size might be smaller than the real filesize
 		// in cases where gzip doesn't help much.
@@ -434,12 +366,13 @@ void RpFile::init(void)
 			0,			// dwDesiredAccess
 			FALSE,			// bInheritHandle
 			DUPLICATE_SAME_ACCESS);	// dwOptions
-		if (!bRet)
+		if (!bRet) {
 			break;
+		}
 
 		// NOTE: close() on gzfd_dup() will close the
 		// underlying Windows handle.
-		int gzfd_dup = _open_osfhandle((intptr_t)hGzDup, _O_RDONLY);
+		int gzfd_dup = _open_osfhandle(reinterpret_cast<intptr_t>(hGzDup), _O_RDONLY);
 		if (gzfd_dup >= 0) {
 			d->gzfd = gzdopen(gzfd_dup, "r");
 			if (d->gzfd) {
@@ -465,6 +398,36 @@ void RpFile::init(void)
 		FlushFileBuffers(d->file);
 	}
 }
+
+/**
+ * Open a file.
+ * NOTE: Files are always opened in binary mode.
+ * @param filename Filename (UTF-8)
+ * @param mode File mode
+ */
+RpFile::RpFile(const char *filename, FileMode mode)
+	: RpFile(U82W_c(filename), mode)
+{}
+
+/**
+ * Open a file.
+ * NOTE: Files are always opened in binary mode.
+ * @param filename Filename (UTF-8)
+ * @param mode File mode
+ */
+RpFile::RpFile(const string &filename, FileMode mode)
+	: RpFile(U82W_s(filename), mode)
+{}
+
+/**
+ * Open a file.
+ * NOTE: Files are always opened in binary mode.
+ * @param filename Filename (UTF-16)
+ * @param mode File mode
+ */
+RpFile::RpFile(const wstring &filenameW, FileMode mode)
+	: RpFile(filenameW.c_str(), mode)
+{}
 
 RpFile::~RpFile()
 {
@@ -793,11 +756,11 @@ off64_t RpFile::size(void)
 const char *RpFile::filename(void) const
 {
 	RP_D(const RpFile);
-	if (d->filename && d->filename[0] != '\0') {
-		return d->filename;
-	} else if (d->filenameW && d->filenameW[0] != L'\0') {
-		const_cast<RpFilePrivate*>(d)->filename = strdup(W2U8(d->filenameW).c_str());
-		return d->filename;
+	if (unlikely(!d->filename.empty())) {
+		return d->filename.c_str();
+	} else if (likely(!d->filenameW.empty())) {
+		const_cast<RpFilePrivate*>(d)->filename = W2U8(d->filenameW);
+		return d->filename.c_str();
 	}
 
 	return nullptr;
@@ -811,7 +774,7 @@ const char *RpFile::filename(void) const
 const wchar_t *RpFile::filenameW(void) const
 {
 	RP_D(const RpFile);
-	return (d->filenameW != nullptr && d->filenameW[0] != L'\0') ? d->filenameW : nullptr;
+	return (likely(!d->filenameW.empty())) ? d->filenameW.c_str() : nullptr;
 }
 
 /** Extra functions **/
@@ -853,4 +816,4 @@ int RpFile::makeWritable(void)
 	return 0;
 }
 
-}
+} // namespace LibRpFile

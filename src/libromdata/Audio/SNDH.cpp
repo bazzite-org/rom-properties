@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * SNDH.hpp: Atari ST SNDH audio reader.                                   *
  *                                                                         *
- * Copyright (c) 2018-2024 by David Korth.                                 *
+ * Copyright (c) 2018-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -38,7 +38,7 @@ namespace LibRomData {
 class SNDHPrivate final : public RomDataPrivate
 {
 public:
-	SNDHPrivate(const IRpFilePtr &file);
+	explicit SNDHPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -46,8 +46,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -60,12 +60,12 @@ public:
 		string ripper;		// Ripper name
 		string converter;	// Converter name
 
-		unsigned int subtunes;		// Subtune count (If 0 or 1, entire file is one song.)
-						// NOTE: 0 (or missing) means SNDHv1; 1 means SNDHv2.
-		unsigned int vblank_freq;	// VBlank frequency (50/60)
-		unsigned int timer_freq[4];	// Timer frequencies (A, B, C, D) [0 if not specified]
-		unsigned int year;		// Year of release
-		unsigned int def_subtune;	// Default subtune
+		unsigned int subtunes;			// Subtune count (If 0 or 1, entire file is one song.)
+							// NOTE: 0 (or missing) means SNDHv1; 1 means SNDHv2.
+		unsigned int vblank_freq;		// VBlank frequency (50/60)
+		array<unsigned int, 4> timer_freq;	// Timer frequencies (A, B, C, D) [0 if not specified]
+		unsigned int year;			// Year of release
+		unsigned int def_subtune;		// Default subtune
 
 		// TODO: Use std::pair<>?
 		// The SNDH format uses separate tags for each, though...
@@ -75,7 +75,7 @@ public:
 		TagData() : tags_read(false), subtunes(0), vblank_freq(0), year(0), def_subtune(0)
 		{
 			// Clear the timer frequencies.
-			memset(&timer_freq, 0, sizeof(timer_freq));
+			timer_freq.fill(0);
 		}
 	};
 
@@ -109,20 +109,20 @@ ROMDATA_IMPL(SNDH)
 /** SNDHPrivate **/
 
 /* RomDataInfo */
-const char *const SNDHPrivate::exts[] = {
+const array<const char*, 1+1> SNDHPrivate::exts = {{
 	".sndh",
 
 	nullptr
-};
-const char *const SNDHPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> SNDHPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"audio/x-sndh",
 
 	nullptr
-};
+}};
 const RomDataInfo SNDHPrivate::romDataInfo = {
-	"SNDH", exts, mimeTypes
+	"SNDH", exts.data(), mimeTypes.data()
 };
 
 SNDHPrivate::SNDHPrivate(const IRpFilePtr &file)
@@ -397,7 +397,7 @@ SNDHPrivate::TagData SNDHPrivate::parseTags(void)
 						// An error occured.
 						break;
 					}
-					tags.subtune_names.emplace_back(std::move(str));
+					tags.subtune_names.push_back(std::move(str));
 
 					if (p_str > p_next) {
 						// This string is the farthest ahead so far.
@@ -762,9 +762,9 @@ const char *SNDH::systemName(unsigned int type) const
 		"SNDH::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Atari ST SNDH Audio", "SNDH", "SNDH", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -839,23 +839,23 @@ int SNDH::loadFieldData(void)
 	// VBL *before* timers. We'll list it before timers.
 
 	// VBlank frequency.
-	const char *const s_hz = C_("RomData", "%u Hz");
+	const char *const s_hz = C_("RomData", "{:Ld} Hz");
 	if (tags.vblank_freq != 0) {
 		d->fields.addField_string(C_("SNDH", "VBlank Freq"),
-			rp_sprintf(s_hz, tags.vblank_freq));
+			fmt::format(FRUN(s_hz), tags.vblank_freq));
 	}
 
 	// Timer frequencies.
 	// TODO: Use RFT_LISTDATA?
-	// tr: Frequency of Timer A, Timer B, etc. ("Timer %c" is a single entity)
-	const char *const s_timer_freq = C_("SNDH", "Timer %c Freq");
+	// tr: Frequency of Timer A, Timer B, etc. ("Timer {:c}" is a single entity)
+	const char *const s_timer_freq = C_("SNDH", "Timer {:c} Freq");
 	for (int i = 0; i < ARRAY_SIZE_I(tags.timer_freq); i++) {
 		if (tags.timer_freq[i] == 0)
 			continue;
 
 		d->fields.addField_string(
-			rp_sprintf(s_timer_freq, 'A'+i).c_str(),
-			rp_sprintf(s_hz, tags.timer_freq[i]));
+			fmt::format(FRUN(s_timer_freq), 'A'+i).c_str(),
+			fmt::format(FRUN(s_hz), tags.timer_freq[i]));
 	}
 
 	// Default subtune.
@@ -883,15 +883,15 @@ int SNDH::loadFieldData(void)
 		uint64_t duration_total = 0;
 
 		const size_t count = std::max(tags.subtune_names.size(), tags.subtune_lengths.size());
-		auto vv_subtune_list = new RomFields::ListData_t(count);
+		auto *const vv_subtune_list = new RomFields::ListData_t(count);
 		unsigned int idx = 0;
 		for (vector<string> &data_row : *vv_subtune_list) {
 			data_row.reserve(col_count);	// 2 or 3 fields per row.
 
-			data_row.emplace_back(rp_sprintf("%u", idx+1));	// NOTE: First subtune is 1, not 0.
+			data_row.push_back(fmt::to_string(idx+1));	// NOTE: First subtune is 1, not 0.
 			if (has_SN) {
 				if (idx < tags.subtune_names.size()) {
-					data_row.emplace_back(tags.subtune_names.at(idx));
+					data_row.push_back(tags.subtune_names.at(idx));
 				} else {
 					data_row.emplace_back();
 				}
@@ -905,7 +905,7 @@ int SNDH::loadFieldData(void)
 					duration_total += duration;
 					const unsigned int min = duration / 60;
 					const unsigned int sec = duration % 60;
-					data_row.emplace_back(rp_sprintf("%u:%02u", min, sec));
+					data_row.push_back(fmt::format(FSTR("{:d}:{:0>2d}"), min, sec));
 				} else {
 					data_row.emplace_back();
 				}
@@ -919,10 +919,11 @@ int SNDH::loadFieldData(void)
 			// No durations. Don't bother showing the list.
 			delete vv_subtune_list;
 		} else {
-			static const char *subtune_list_hdr[3] = {
+			array<const char*, 3> subtune_list_hdr = {{
 				NOP_C_("SNDH|SubtuneList", "#"),
-				nullptr, nullptr
-			};
+				nullptr,
+				nullptr
+			}};
 			if (has_SN && has_TIME) {
 				subtune_list_hdr[1] = NOP_C_("SNDH|SubtuneList", "Name");
 				subtune_list_hdr[2] = NOP_C_("RomData|Audio", "Duration");
@@ -936,7 +937,7 @@ int SNDH::loadFieldData(void)
 			}
 
 			vector<string> *const v_subtune_list_hdr = RomFields::strArrayToVector_i18n(
-				"SNDH|SubtuneList", subtune_list_hdr, col_count);
+				"SNDH|SubtuneList", subtune_list_hdr.data(), col_count);
 
 			RomFields::AFLD_PARAMS params;
 			params.headers = v_subtune_list_hdr;
@@ -954,7 +955,7 @@ int SNDH::loadFieldData(void)
 		const uint32_t sec = duration % 60;
 
 		d->fields.addField_string(C_("RomData|Audio", "Duration"),
-			rp_sprintf("%u:%02u", min, sec));
+			fmt::format(FSTR("{:d}:{:0>2d}"), min, sec));
 	}
 
 	// Finished reading the field data.
@@ -969,7 +970,7 @@ int SNDH::loadFieldData(void)
 int SNDH::loadMetaData(void)
 {
 	RP_D(SNDH);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -987,25 +988,23 @@ int SNDH::loadMetaData(void)
 		return 0;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(4);	// Maximum of 3 metadata properties.
+	d->metaData.reserve(4);	// Maximum of 4 metadata properties.
 
 	// Song title.
 	if (!tags.title.empty()) {
-		d->metaData->addMetaData_string(Property::Title,
+		d->metaData.addMetaData_string(Property::Title,
 			tags.title, RomFields::STRF_TRIM_END);
 	}
 
 	// Composer.
 	if (!tags.composer.empty()) {
-		d->metaData->addMetaData_string(Property::Composer,
+		d->metaData.addMetaData_string(Property::Composer,
 			tags.composer, RomFields::STRF_TRIM_END);
 	}
 
 	// Year of release.
 	if (tags.year != 0) {
-		d->metaData->addMetaData_uint(Property::ReleaseYear, tags.year);
+		d->metaData.addMetaData_uint(Property::ReleaseYear, tags.year);
 	}
 
 	// Duration.
@@ -1016,11 +1015,11 @@ int SNDH::loadMetaData(void)
 	if (duration != 0) {
 		// NOTE: Length is in milliseconds, so we need to
 		// multiply duration by 1000.
-		d->metaData->addMetaData_integer(Property::Duration, duration * 1000);
+		d->metaData.addMetaData_integer(Property::Duration, duration * 1000);
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

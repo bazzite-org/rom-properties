@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * SPC.hpp: SPC audio reader.                                              *
  *                                                                         *
- * Copyright (c) 2018-2024 by David Korth.                                 *
+ * Copyright (c) 2018-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -16,6 +16,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
@@ -26,7 +27,7 @@ namespace LibRomData {
 class SPCPrivate final : public RomDataPrivate
 {
 public:
-	SPCPrivate(const IRpFilePtr &file);
+	explicit SPCPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -34,8 +35,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -45,7 +46,7 @@ public:
 
 	// Tag struct
 	struct spc_tags_t {
-		// Vector of strings.
+		// Vector of strings
 		// Contains all string data.
 		vector<string> strs;
 
@@ -152,9 +153,9 @@ public:
 		 */
 		inline void insertStr(SPC_xID6_Item_e key, const string &str)
 		{
-			val_t val((unsigned int)strs.size());
+			val_t val(static_cast<unsigned int>(strs.size()));
 			val.isStrIdx = true;
-			strs.emplace_back(str);
+			strs.push_back(str);
 			map.emplace(key, val);
 		}
 
@@ -190,19 +191,19 @@ ROMDATA_IMPL(SPC)
 /** SPCPrivate **/
 
 /* RomDataInfo */
-const char *const SPCPrivate::exts[] = {
+const array<const char*, 1+1> SPCPrivate::exts = {{
 	".spc",
 
 	nullptr
-};
-const char *const SPCPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> SPCPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	"audio/x-spc",
 
 	nullptr
-};
+}};
 const RomDataInfo SPCPrivate::romDataInfo = {
-	"SPC", exts, mimeTypes
+	"SPC", exts.data(), mimeTypes.data()
 };
 
 SPCPrivate::SPCPrivate(const IRpFilePtr &file)
@@ -412,7 +413,7 @@ SPCPrivate::spc_tags_t SPCPrivate::parseTags(void)
 	// due to DWORD alignment requirements.
 	unique_ptr<uint8_t[]> data(new uint8_t[len]);
 	size = file->read(data.get(), len);
-	if (size != (size_t)len) {
+	if (size != static_cast<size_t>(len)) {
 		// Read error.
 		return kv;
 	}
@@ -462,7 +463,7 @@ SPCPrivate::spc_tags_t SPCPrivate::parseTags(void)
 
 				// NOTE: Strings are encoded using cp1252.
 				kv.insertStr(static_cast<SPC_xID6_Item_e>(data[i]),
-					cp1252_to_utf8(reinterpret_cast<const char*>(&data[i+4]), (size_t)slen));
+					cp1252_to_utf8(reinterpret_cast<const char*>(&data[i+4]), static_cast<int>(slen)));
 
 				// DWORD alignment.
 				i += 4 + slen;
@@ -583,23 +584,23 @@ unsigned int SPCPrivate::getDurationMs(const SPCPrivate::spc_tags_t &kv)
 	// the intro field. Hence, we'll handle all of them the same way.
 	const int loopCount = data.ivalue;
 
-#define FIELD_DATA_GET_xID6_DURATION(var, tag) do { \
-	const auto leniter = kv.find(tag); \
-	if (leniter != kv.cend()) { \
-		const auto &lendata = leniter->second; \
-		assert(!lendata.isStrIdx); \
-		if (!lendata.isStrIdx) { \
-			var = lendata.uvalue; \
-		} \
-	} \
-} while (0)
+	auto get_xID6_duration = [&kv](SPC_xID6_Item_e tag) -> unsigned int {
+		const auto lenIter = kv.find(tag);
+		if (lenIter != kv.cend()) {
+			const auto &lenData = lenIter->second;
+			assert(!lenData.isStrIdx);
+			if (!lenData.isStrIdx) {
+				return lenData.uvalue;
+			}
+		}
+		return 0;
+	};
 
 	// Get the durations.
-	unsigned int intro = 0, loop = 0, end = 0, fadeout = 0;
-	FIELD_DATA_GET_xID6_DURATION(intro, SPC_xID6_ITEM_INTRO_LENGTH);
-	FIELD_DATA_GET_xID6_DURATION(loop, SPC_xID6_ITEM_LOOP_LENGTH);
-	FIELD_DATA_GET_xID6_DURATION(end, SPC_xID6_ITEM_END_LENGTH);
-	FIELD_DATA_GET_xID6_DURATION(fadeout, SPC_xID6_ITEM_FADE_LENGTH);
+	const unsigned int intro = get_xID6_duration(SPC_xID6_ITEM_INTRO_LENGTH);
+	const unsigned int loop = get_xID6_duration(SPC_xID6_ITEM_LOOP_LENGTH);
+	const unsigned int end = get_xID6_duration(SPC_xID6_ITEM_END_LENGTH);
+	const unsigned int fadeout = get_xID6_duration(SPC_xID6_ITEM_FADE_LENGTH);
 
 	uint64_t total_duration = static_cast<uint64_t>(intro) + static_cast<uint64_t>(end);
 	if (loopCount < 0) {
@@ -720,9 +721,9 @@ const char *SPC::systemName(unsigned int type) const
 		"SPC::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Super NES SPC Audio", "SPC", "SPC", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -810,7 +811,7 @@ int SPC::loadFieldData(void)
 		const unsigned int sec = static_cast<unsigned int>(duration / 100) % 60;
 		const unsigned int min = static_cast<unsigned int>(duration / 100 / 60);
 		d->fields.addField_string(C_("RomData|Audio", "Duration"),
-			rp_sprintf("%u:%02u.%02u", min, sec, cs));
+			fmt::format(FSTR("{:d}:{:0>2d}.{:0>2d}"), min, sec, cs));
 	}
 
 	// Dumper
@@ -874,7 +875,7 @@ int SPC::loadFieldData(void)
 				d->fields.addField_string(emulator_used_title, emu);
 			} else {
 				d->fields.addField_string(emulator_used_title,
-					rp_sprintf(C_("RomData", "Unknown (0x%02X)"), data.uvalue));
+					fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), data.uvalue));
 			}
 		}
 	}
@@ -908,18 +909,16 @@ int SPC::loadFieldData(void)
 			// High byte: Track number. (0-99)
 			// Low byte: Optional letter.
 			// TODO: Restrict track number?
-			char buf[32];
 			const uint8_t track_num = data.uvalue >> 8;
+			string s_track_num = fmt::to_string(track_num);
+
 			const char track_letter = data.uvalue & 0xFF;
 			if (ISALNUM(track_letter)) {
-				// Valid track letter.
-				snprintf(buf, sizeof(buf), "%u%c", track_num, track_letter);
-			} else {
-				// Not a valid track letter.
-				snprintf(buf, sizeof(buf), "%u", track_num);
+				// Valid track letter
+				s_track_num += track_letter;
 			}
 
-			d->fields.addField_string(C_("SPC", "OST Track #"), buf);
+			d->fields.addField_string(C_("SPC", "OST Track #"), s_track_num);
 		}
 	}
 
@@ -935,7 +934,7 @@ int SPC::loadFieldData(void)
 int SPC::loadMetaData(void)
 {
 	RP_D(SPC);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -954,9 +953,7 @@ int SPC::loadMetaData(void)
 		return -ENOENT;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(10);	// Maximum of 10 metadata properties.
+	d->metaData.reserve(10);	// Maximum of 10 metadata properties.
 
 	// TODO: Add more tags.
 	// TODO: Duration.
@@ -967,7 +964,7 @@ int SPC::loadMetaData(void)
 		const auto &data = iter->second;
 		assert(data.isStrIdx);
 		if (data.isStrIdx) {
-			d->metaData->addMetaData_string(Property::Title, kv.getStr(data));
+			d->metaData.addMetaData_string(Property::Title, kv.getStr(data));
 		}
 	}
 
@@ -977,7 +974,7 @@ int SPC::loadMetaData(void)
 		const auto &data = iter->second;
 		assert(data.isStrIdx);
 		if (data.isStrIdx) {
-			d->metaData->addMetaData_string(Property::Album, kv.getStr(data));
+			d->metaData.addMetaData_string(Property::Album, kv.getStr(data));
 		}
 	}
 
@@ -987,7 +984,7 @@ int SPC::loadMetaData(void)
 		const auto &data = iter->second;
 		assert(data.isStrIdx);
 		if (data.isStrIdx) {
-			d->metaData->addMetaData_string(Property::Artist, kv.getStr(data));
+			d->metaData.addMetaData_string(Property::Artist, kv.getStr(data));
 		}
 	}
 
@@ -997,7 +994,7 @@ int SPC::loadMetaData(void)
 		const auto &data = iter->second;
 		assert(!data.isStrIdx);
 		if (!data.isStrIdx) {
-			d->metaData->addMetaData_uint(Property::ReleaseYear, data.uvalue);
+			d->metaData.addMetaData_uint(Property::ReleaseYear, data.uvalue);
 		}
 	}
 
@@ -1005,7 +1002,7 @@ int SPC::loadMetaData(void)
 	const unsigned int duration = d->getDurationMs(kv);
 	if (duration > 0) {
 		// NOTE: Property::Duration uses int, not unsigned int.
-		d->metaData->addMetaData_integer(Property::Duration, static_cast<int>(duration));
+		d->metaData.addMetaData_integer(Property::Duration, static_cast<int>(duration));
 	}
 
 #if 0
@@ -1016,7 +1013,7 @@ int SPC::loadMetaData(void)
 		const auto &data = iter->second;
 		assert(data.isStrIdx);
 		if (data.isStrIdx) {
-			d->metaData->addMetaData_string(Property::Dumper, kv.getStr(data));
+			d->metaData.addMetaData_string(Property::Dumper, kv.getStr(data));
 		}
 	}
 #endif
@@ -1027,7 +1024,7 @@ int SPC::loadMetaData(void)
 		const auto &data = iter->second;
 		assert(!data.isStrIdx);
 		if (!data.isStrIdx) {
-			d->metaData->addMetaData_timestamp(Property::CreationDate, data.timestamp);
+			d->metaData.addMetaData_timestamp(Property::CreationDate, data.timestamp);
 		}
 	}
 
@@ -1039,7 +1036,7 @@ int SPC::loadMetaData(void)
 		if (data.isStrIdx) {
 			// NOTE: Property::Comment is assumed to be user-added
 			// on KDE Dolphin 18.08.1. Use Property::Description.
-			d->metaData->addMetaData_string(Property::Description, kv.getStr(data));
+			d->metaData.addMetaData_string(Property::Description, kv.getStr(data));
 		}
 	}
 
@@ -1055,7 +1052,7 @@ int SPC::loadMetaData(void)
 		const auto &data = iter->second;
 		assert(data.isStrIdx);
 		if (data.isStrIdx) {
-			d->metaData->addMetaData_string(Property::Compilation, kv.getStr(data));
+			d->metaData.addMetaData_string(Property::Compilation, kv.getStr(data));
 		}
 	}
 
@@ -1066,7 +1063,7 @@ int SPC::loadMetaData(void)
 		assert(!data.isStrIdx);
 		if (!data.isStrIdx) {
 			// TODO: Int or UInt on KDE?
-			d->metaData->addMetaData_uint(Property::DiscNumber, data.uvalue);
+			d->metaData.addMetaData_uint(Property::DiscNumber, data.uvalue);
 		}
 	}
 
@@ -1082,12 +1079,12 @@ int SPC::loadMetaData(void)
 			// TODO: How to represent the letter here?
 			// TODO: Int or UInt on KDE?
 			const uint8_t track_num = data.uvalue >> 8;
-			d->metaData->addMetaData_uint(Property::TrackNumber, track_num);
+			d->metaData.addMetaData_uint(Property::TrackNumber, track_num);
 		}
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

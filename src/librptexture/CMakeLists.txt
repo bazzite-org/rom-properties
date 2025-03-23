@@ -18,7 +18,7 @@ IF(ENABLE_OPENMP)
 	ENDIF(OpenMP_FOUND)
 ENDIF(ENABLE_OPENMP)
 
-# Sources.
+# Sources
 SET(${PROJECT_NAME}_SRCS
 	FileFormatFactory.cpp
 	ImageSizeCalc.cpp
@@ -48,6 +48,7 @@ SET(${PROJECT_NAME}_SRCS
 	fileformat/KhronosKTX2.cpp
 	fileformat/PalmOS_Tbmp.cpp
 	fileformat/PowerVR3.cpp
+	fileformat/Qoi.cpp
 	fileformat/SegaPVR.cpp
 	fileformat/TGA.cpp
 	fileformat/ValveVTF.cpp
@@ -58,7 +59,7 @@ SET(${PROJECT_NAME}_SRCS
 	data/GLenumStrings.cpp
 	data/VkEnumStrings.cpp
 	)
-# Headers.
+# Headers
 SET(${PROJECT_NAME}_H
 	FileFormatFactory.hpp
 	argb32_t.hpp
@@ -81,6 +82,7 @@ SET(${PROJECT_NAME}_H
 	decoder/ImageDecoder_BC7.hpp
 	decoder/ImageDecoder_C64.hpp
 	decoder/PixelConversion.hpp
+	decoder/qoi.h
 
 	fileformat/FileFormat.hpp
 	fileformat/FileFormat_p.hpp
@@ -93,6 +95,7 @@ SET(${PROJECT_NAME}_H
 	fileformat/KhronosKTX2.hpp
 	fileformat/PalmOS_Tbmp.hpp
 	fileformat/PowerVR3.hpp
+	fileformat/Qoi.hpp
 	fileformat/SegaPVR.hpp
 	fileformat/TGA.hpp
 	fileformat/ValveVTF.hpp
@@ -234,8 +237,11 @@ FOREACH(_target ${TARGETS})
 	ENDIF(ENABLE_PCH)
 	INCLUDE(SetMSVCDebugPath)
 	SET_MSVC_DEBUG_PATH(${_target})
-	# Exclude from ALL builds.
-	SET_TARGET_PROPERTIES(${_target} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+	# Exclude from ALL builds; enable PIC.
+	SET_TARGET_PROPERTIES(${_target} PROPERTIES
+		EXCLUDE_FROM_ALL TRUE
+		POSITION_INDEPENDENT_CODE TRUE
+		)
 
 	# DLL targets need the appropriate macros.
 	IF(${_target} MATCHES "-dll$")
@@ -296,7 +302,12 @@ FOREACH(_target ${TARGETS})
 		TARGET_LINK_LIBRARIES(${_target} PRIVATE basisu_astc)
 	ENDIF(ENABLE_ASTC)
 
-	# Other libraries.
+	# libfmt
+	IF(Fmt_FOUND)
+		TARGET_LINK_LIBRARIES(${_target} PRIVATE ${Fmt_LIBRARY})
+	ENDIF(Fmt_FOUND)
+
+	# Other libraries
 	IF(WIN32)
 		# libwin32common
 		TARGET_LINK_LIBRARIES(${_target} PRIVATE win32common${_target_suffix})
@@ -310,12 +321,6 @@ IF(NOT TARGET ${PROJECT_NAME}-dll)
 	# On other platforms, the dll target will be an alias to the regular target.
 	ADD_LIBRARY(${PROJECT_NAME}-dll ALIAS ${PROJECT_NAME})
 ENDIF()
-
-# Unix: Add -fpic/-fPIC in order to use this static library in plugins.
-IF(UNIX AND NOT APPLE)
-	SET(CMAKE_C_FLAGS	"${CMAKE_C_FLAGS} -fpic -fPIC")
-	SET(CMAKE_CXX_FLAGS	"${CMAKE_CXX_FLAGS} -fpic -fPIC")
-ENDIF(UNIX AND NOT APPLE)
 
 # Test suite.
 IF(BUILD_TESTING)

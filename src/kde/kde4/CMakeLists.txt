@@ -1,6 +1,14 @@
 # KDE 4.x UI frontend
 PROJECT(rom-properties-kde4 LANGUAGES CXX)
 
+# Enable the "new" automoc policy for KDE4.
+# Otherwise, CMake complains because the old policy doesn't run
+# automoc on generated sources, e.g. from uic or rcc.
+# NOTE: Only on Qt4; CMake doesn't show this for Qt5/Qt6.
+IF(POLICY CMP0071)
+	CMAKE_POLICY(SET CMP0071 NEW)
+ENDIF(POLICY CMP0071)
+
 # Find Qt4 and KDE4.
 INCLUDE(RP_FindQt4andKDE4)
 FIND_QT4_AND_KDE4()
@@ -29,19 +37,25 @@ IF(QT4_FOUND)
 		)
 ENDIF(QT4_FOUND)
 IF(HAVE_QtDBus)
-	# FIXME: Broken on Qt4.
-	IF(0)
-		QT4_ADD_DBUS_INTERFACES(${PROJECT_NAME}_DBUS_IFACE_SRCS
-			"${CMAKE_CURRENT_SOURCE_DIR}/../../dbus/org.freedesktop.NetworkManager.xml"
-			)
-	ENDIF(0)
 	IF(HAVE_QtDBus_NOTIFY)
 		STRING(REGEX REPLACE "([^;]+)" "../\\1" ${PROJECT_NAME}-notify_SRCS "${rom-properties-kde-notify_SRCS}")
 		STRING(REGEX REPLACE "([^;]+)" "../\\1" ${PROJECT_NAME}-notify_H    "${rom-properties-kde-notify_H}")
-		QT4_ADD_DBUS_INTERFACES(${PROJECT_NAME}_DBUS_IFACE_SRCS_2
+		QT4_ADD_DBUS_INTERFACES(${PROJECT_NAME}_DBUS_IFACE_NOTIFY_SRCS
 			"${CMAKE_CURRENT_SOURCE_DIR}/../../dbus/org.freedesktop.Notifications.xml"
 			)
+		# NOTE: Setting CMAKE_POLICY(SET CMP0071 NEW) causes the generated D-Bus .moc
+		# to be included twice. Work around this by setting SKIP_AUTOMOC.
+		SET_PROPERTY(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/notificationsinterface.h" PROPERTY SKIP_AUTOMOC ON)
 	ENDIF(HAVE_QtDBus_NOTIFY)
+	# FIXME: Broken on Qt4.
+	IF(0 AND ENABLE_NETWORKING)
+		QT4_ADD_DBUS_INTERFACES(${PROJECT_NAME}_DBUS_IFACE_NM_SRCS
+			"${CMAKE_CURRENT_SOURCE_DIR}/../../dbus/org.freedesktop.NetworkManager.xml"
+			)
+		# NOTE: Setting CMAKE_POLICY(SET CMP0071 NEW) causes the generated D-Bus .moc
+		# to be included twice. Work around this by setting SKIP_AUTOMOC.
+		SET_PROPERTY(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/networkmanagerinterface.h" PROPERTY SKIP_AUTOMOC ON)
+	ENDIF(0 AND ENABLE_NETWORKING)
 ENDIF(HAVE_QtDBus)
 
 # Main plugin
@@ -49,8 +63,8 @@ SET(${PROJECT_NAME}_SRCS
 	${${PROJECT_NAME}_SRCS}
 	${${PROJECT_NAME}_RomThumbCreator_SRCS}
 	${${PROJECT_NAME}-notify_SRCS}
-	${${PROJECT_NAME}_DBUS_IFACE_SRCS}
-	${${PROJECT_NAME}_DBUS_IFACE_SRCS_2}
+	${${PROJECT_NAME}_DBUS_IFACE_NM_SRCS}
+	${${PROJECT_NAME}_DBUS_IFACE_NOTIFY_SRCS}
 	${${PROJECT_NAME}_RCC_O}
 	PluginFactoryKDE4.cpp
 	)
@@ -100,12 +114,17 @@ IF(BUILD_KDE4)
 			$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/../..>	# src
 		)
 	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE romdata)
-	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PUBLIC ${KDE4_KFILE_LIBRARY} ${KDE4_KDEUI_LIBRARY})
+	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PUBLIC ${KDE4_KFILE_LIBRARY} ${KDE4_KDEUI_LIBRARY} ${KDE4_KDECORE_LIBRARY})
 	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PUBLIC Qt4::QtGui Qt4::QtCore)
-	TARGET_INCLUDE_DIRECTORIES(rom-properties-kde4 PUBLIC ${KDE4_INCLUDE_DIR})
+	TARGET_INCLUDE_DIRECTORIES(rom-properties-kde4 PUBLIC ${KDE4_INCLUDE_DIR} ${KDE4_INCLUDE_DIR}/KDE)
 	IF(HAVE_QtDBus)
 		TARGET_LINK_LIBRARIES(rom-properties-kde4 PUBLIC Qt4::QtDBus)
 	ENDIF(HAVE_QtDBus)
+
+	# libfmt
+	IF(Fmt_FOUND)
+		TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE ${Fmt_LIBRARY})
+	ENDIF(Fmt_FOUND)
 
 	### XAttrView plugin ###
 	SET(XATTRVIEW_NAME xattrview-kde4)
@@ -135,6 +154,11 @@ IF(BUILD_KDE4)
 	TARGET_LINK_LIBRARIES(${XATTRVIEW_NAME} PRIVATE romdata)
 	TARGET_LINK_LIBRARIES(${XATTRVIEW_NAME} PUBLIC ${KDE4_KFILE_LIBRARY} ${KDE4_KDEUI_LIBRARY})
 	TARGET_LINK_LIBRARIES(${XATTRVIEW_NAME} PUBLIC Qt4::QtGui Qt4::QtCore)
+
+	# libfmt
+	IF(Fmt_FOUND)
+		TARGET_LINK_LIBRARIES(${XATTRVIEW_NAME} PRIVATE ${Fmt_LIBRARY})
+	ENDIF(Fmt_FOUND)
 ENDIF(BUILD_KDE4)
 
 #######################
@@ -163,14 +187,14 @@ IF(BUILD_KDE4)
 	INSTALL(FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.KPropertiesDialog.desktop"
 		      "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.ThumbCreator.desktop"
 		      "${XATTRVIEW_NAME}.desktop"
-		DESTINATION "${SERVICES_INSTALL_DIR}"
+		DESTINATION "${KDE4_SERVICES_INSTALL_DIR}"
 		COMPONENT "plugin"
 		)
 	# FIXME: Run kbuildsycoca4?
 
 	# Service menus
 	INSTALL(FILES ../servicemenus/rp-convert-to-png.desktop
-		DESTINATION "${SERVICES_INSTALL_DIR}/ServiceMenus"
+		DESTINATION "${KDE4_SERVICES_INSTALL_DIR}/ServiceMenus"
 		PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 		COMPONENT "plugin")
 

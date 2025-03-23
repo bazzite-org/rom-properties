@@ -16,6 +16,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
 
 namespace LibRomData {
@@ -23,7 +24,7 @@ namespace LibRomData {
 class GBSPrivate : public RomDataPrivate
 {
 public:
-	GBSPrivate(const IRpFilePtr &file);
+	explicit GBSPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -42,8 +43,8 @@ public:
 	AudioFormat audioFormat;
 
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 2+1> exts;
+	static const array<const char*, 2+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -60,13 +61,13 @@ ROMDATA_IMPL(GBS)
 /** GBSPrivate **/
 
 /* RomDataInfo */
-const char *const GBSPrivate::exts[] = {
+const array<const char*, 2+1> GBSPrivate::exts = {{
 	".gbs",
 	".gbr",
 
 	nullptr
-};
-const char *const GBSPrivate::mimeTypes[] = {
+}};
+const array<const char*, 2+1> GBSPrivate::mimeTypes = {{
 	// NOTE: Ordering matches AudioFormat.
 
 	// Unofficial MIME types.
@@ -75,9 +76,9 @@ const char *const GBSPrivate::mimeTypes[] = {
 	"audio/x-gbr",
 
 	nullptr
-};
+}};
 const RomDataInfo GBSPrivate::romDataInfo = {
-	"GBS", exts, mimeTypes
+	"GBS", exts.data(), mimeTypes.data()
 };
 
 GBSPrivate::GBSPrivate(const IRpFilePtr &file)
@@ -130,11 +131,11 @@ GBS::GBS(const IRpFilePtr &file)
 	};
 	d->audioFormat = static_cast<GBSPrivate::AudioFormat>(isRomSupported_static(&info));
 
-	if ((int)d->audioFormat < 0) {
+	if (static_cast<int>(d->audioFormat) < 0) {
 		d->file.reset();
 		return;
-	} else if ((int)d->audioFormat < ARRAY_SIZE_I(d->mimeTypes)-1) {
-		d->mimeType = d->mimeTypes[(int)d->audioFormat];
+	} else if (static_cast<int>(d->audioFormat) < ARRAY_SIZE_I(d->mimeTypes)-1) {
+		d->mimeType = d->mimeTypes[static_cast<int>(d->audioFormat)];
 		d->isValid = true;
 	}
 }
@@ -192,12 +193,12 @@ const char *GBS::systemName(unsigned int type) const
 
 	// Bits 0-1: Type. (long, short, abbreviation)
 	// Bit 2: GBS or GBR.
-	static const char *const sysNames[2][4] = {
-		{"Game Boy Sound System", "GBS", "GBS", nullptr},
-		{"Game Boy Ripped", "GBR", "GBR", nullptr},
-	};
+	static const array<array<const char*, 4>, 2> sysNames = {{
+		{{"Game Boy Sound System", "GBS", "GBS", nullptr}},
+		{{"Game Boy Ripped", "GBR", "GBR", nullptr}},
+	}};
 
-	return sysNames[((int)d->audioFormat) & 1][type & SYSNAME_TYPE_MASK];
+	return sysNames[(static_cast<int>(d->audioFormat)) & 1][type & SYSNAME_TYPE_MASK];
 }
 
 /**
@@ -323,7 +324,7 @@ int GBS::loadFieldData(void)
 int GBS::loadMetaData(void)
 {
 	RP_D(GBS);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -339,33 +340,30 @@ int GBS::loadMetaData(void)
 		return -ENOENT;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(3);	// Maximum of 3 metadata properties.
-
 	// GBS header.
 	const GBS_Header *const gbs = &d->header.gbs;
+	d->metaData.reserve(3);	// Maximum of 3 metadata properties.
 
 	// Title.
 	if (gbs->title[0] != 0) {
-		d->metaData->addMetaData_string(Property::Title,
+		d->metaData.addMetaData_string(Property::Title,
 			cp1252_sjis_to_utf8(gbs->title, sizeof(gbs->title)));
 	}
 
 	// Composer.
 	if (gbs->composer[0] != 0) {
-		d->metaData->addMetaData_string(Property::Composer,
+		d->metaData.addMetaData_string(Property::Composer,
 			cp1252_sjis_to_utf8(gbs->composer, sizeof(gbs->composer)));
 	}
 
 	// Copyright.
 	if (gbs->copyright[0] != 0) {
-		d->metaData->addMetaData_string(Property::Copyright,
+		d->metaData.addMetaData_string(Property::Copyright,
 			cp1252_sjis_to_utf8(gbs->copyright, sizeof(gbs->copyright)));
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

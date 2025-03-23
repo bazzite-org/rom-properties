@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librptexture)                     *
  * ASTC.hpp: ASTC image reader.                                            *
  *                                                                         *
- * Copyright (c) 2017-2023 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -21,13 +21,16 @@ using LibRpBase::RomFields;
 #include "img/rp_image.hpp"
 #include "decoder/ImageDecoder_ASTC.hpp"
 
+// C++ STL classes
+using std::array;
+using std::string;
+
 namespace LibRpTexture {
 
 class ASTCPrivate final : public FileFormatPrivate
 {
 	public:
 		ASTCPrivate(ASTC *q, const IRpFilePtr &file);
-		~ASTCPrivate() final = default;
 
 	private:
 		typedef FileFormatPrivate super;
@@ -35,8 +38,8 @@ class ASTCPrivate final : public FileFormatPrivate
 
 	public:
 		/** TextureInfo **/
-		static const char *const exts[];
-		static const char *const mimeTypes[];
+		static const array<const char*, 2+1> exts;
+		static const array<const char*, 1+1> mimeTypes;
 		static const TextureInfo textureInfo;
 
 	public:
@@ -47,7 +50,7 @@ class ASTCPrivate final : public FileFormatPrivate
 		rp_image_ptr img;
 
 		// Pixel format message
-		char pixel_format[20];
+		mutable string pixel_format;
 
 		/**
 		 * Load the image.
@@ -61,20 +64,20 @@ FILEFORMAT_IMPL(ASTC)
 /** ASTCPrivate **/
 
 /* TextureInfo */
-const char *const ASTCPrivate::exts[] = {
+const array<const char*, 2+1> ASTCPrivate::exts = {{
 	".astc",
 	".dds",	// Some .dds files are actually ASTC.
 
 	nullptr
-};
-const char *const ASTCPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> ASTCPrivate::mimeTypes = {{
 	// Official MIME types.
 	"image/astc",
 
 	nullptr
-};
+}};
 const TextureInfo ASTCPrivate::textureInfo = {
-	exts, mimeTypes
+	exts.data(), mimeTypes.data()
 };
 
 ASTCPrivate::ASTCPrivate(ASTC *q, const IRpFilePtr &file)
@@ -82,7 +85,6 @@ ASTCPrivate::ASTCPrivate(ASTC *q, const IRpFilePtr &file)
 {
 	// Clear the structs and arrays.
 	memset(&astcHeader, 0, sizeof(astcHeader));
-	memset(pixel_format, 0, sizeof(pixel_format));
 }
 
 /**
@@ -235,23 +237,20 @@ ASTC::ASTC(const IRpFilePtr &file)
 const char *ASTC::pixelFormat(void) const
 {
 	RP_D(const ASTC);
-	if (!d->isValid)
+	if (!d->isValid) {
 		return nullptr;
+	}
 
-	if (d->pixel_format[0] == '\0') {
+	if (d->pixel_format.empty()) {
 		if (d->dimensions[2] <= 1) {
-			snprintf(const_cast<ASTCPrivate*>(d)->pixel_format,
-				sizeof(d->pixel_format),
-				"ASTC_%dx%d",
+			d->pixel_format = fmt::format(FSTR("ASTC_{:d}x{:d}"),
 				d->astcHeader.blockdimX, d->astcHeader.blockdimY);
 		} else {
-			snprintf(const_cast<ASTCPrivate*>(d)->pixel_format,
-				sizeof(d->pixel_format),
-				"ASTC_%dx%dx%d",
+			d->pixel_format = fmt::format(FSTR("ASTC_{:d}x{:d}x{:d}"),
 				d->astcHeader.blockdimX, d->astcHeader.blockdimY, d->astcHeader.blockdimZ);
 		}
 	}
-	return d->pixel_format;
+	return d->pixel_format.c_str();
 }
 
 #ifdef ENABLE_LIBRPBASE_ROMFIELDS
@@ -297,4 +296,4 @@ rp_image_const_ptr ASTC::image(void) const
 	return const_cast<ASTCPrivate*>(d)->loadImage();
 }
 
-}
+} // namespace LibRpTexture

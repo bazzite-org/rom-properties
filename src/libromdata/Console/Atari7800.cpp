@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * Atari7800.cpp: Atari 7800 ROM reader.                                   *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -24,7 +24,7 @@ namespace LibRomData {
 class Atari7800Private final : public RomDataPrivate
 {
 public:
-	Atari7800Private(const IRpFilePtr &file);
+	explicit Atari7800Private(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -32,8 +32,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -46,19 +46,19 @@ ROMDATA_IMPL(Atari7800)
 /** Atari7800Private **/
 
 /* RomDataInfo */
-const char *const Atari7800Private::exts[] = {
+const array<const char*, 1+1> Atari7800Private::exts = {{
 	".a78",
 
 	nullptr
-};
-const char *const Atari7800Private::mimeTypes[] = {
+}};
+const array<const char*, 1+1> Atari7800Private::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	"application/x-atari-7800-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo Atari7800Private::romDataInfo = {
-	"Atari7800", exts, mimeTypes
+	"Atari7800", exts.data(), mimeTypes.data()
 };
 
 Atari7800Private::Atari7800Private(const IRpFilePtr &file)
@@ -166,9 +166,9 @@ const char *Atari7800::systemName(unsigned int type) const
 		"Atari7800::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Atari 7800", "Atari 7800", "7800", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -213,11 +213,8 @@ int Atari7800::loadFieldData(void)
 			(romHeader->tv_type & ATARI_A78_TVType_Format_Mask) ? "PAL" : "NTSC");
 	} else {
 		// Component: no artifacting
-		char s_tv_type[32];
-		snprintf(s_tv_type, sizeof(s_tv_type), "%s, %s",
-			(romHeader->tv_type & ATARI_A78_TVType_Format_Mask) ? "PAL" : "NTSC",
-			(romHeader->tv_type & ATARI_A78_TVType_Artifacts_Mask) ? "component" : "composite");
-		d->fields.addField_string(tv_type_title, s_tv_type);
+		d->fields.addField_string(tv_type_title,
+			(romHeader->tv_type & ATARI_A78_TVType_Format_Mask) ? "PAL, component" : "NTSC, component");
 	}
 
 	// Controllers
@@ -239,7 +236,7 @@ int Atari7800::loadFieldData(void)
 		"SNES2Atari"
 	}};
 	for (unsigned int i = 0; i < 2; i++) {
-		const string control_title = rp_sprintf(C_("Atari7800", "Controller %u"), i+1);
+		const string control_title = fmt::format(FRUN(C_("Atari7800", "Controller {:d}")), i+1);
 		const uint8_t control_type = romHeader->control_types[i];
 
 		if (control_type < controller_tbl.size()) {
@@ -248,7 +245,7 @@ int Atari7800::loadFieldData(void)
 					controller_tbl[control_type]));
 		} else {
 			d->fields.addField_string(control_title.c_str(),
-				rp_sprintf(C_("RomData", "Unknown (%u)"), control_type));
+				fmt::format(FRUN(C_("RomData", "Unknown ({:d})")), control_type));
 		}
 	}
 
@@ -266,7 +263,7 @@ int Atari7800::loadFieldData(void)
 int Atari7800::loadMetaData(void)
 {
 	RP_D(Atari7800);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -277,22 +274,19 @@ int Atari7800::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
 	const Atari_A78Header *const romHeader = &d->romHeader;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Title
 	// NOTE: Should be ASCII, but allowing cp1252.
 	if (romHeader->title[0] != '\0') {
-		d->metaData->addMetaData_string(Property::Title,
+		d->metaData.addMetaData_string(Property::Title,
 			cp1252_to_utf8(romHeader->title, sizeof(romHeader->title)),
 			RomMetaData::STRF_TRIM_END);
 	}
 
 	// Finished reading the metadata.
-	return (d->metaData ? static_cast<int>(d->metaData->count()) : -ENOENT);
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (GTK+ common)                      *
  * ImageTypesTab.cpp: Image Types tab for rp-config.                       *
  *                                                                         *
- * Copyright (c) 2017-2024 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -23,16 +23,16 @@ using namespace LibRomData;
 using LibRpBase::RomData;
 using namespace LibRpText;
 
-#if GTK_CHECK_VERSION(3,0,0)
+#if GTK_CHECK_VERSION(3, 0, 0)
 typedef GtkBoxClass superclass;
 typedef GtkBox super;
 #  define GTK_TYPE_SUPER GTK_TYPE_BOX
 #  define USE_GTK_GRID 1	// Use GtkGrid instead of GtkTable.
-#else /* !GTK_CHECK_VERSION(3,0,0) */
+#else /* !GTK_CHECK_VERSION(3, 0, 0) */
 typedef GtkVBoxClass superclass;
 typedef GtkVBox super;
 #  define GTK_TYPE_SUPER GTK_TYPE_VBOX
-#endif /* GTK_CHECK_VERSION(3,0,0) */
+#endif /* GTK_CHECK_VERSION(3, 0, 0) */
 
 class RpImageTypesTabPrivate final : public TImageTypesConfig<OurComboBox*>
 {
@@ -68,7 +68,10 @@ protected:
 	/**
 	 * Finish adding the ComboBoxes.
 	 */
-	void finishComboBoxes(void) final;
+	void finishComboBoxes(void) final
+	{
+		// Nothing to do here.
+	}
 
 	/**
 	 * Write an ImageType configuration entry.
@@ -98,11 +101,6 @@ public:
 	void initStrings(void);
 
 public:
-	// Last ComboBox added.
-	// Needed in order to set the correct
-	// tab order for the credits label.
-	OurComboBox *cboImageType_lastAdded;
-
 	// Temporary GKeyFile object.
 	// Set and cleared by ImageTypesTab::save();
 	GKeyFile *keyFile;
@@ -158,16 +156,11 @@ G_DEFINE_TYPE_EXTENDED(RpImageTypesTab, rp_image_types_tab,
 
 RpImageTypesTabPrivate::RpImageTypesTabPrivate(RpImageTypesTab* q)
 	: q(q)
-	, cboImageType_lastAdded(nullptr)
 	, keyFile(nullptr)
 { }
 
 RpImageTypesTabPrivate::~RpImageTypesTabPrivate()
 {
-	// cboImageType_lastAdded should be nullptr.
-	// (Cleared by finishComboBoxes().)
-	assert(cboImageType_lastAdded == nullptr);
-
 	// keyFile should be nullptr,
 	// since it's only used when saving.
 	assert(keyFile == nullptr);
@@ -192,23 +185,21 @@ void RpImageTypesTabPrivate::createGridLabels(void)
 		}
 
 		GtkWidget *const lblImageType = gtk_label_new(imageTypeName(i));
-		char lbl_name[32];
-		snprintf(lbl_name, sizeof(lbl_name), "lblImageType%u", i);
-		gtk_widget_set_name(lblImageType, lbl_name);
+		gtk_widget_set_name(lblImageType, fmt::format(FSTR("lblImageType{:d}"), i).c_str());
 
-#if !GTK_CHECK_VERSION(4,0,0)
+#if !GTK_CHECK_VERSION(4, 0, 0)
 		gtk_widget_show(lblImageType);
-#endif /* !GTK_CHECK_VERSION(4,0,0) */
+#endif /* !GTK_CHECK_VERSION(4, 0, 0) */
 		GTK_LABEL_XALIGN_CENTER(lblImageType);
 		gtk_label_set_justify(GTK_LABEL(lblImageType), GTK_JUSTIFY_CENTER);
-#if GTK_CHECK_VERSION(3,0,0)
+#if GTK_CHECK_VERSION(3, 0, 0)
 		gtk_widget_set_margin_start(lblImageType, 3);
 		gtk_widget_set_margin_end(lblImageType, 3);
 		gtk_widget_set_margin_bottom(lblImageType, 4);
-#else /* !GTK_CHECK_VERSION(3,0,0) */
+#else /* !GTK_CHECK_VERSION(3, 0, 0) */
 		g_object_set(G_OBJECT(lblImageType), "xpad", 3, nullptr);
 		g_object_set(G_OBJECT(lblImageType), "ypad", 4, nullptr);
-#endif /* GTK_CHECK_VERSION(3,0,0) */
+#endif /* GTK_CHECK_VERSION(3, 0, 0) */
 
 #ifdef USE_GTK_GRID
 		gtk_grid_attach(GTK_GRID(q->tblImageTypes), lblImageType, i+1, 0, 1, 1);
@@ -221,19 +212,17 @@ void RpImageTypesTabPrivate::createGridLabels(void)
 	const unsigned int sysCount = ImageTypesConfig::sysCount();
 	for (unsigned int sys = 0; sys < sysCount; sys++) {
 		GtkWidget *const lblSysName = gtk_label_new(sysName(sys));
-		char lbl_name[32];
-		snprintf(lbl_name, sizeof(lbl_name), "lblSysName%u", sys);
-		gtk_widget_set_name(lblSysName, lbl_name);
+		gtk_widget_set_name(lblSysName, fmt::format(FSTR("lblSysName{:d}"), sys).c_str());
 
-#if !GTK_CHECK_VERSION(4,0,0)
+#if !GTK_CHECK_VERSION(4, 0, 0)
 		gtk_widget_show(lblSysName);
-#endif /* !GTK_CHECK_VERSION(4,0,0) */
+#endif /* !GTK_CHECK_VERSION(4, 0, 0) */
 		GTK_LABEL_XALIGN_LEFT(lblSysName);
-#if GTK_CHECK_VERSION(3,0,0)
+#if GTK_CHECK_VERSION(3, 0, 0)
 		gtk_widget_set_margin_end(lblSysName, 6);
-#else /* !GTK_CHECK_VERSION(3,0,0) */
+#else /* !GTK_CHECK_VERSION(3, 0, 0) */
 		g_object_set(G_OBJECT(lblSysName), "xpad", 6, nullptr);
-#endif /* GTK_CHECK_VERSION(3,0,0) */
+#endif /* GTK_CHECK_VERSION(3, 0, 0) */
 
 #ifdef USE_GTK_GRID
 		gtk_grid_attach(GTK_GRID(q->tblImageTypes), lblSysName, 0, sys+1, 1, 1);
@@ -269,11 +258,9 @@ void RpImageTypesTabPrivate::createComboBox(unsigned int cbid)
 	GtkWidget *const cbo = gtk_combo_box_new();
 #endif /* USE_GTK_DROP_DOWN */
 
-	char cbo_name[32];
-	snprintf(cbo_name, sizeof(cbo_name), "cbo%04X", cbid);
-	gtk_widget_set_name(cbo, cbo_name);
+	gtk_widget_set_name(cbo, fmt::format(FSTR("cbo{:0>4X}"), cbid).c_str());
 
-#if !GTK_CHECK_VERSION(4,0,0)
+#if !GTK_CHECK_VERSION(4, 0, 0)
 	gtk_widget_show(cbo);
 #endif /* !GTK_CHECK_VERSION */
 #ifdef USE_GTK_GRID
@@ -298,14 +285,6 @@ void RpImageTypesTabPrivate::createComboBox(unsigned int cbid)
 #else /* !USE_GTK_DROP_DOWN */
 	g_signal_connect(cbo, "changed", G_CALLBACK(rp_image_types_tab_modified_handler), q);
 #endif /* USE_GTK_DROP_DOWN */
-
-	// Adjust the tab order. [TODO]
-#if 0
-	if (cboImageType_lastAdded) {
-		q->setTabOrder(cboImageType_lastAdded, cbo);
-	}
-	cboImageType_lastAdded = cbo;
-#endif /* 0 */
 }
 
 /**
@@ -336,9 +315,7 @@ void RpImageTypesTabPrivate::addComboBoxStrings(unsigned int cbid, int max_prio)
 	// tr: Don't use this image type for this particular system.
 	gtk_string_list_append(list, C_("ImageTypesTab|Values", "No"));
 	for (int i = 1; i <= max_prio; i++) {
-		char buf[16];
-		snprintf(buf, sizeof(buf), "%d", i);
-		gtk_string_list_append(list, buf);
+		gtk_string_list_append(list, fmt::to_string(i).c_str());
 	}
 
 	gtk_drop_down_set_model(cbo, G_LIST_MODEL(list));
@@ -348,9 +325,8 @@ void RpImageTypesTabPrivate::addComboBoxStrings(unsigned int cbid, int max_prio)
 	GtkListStore *const lstCbo = gtk_list_store_new(1, G_TYPE_STRING);
 	gtk_list_store_insert_with_values(lstCbo, nullptr, 0, 0, C_("ImageTypesTab|Values", "No"), -1);
 	for (int i = 1; i <= max_prio; i++) {
-		char buf[16];
-		snprintf(buf, sizeof(buf), "%d", i);
-		gtk_list_store_insert_with_values(lstCbo, nullptr, i, 0, buf, -1);
+		gtk_list_store_insert_with_values(lstCbo, nullptr, i,
+			0, fmt::to_string(i).c_str(), -1);
 	}
 
 	gtk_combo_box_set_model(cbo, GTK_TREE_MODEL(lstCbo));
@@ -365,24 +341,6 @@ void RpImageTypesTabPrivate::addComboBoxStrings(unsigned int cbid, int max_prio)
 
 	SET_CBO(cbo, 0);
 	q->inhibit = prev_inhibit;
-}
-
-/**
- * Finish adding the ComboBoxes.
- */
-void RpImageTypesTabPrivate::finishComboBoxes(void)
-{
-	if (!cboImageType_lastAdded) {
-		// Nothing to do here.
-		return;
-	}
-
-	/* TODO
-	// Set the tab order for the credits label.
-	Q_Q(RpImageTypesTab);
-	q->setTabOrder(cboImageType_lastAdded, ui.lblCredits);
-	cboImageType_lastAdded = nullptr;
-	*/
 }
 
 /**
@@ -458,10 +416,10 @@ rp_image_types_tab_rp_config_tab_interface_init(RpConfigTabInterface *iface)
 static void
 rp_image_types_tab_init(RpImageTypesTab *tab)
 {
-#if GTK_CHECK_VERSION(3,0,0)
+#if GTK_CHECK_VERSION(3, 0, 0)
 	// Make this a VBox.
 	gtk_orientable_set_orientation(GTK_ORIENTABLE(tab), GTK_ORIENTATION_VERTICAL);
-#endif /* GTK_CHECK_VERSION(3,0,0) */
+#endif /* GTK_CHECK_VERSION(3, 0, 0) */
 	gtk_box_set_spacing(GTK_BOX(tab), 8);
 
 	// Create the base widgets for the Image Types tab.
@@ -502,13 +460,13 @@ rp_image_types_tab_init(RpImageTypesTab *tab)
 	tab->d = new RpImageTypesTabPrivate(tab);
 	tab->d->createGrid();
 
-#if GTK_CHECK_VERSION(4,0,0)
+#if GTK_CHECK_VERSION(4, 0, 0)
 	gtk_box_append(GTK_BOX(tab), lblImageTypes);
 	gtk_box_append(GTK_BOX(tab), tab->tblImageTypes);
 
 	// TODO: Spacer and/or alignment?
 	gtk_box_append(GTK_BOX(tab), tab->lblCredits);
-#else /* !GTK_CHECK_VERSION(4,0,0) */
+#else /* !GTK_CHECK_VERSION(4, 0, 0) */
 	gtk_box_pack_start(GTK_BOX(tab), lblImageTypes, false, false, 0);
 	gtk_box_pack_start(GTK_BOX(tab), tab->tblImageTypes, false, false, 0);
 
@@ -518,7 +476,7 @@ rp_image_types_tab_init(RpImageTypesTab *tab)
 	gtk_widget_show(lblImageTypes);
 	gtk_widget_show(tab->tblImageTypes);
 	gtk_widget_show(tab->lblCredits);
-#endif /* GTK_CHECK_VERSION(4,0,0) */
+#endif /* GTK_CHECK_VERSION(4, 0, 0) */
 
 	// Load the current configuration.
 	rp_image_types_tab_reset(tab);

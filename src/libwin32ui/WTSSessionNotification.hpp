@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libwin32ui)                                *
  * WTSSessionNotification.hpp: WTSRegisterSessionNotification() RAII wrapper class. *
  *                                                                                  *
- * Copyright (c) 2016-2023 by David Korth.                                          *
+ * Copyright (c) 2016-2025 by David Korth.                                          *
  * SPDX-License-Identifier: GPL-2.0-or-later                                        *
  ************************************************************************************/
 
@@ -53,8 +53,8 @@ public:
 		}
 
 		// Register for WTS session notifications.
-		PFNWTSREGISTERSESSIONNOTIFICATION pfnWTSRegisterSessionNotification =
-			(PFNWTSREGISTERSESSIONNOTIFICATION)GetProcAddress(m_hWtsApi32_dll, "WTSRegisterSessionNotification");
+		pfnWTSRegisterSessionNotification_t pfnWTSRegisterSessionNotification =
+			(pfnWTSRegisterSessionNotification_t)GetProcAddress(m_hWtsApi32_dll, "WTSRegisterSessionNotification");
 		if (pfnWTSRegisterSessionNotification) {
 			return pfnWTSRegisterSessionNotification(hWnd, dwFlags);
 		}
@@ -76,8 +76,8 @@ public:
 		}
 
 		// Unregister for WTS session notifications.
-		PFNWTSUNREGISTERSESSIONNOTIFICATION pfnWTSUnRegisterSessionNotification =
-			(PFNWTSUNREGISTERSESSIONNOTIFICATION)GetProcAddress(m_hWtsApi32_dll, "WTSUnRegisterSessionNotification");
+		pfnWTSUnregisterSessionNotification_t pfnWTSUnRegisterSessionNotification =
+			(pfnWTSUnregisterSessionNotification_t)GetProcAddress(m_hWtsApi32_dll, "WTSUnRegisterSessionNotification");
 		if (pfnWTSUnRegisterSessionNotification) {
 			return pfnWTSUnRegisterSessionNotification(hWnd);
 		}
@@ -88,21 +88,15 @@ public:
 	}
 
 	// Disable copy/assignment constructors.
-#if __cplusplus >= 201103L
 public:
 	WTSSessionNotification(const WTSSessionNotification &) = delete;
 	WTSSessionNotification &operator=(const WTSSessionNotification &) = delete;
-#else /* __cplusplus < 201103L */
-private:
-	WTSSessionNotification(const WTSSessionNotification &);
-	WTSSessionNotification &operator=(const WTSSessionNotification &);
-#endif /* __cplusplus */
 
 private:
 	// TODO: Make it static and use reference counting?
 	HMODULE m_hWtsApi32_dll;
-	typedef BOOL (WINAPI *PFNWTSREGISTERSESSIONNOTIFICATION)(HWND hWnd, DWORD dwFlags);
-	typedef BOOL (WINAPI *PFNWTSUNREGISTERSESSIONNOTIFICATION)(HWND hWnd);
+	typedef BOOL (WINAPI *pfnWTSRegisterSessionNotification_t)(HWND hWnd, DWORD dwFlags);
+	typedef BOOL (WINAPI *pfnWTSUnregisterSessionNotification_t)(HWND hWnd);
 };
 
 }

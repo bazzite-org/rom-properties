@@ -2,12 +2,15 @@
  * ROM Properties Page shell extension. (librpfile)                        *
  * IRpFile.cpp: File wrapper interface.                                    *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
 #include "stdafx.h"
 #include "IRpFile.hpp"
+
+// C++ STL classes
+using std::unique_ptr;
 
 namespace LibRpFile {
 
@@ -16,6 +19,7 @@ IRpFile::IRpFile()
 	, m_isWritable(false)
 	, m_isCompressed(false)
 	, m_fileType(DT_REG)
+	, m_padding(0)
 {
 	static_assert(sizeof(off64_t) == 8, "off64_t is not 64-bit!");
 }
@@ -75,16 +79,16 @@ int IRpFile::copyTo(IRpFile *pDestFile, off64_t size,
 	off64_t cbReadTotal = 0;
 	off64_t cbWrittenTotal = 0;
 
-	// Read buffer.
-#define COPYTO_BUFFER_SIZE (64*1024)
-	uint8_t *buf = static_cast<uint8_t*>(malloc(COPYTO_BUFFER_SIZE));
+	// Read buffer
+	static constexpr size_t COPYTO_BUFFER_SIZE = 64U * 1024U;
+	unique_ptr<uint8_t[]> buf(new uint8_t[COPYTO_BUFFER_SIZE]);
 
 	// Copy the data.
 	for (; size > 0; size -= COPYTO_BUFFER_SIZE) {
-		const size_t cbRead = this->read(buf, COPYTO_BUFFER_SIZE);
+		const size_t cbRead = this->read(buf.get(), COPYTO_BUFFER_SIZE);
 		cbReadTotal += cbRead;
 		if (cbRead != COPYTO_BUFFER_SIZE &&
-		    (size < COPYTO_BUFFER_SIZE && cbRead != (size_t)size))
+		    (size < static_cast<off64_t>(COPYTO_BUFFER_SIZE) && cbRead != static_cast<size_t>(size)))
 		{
 			// Short read. We'll continue with a final write.
 			ret = -this->m_lastError;
@@ -96,7 +100,7 @@ int IRpFile::copyTo(IRpFile *pDestFile, off64_t size,
 				break;
 		}
 
-		const size_t cbWritten = pDestFile->write(buf, cbRead);
+		const size_t cbWritten = pDestFile->write(buf.get(), cbRead);
 		cbWrittenTotal += cbWritten;
 		if (cbWritten != cbRead) {
 			// Short write.
@@ -114,7 +118,6 @@ int IRpFile::copyTo(IRpFile *pDestFile, off64_t size,
 	if (pcbWritten) {
 		*pcbWritten = cbWrittenTotal;
 	}
-	free(buf);
 	return ret;
 }
 

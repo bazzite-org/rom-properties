@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * RpTextureWrapper.hpp: librptexture file format wrapper.                 *
  *                                                                         *
- * Copyright (c) 2019-2023 by David Korth.                                 *
+ * Copyright (c) 2019-2024 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -17,6 +17,7 @@ using namespace LibRpFile;
 using namespace LibRpTexture;
 
 // C++ STL classes
+using std::array;
 using std::vector;
 
 namespace LibRomData {
@@ -24,8 +25,7 @@ namespace LibRomData {
 class RpTextureWrapperPrivate final : public RomDataPrivate
 {
 public:
-	RpTextureWrapperPrivate(const IRpFilePtr &file);
-	~RpTextureWrapperPrivate() final = default;
+	explicit RpTextureWrapperPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -33,8 +33,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 0+1> exts;
+	static const array<const char*, 0+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -50,14 +50,14 @@ ROMDATA_IMPL_IMG_TYPES(RpTextureWrapper)
 /* RomDataInfo */
 // NOTE: RomDataFactory queries extensions and MIME types from
 // FileFormatFactory directly, so these aren't used.
-const char *const RpTextureWrapperPrivate::exts[] = {
+const array<const char*, 0+1> RpTextureWrapperPrivate::exts = {{
 	nullptr
-};
-const char *const RpTextureWrapperPrivate::mimeTypes[] = {
+}};
+const array<const char*, 0+1> RpTextureWrapperPrivate::mimeTypes = {{
 	nullptr
-};
+}};
 const RomDataInfo RpTextureWrapperPrivate::romDataInfo = {
-	"RpTextureWrapper", exts, mimeTypes
+	"RpTextureWrapper", exts.data(), mimeTypes.data()
 };
 
 RpTextureWrapperPrivate::RpTextureWrapperPrivate(const IRpFilePtr &file)
@@ -301,7 +301,7 @@ int RpTextureWrapper::loadFieldData(void)
 int RpTextureWrapper::loadMetaData(void)
 {
 	RP_D(RpTextureWrapper);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -312,24 +312,22 @@ int RpTextureWrapper::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(2);	// Maximum of 2 metadata properties.
+	d->metaData.reserve(2);	// Maximum of 2 metadata properties.
 
 	// Dimensions
 	int dimensions[3];
 	int ret = d->texture->getDimensions(dimensions);
 	if (ret == 0) {
 		if (dimensions[0] > 0) {
-			d->metaData->addMetaData_integer(Property::Width, dimensions[0]);
+			d->metaData.addMetaData_integer(Property::Width, dimensions[0]);
 		}
 		if (dimensions[1] > 0) {
-			d->metaData->addMetaData_integer(Property::Height, dimensions[1]);
+			d->metaData.addMetaData_integer(Property::Height, dimensions[1]);
 		}
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -388,7 +386,7 @@ int RpTextureWrapper::loadInternalMipmap(int mipmapLevel, LibRpTexture::rp_image
 
 	// Get the mipmap.
 	pImage = d->texture->mipmap(mipmapLevel);
-	return ((bool)pImage ? 0 : -EIO);
+	return (pImage) ? 0 : -EIO;
 }
 
 /** Pixel format **/
@@ -427,11 +425,10 @@ const char *RpTextureWrapper::dx10Format(void) const
 	// NOTE: The string is localized, but our Google Test initializer
 	// sets LC_ALL=C, which disables localization.
 	// NOTE 2: This should not be used outside of tests for now!
-	const auto fields_cend = d->fields.cend();
-	for (auto iter = d->fields.cbegin(); iter != fields_cend; ++iter) {
-		if (iter->type == RomFields::RFT_STRING && !strcmp(iter->name, "DX10 Format")) {
+	for (const RomFields::Field &field : d->fields) {
+		if (field.type == RomFields::RFT_STRING && !strcmp(field.name, "DX10 Format")) {
 			// Found the DX10 format.
-			return iter->data.str;
+			return field.data.str;
 		}
 	}
 
@@ -439,4 +436,4 @@ const char *RpTextureWrapper::dx10Format(void) const
 	return nullptr;
 }
 
-}
+} // namespace LibRomData

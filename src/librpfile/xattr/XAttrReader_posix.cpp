@@ -30,6 +30,9 @@
 // Ext2 flags (also used for Ext3, Ext4, and other Linux file systems)
 #include "ext2_flags.h"
 
+// DOS attributes
+#include "dos_attrs.h"
+
 #ifdef __linux__
 // for the following ioctls:
 // - FS_IOC_GETFLAGS (equivalent to EXT2_IOC_GETFLAGS)
@@ -84,6 +87,17 @@ extern "C" {
 
 namespace LibRpFile {
 
+// Valid MS-DOS attributes
+static constexpr unsigned int VALID_DOS_ATTRIBUTES_FAT = \
+	FILE_ATTRIBUTE_READONLY | \
+	FILE_ATTRIBUTE_HIDDEN | \
+	FILE_ATTRIBUTE_SYSTEM | \
+	FILE_ATTRIBUTE_ARCHIVE;
+static constexpr unsigned int VALID_DOS_ATTRIBUTES_NTFS = \
+	VALID_DOS_ATTRIBUTES_FAT | \
+	FILE_ATTRIBUTE_COMPRESSED | \
+	FILE_ATTRIBUTE_ENCRYPTED;
+
 /** XAttrReaderPrivate **/
 
 XAttrReaderPrivate::XAttrReaderPrivate(const char *filename)
@@ -97,6 +111,7 @@ XAttrReaderPrivate::XAttrReaderPrivate(const char *filename)
 	, xfsXFlags(0)
 	, xfsProjectId(0)
 	, dosAttributes(0)
+	, validDosAttributes(0)
 {
 	// Make sure this is a regular file or a directory.
 	mode_t mode;
@@ -136,7 +151,7 @@ XAttrReaderPrivate::XAttrReaderPrivate(const char *filename)
 	// Open the file to get attributes.
 	// TODO: Move this to librpbase or libromdata,
 	// and add configure checks for FAT_IOCTL_GET_ATTRIBUTES.
-#define OPEN_FLAGS (O_RDONLY|O_NONBLOCK|O_LARGEFILE)
+	static constexpr int OPEN_FLAGS = (O_RDONLY | O_NONBLOCK | O_LARGEFILE);
 	errno = 0;
 	fd = open(filename, OPEN_FLAGS);
 	if (fd < 0) {
@@ -149,7 +164,12 @@ XAttrReaderPrivate::XAttrReaderPrivate(const char *filename)
 	}
 
 	// Initialize attributes.
-	lastError = init();
+	loadExt2Attrs();
+	loadXfsAttrs();
+	loadDosAttrs();
+	loadGenericXattrs();
+
+	lastError = 0;
 	close(fd);
 	fd = -1;
 }
@@ -160,55 +180,6 @@ XAttrReaderPrivate::~XAttrReaderPrivate()
 	if (fd >= 0) {
 		close(fd);
 	}
-}
-
-/**
- * Initialize attributes.
- * Internal fd (filename on Windows) must be set.
- * @return 0 on success; negative POSIX error code on error.
- */
-int XAttrReaderPrivate::init(void)
-{
-	// Verify the file type again using fstat().
-	mode_t mode;
-
-#ifdef HAVE_STATX
-	struct statx sbx;
-	int ret = statx(fd, "", AT_EMPTY_PATH, STATX_TYPE, &sbx);
-	if (ret != 0 || !(sbx.stx_mask & STATX_TYPE)) {
-		// An error occurred.
-		int err = -errno;
-		if (err == 0) {
-			err = -EIO;
-		}
-		return err;
-	}
-	mode = sbx.stx_mode;
-#else /* !HAVE_STATX */
-	struct stat sb;
-	errno = 0;
-	if (fstat(fd, &sb) != 0) {
-		// fstat() failed.
-		int err = -errno;
-		if (err == 0) {
-			err = -EIO;
-		}
-		return err;
-	}
-	mode = sb.st_mode;
-#endif /* HAVE_STATX */
-
-	if (!S_ISREG(mode) && !S_ISDIR(mode)) {
-		// This is neither a regular file nor a directory.
-		return -ENOTSUP;
-	}
-
-	// Load the attributes.
-	loadExt2Attrs();
-	loadXfsAttrs();
-	loadDosAttrs();
-	loadGenericXattrs();
-	return 0;
 }
 
 /**
@@ -295,9 +266,10 @@ int XAttrReaderPrivate::loadDosAttrs(void)
 	// Attempt to get MS-DOS attributes.
 
 #ifdef __linux__
-	// ioctl (Linux vfat only)
+	// ioctl (Linux FAT/exFAT only)
 	if (!ioctl(fd, FAT_IOCTL_GET_ATTRIBUTES, &dosAttributes)) {
 		// ioctl() succeeded. We have MS-DOS attributes.
+		validDosAttributes = VALID_DOS_ATTRIBUTES_FAT;
 		hasDosAttributes = true;
 		return 0;
 	}
@@ -324,6 +296,7 @@ int XAttrReaderPrivate::loadDosAttrs(void)
 		ssize_t sz = fgetxattr(fd, p.name, buf.u8, sizeof(buf.u8));
 		if (sz == 4) {
 			dosAttributes = (p.be32) ? be32_to_cpu(buf.u32) : le32_to_cpu(buf.u32);
+			validDosAttributes = VALID_DOS_ATTRIBUTES_NTFS;
 			hasDosAttributes = true;
 			return 0;
 		}
@@ -500,4 +473,4 @@ int XAttrReaderPrivate::loadGenericXattrs(void)
 	return 0;
 }
 
-}
+} // namespace LibRpFile

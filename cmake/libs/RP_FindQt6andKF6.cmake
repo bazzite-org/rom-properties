@@ -7,6 +7,7 @@ MACRO(FIND_QT6_AND_KF6)
 
 	SET(ENV{QT_SELECT} qt6)
 	SET(QT_DEFAULT_MAJOR_VERSION 6)
+	SET(QT_NO_CREATE_VERSIONLESS_TARGETS TRUE)
 
 	# FIXME: Search for Qt6 first instead of ECM?
 	SET(KF6_MIN 5.248.0)
@@ -22,12 +23,8 @@ MACRO(FIND_QT6_AND_KF6)
 
 		# Include KF6 CMake modules.
 		LIST(APPEND CMAKE_MODULE_PATH ${ECM_MODULE_PATH} ${ECM_KDE_MODULE_DIR})
-		INCLUDE(KDEInstallDirs)
+		INCLUDE(KDEInstallDirs6)
 		INCLUDE(KDECMakeSettings)
-
-		# Qt6 requires "-fpic -fPIC" due to reduced relocations.
-		SET(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -fpic -fPIC")
-		SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpic -fPIC")
 
 		# Find Qt6.
 		SET(Qt6_NO_LINK_QTMAIN 1)
@@ -46,12 +43,13 @@ MACRO(FIND_QT6_AND_KF6)
 			#
 			# Arch:
 			# - Expected: lib/qt/plugins
-			# - Actual:   (FIXME)
+			# - Actual:   lib/qt6/plugins
 			#
 
 			# Find the qtpaths6 executable.
 			FIND_PROGRAM(QTPATHS6 NAMES qtpaths6 qtpaths
 				PATHS /usr/local/lib/qt6/bin	# FreeBSD
+				/usr/lib/qt6/bin	#Archlinux
 				)
 			IF(NOT QTPATHS6)
 				MESSAGE(FATAL_ERROR "qtpaths6 not found. Install one of these packages:
@@ -61,7 +59,8 @@ MACRO(FIND_QT6_AND_KF6)
 
 			# Get the plugin directory and Qt prefix.
 			# Prefix will be removed from the plugin directory if necessary.
-			EXEC_PROGRAM(${QTPATHS6} ARGS --plugin-dir OUTPUT_VARIABLE KF6_PLUGIN_INSTALL_DIR)
+			EXECUTE_PROCESS(COMMAND ${QTPATHS6} --plugin-dir OUTPUT_VARIABLE KF6_PLUGIN_INSTALL_DIR)
+			STRING(STRIP "${KF6_PLUGIN_INSTALL_DIR}" KF6_PLUGIN_INSTALL_DIR)
 			IF(NOT KF6_PLUGIN_INSTALL_DIR)
 				MESSAGE(FATAL_ERROR "`qtpaths6` isn't working correctly.")
 			ENDIF(NOT KF6_PLUGIN_INSTALL_DIR)
@@ -72,11 +71,13 @@ MACRO(FIND_QT6_AND_KF6)
 			SET(QT_PLUGIN_INSTALL_DIR "${KF6_PLUGIN_INSTALL_DIR}")
 
 			# Find KF6.
-			FIND_PACKAGE(KF6 ${REQUIRE_KF6} ${KF6_MIN} COMPONENTS KIO WidgetsAddons FileMetaData)
-			IF(NOT KF6KIO_FOUND OR NOT KF6WidgetsAddons_FOUND OR NOT KF6FileMetaData_FOUND)
+			# FIXME: Specifying the minimum version here breaks on Kubuntu 24.10.
+			#FIND_PACKAGE(KF6 ${REQUIRE_KF6} ${KF6_MIN} COMPONENTS KIO WidgetsAddons FileMetaData Crash)
+			FIND_PACKAGE(KF6 ${REQUIRE_KF6} COMPONENTS KIO WidgetsAddons FileMetaData Crash)
+			IF(NOT KF6KIO_FOUND OR NOT KF6WidgetsAddons_FOUND OR NOT KF6FileMetaData_FOUND OR NOT KF6Crash_FOUND)
 				# KF6 not found.
 				SET(BUILD_KF6 OFF CACHE INTERNAL "Build the KDE Frameworks 6 plugin." FORCE)
-			ENDIF(NOT KF6KIO_FOUND OR NOT KF6WidgetsAddons_FOUND OR NOT KF6FileMetaData_FOUND)
+			ENDIF(NOT KF6KIO_FOUND OR NOT KF6WidgetsAddons_FOUND OR NOT KF6FileMetaData_FOUND OR NOT KF6Crash_FOUND)
 
 			# KIO::ThumbnailCreator is always available in KF6.
 			SET(HAVE_KIOGUI_KIO_THUMBNAILCREATOR_H 1)

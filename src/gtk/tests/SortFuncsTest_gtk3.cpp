@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (gtk/tests)                        *
  * SortFuncsTest_gtk3.cpp: sort_funcs.c test (GTK2/GTK3)                   *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -26,6 +26,9 @@
 // C++ STL classes
 using std::array;
 using std::string;
+
+// libfmt
+#include "rp-libfmt.h"
 
 // Test data
 #include "SortFuncsTest_data.h"
@@ -64,7 +67,7 @@ void SortFuncsTest_gtk3::SetUp()
 	// Add the "randomized" list data.
 	// NOTE: Outer vector is rows, not columns!
 	// TODO: Add from the sorted data, then do a random sort?
-	for (auto *p : list_data_randomized) {
+	for (const auto *const p : list_data_randomized) {
 		GtkTreeIter treeIter;
 		gtk_list_store_append(listStore, &treeIter);
 		gtk_list_store_set(listStore, &treeIter, 0, p[0], 1, p[1], 2, p[2], 3, p[3], -1);
@@ -114,12 +117,8 @@ TEST_F(SortFuncsTest_gtk3, ascendingSort)
 		do {
 			gchar *str = nullptr;
 			gtk_tree_model_get(sortProxy, &iter, col, &str, -1);
-			EXPECT_NE(str, nullptr) << "Unexpected NULL string pointer";
-			if (str) {
-				EXPECT_NE(str[0], '\0') << "Unexpected empty string";
-				EXPECT_STREQ(sorted_strings_asc[col][row], str) << "sorting column " << col << ", checking row " << row;
-				g_free(str);
-			}
+			EXPECT_STREQ(sorted_strings_asc[col][row], str) << "sorting column " << col << ", checking row " << row;
+			g_free(str);
 
 			// Next row.
 			row++;
@@ -149,14 +148,9 @@ TEST_F(SortFuncsTest_gtk3, descendingSort)
 		do {
 			gchar *str = nullptr;
 			gtk_tree_model_get(sortProxy, &iter, col, &str, -1);
-			EXPECT_NE(str, nullptr) << "Unexpected NULL string pointer";
-			if (str) {
-				EXPECT_NE(str[0], '\0') << "Unexpected empty string";
-
-				const int drow = ARRAY_SIZE(sorted_strings_asc[row]) - row - 1;
-				EXPECT_STREQ(sorted_strings_asc[col][drow], str) << "sorting column " << col << ", checking row " << row;
-				g_free(str);
-			}
+			const int drow = ARRAY_SIZE(sorted_strings_asc[row]) - row - 1;
+			EXPECT_STREQ(sorted_strings_asc[col][drow], str) << "sorting column " << col << ", checking row " << row;
+			g_free(str);
 
 			// Next row.
 			row++;
@@ -174,7 +168,7 @@ TEST_F(SortFuncsTest_gtk3, descendingSort)
  */
 extern "C" int gtest_main(int argc, TCHAR *argv[])
 {
-	fprintf(stderr, "GTK%d UI frontend test suite: SortFuncs tests.\n\n", GTK_MAJOR_VERSION);
+	fmt::print(stderr, FSTR("GTK{:d} UI frontend test suite: SortFuncs tests.\n\n"), GTK_MAJOR_VERSION);
 	fflush(nullptr);
 
 	// coverity[fun_call_w_exception]: uncaught exceptions cause nonzero exit anyway, so don't warn.

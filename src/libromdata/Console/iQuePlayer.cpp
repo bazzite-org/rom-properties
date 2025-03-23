@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * iQuePlayer.cpp: iQue Player .cmd reader.                                *
  *                                                                         *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -23,6 +23,7 @@ using namespace LibRpTexture;
 #include "librptext/libc.h"
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::vector;
 
@@ -43,8 +44,7 @@ DELAYLOAD_TEST_FUNCTION_IMPL0(get_crc_table);
 class iQuePlayerPrivate final : public RomDataPrivate
 {
 public:
-	iQuePlayerPrivate(const IRpFilePtr &file);
-	~iQuePlayerPrivate() final = default;
+	explicit iQuePlayerPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -52,8 +52,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 2+1> exts;
+	static const array<const char*, 2+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -122,7 +122,7 @@ ROMDATA_IMPL_IMG(iQuePlayer)
 /** iQuePlayerPrivate **/
 
 /* RomDataInfo */
-const char *const iQuePlayerPrivate::exts[] = {
+const array<const char*, 2+1> iQuePlayerPrivate::exts = {{
 	// NOTE: These extensions may cause conflicts on
 	// Windows if fallback handling isn't working.
 
@@ -130,17 +130,17 @@ const char *const iQuePlayerPrivate::exts[] = {
 	".dat",		// NOTE: Conflicts with lots of files.
 
 	nullptr
-};
-const char *const iQuePlayerPrivate::mimeTypes[] = {
+}};
+const array<const char*, 2+1> iQuePlayerPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-ique-cmd",
 	"application/x-ique-dat",
 
 	nullptr
-};
+}};
 const RomDataInfo iQuePlayerPrivate::romDataInfo = {
-	"iQuePlayer", exts, mimeTypes
+	"iQuePlayer", exts.data(), mimeTypes.data()
 };
 
 iQuePlayerPrivate::iQuePlayerPrivate(const IRpFilePtr &file)
@@ -434,7 +434,7 @@ iQuePlayer::iQuePlayer(const IRpFilePtr &file)
 		fileSize	// szFile
 	};
 	d->iQueFileType = static_cast<iQuePlayerPrivate::IQueFileType>(isRomSupported_static(&info));
-	d->isValid = ((int)d->iQueFileType >= 0);
+	d->isValid = (static_cast<int>(d->iQueFileType) >= 0);
 
 	if (!d->isValid) {
 		d->file.reset();
@@ -510,7 +510,7 @@ int iQuePlayer::isRomSupported_static(const DetectInfo *info)
 		}
 	}
 
-	return (int)iQueFileType;
+	return static_cast<int>(iQueFileType);
 }
 
 /**
@@ -530,9 +530,9 @@ const char *iQuePlayer::systemName(unsigned int type) const
 		"iQuePlayer::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"iQue Player", "iQue Player", "iQue", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -617,7 +617,7 @@ int iQuePlayer::loadFieldData(void)
 	} else if (!d->file || !d->file->isOpen()) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->iQueFileType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->iQueFileType) < 0) {
 		// Unknown ROM image type.
 		return -EIO;
 	}
@@ -641,19 +641,19 @@ int iQuePlayer::loadFieldData(void)
 		}
 	}
 
-	// Content ID.
+	// Content ID
 	// NOTE: We don't want the "0x" prefix.
 	// This is sort of like Wii title IDs, but only the
 	// title ID low portion.
 	d->fields.addField_string(C_("iQuePlayer", "Content ID"),
-		rp_sprintf("%08X", be32_to_cpu(bbContentMetaDataHead->content_id)),
+		fmt::format(FSTR("{:0>8X}"), be32_to_cpu(bbContentMetaDataHead->content_id)),
 		RomFields::STRF_MONOSPACE);
 
 	if (d->iQueFileType == iQuePlayerPrivate::IQueFileType::DAT) {
-		// Ticket-specific fields.
+		// Ticket-specific fields
 		const iQuePlayer_BbTicketHead *const bbTicketHead = &d->bbTicketHead;
 
-		// Console ID.
+		// Console ID
 		// TODO: Hide the "0x" prefix?
 		d->fields.addField_string_numeric(C_("Nintendo", "Console ID"),
 			be32_to_cpu(bbTicketHead->bbId), RomFields::Base::Hex, 8,
@@ -662,14 +662,13 @@ int iQuePlayer::loadFieldData(void)
 
 	// Hardware access rights.
 	// TODO: Localization?
-	static const char *const hw_access_names[] = {
+	static const array<const char*, 10> hw_access_names = {{
 		"PI Buffer", "NAND Flash", "Memory Mapper",
 		"AES Engine", "New PI DMA", "GPIO",
 		"External I/O", "New PI Errors", "USB",
 		"SK Stack RAM"
-	};
-	vector<string> *const v_hw_access_names = RomFields::strArrayToVector(
-		hw_access_names, ARRAY_SIZE(hw_access_names));
+	}};
+	vector<string> *const v_hw_access_names = RomFields::strArrayToVector(hw_access_names);
 
 	d->fields.addField_bitfield(C_("iQuePlayer", "HW Access"),
 		v_hw_access_names, 3, be32_to_cpu(bbContentMetaDataHead->hwAccessRights));
@@ -686,20 +685,18 @@ int iQuePlayer::loadFieldData(void)
 int iQuePlayer::loadMetaData(void)
 {
 	RP_D(iQuePlayer);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->iQueFileType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->iQueFileType) < 0) {
 		// Unknown ROM image type.
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Get the title and ISBN.
 	// TODO: Trim trailing newlines?
@@ -708,17 +705,17 @@ int iQuePlayer::loadMetaData(void)
 	if (ret == 0) {
 		// Title.
 		if (!rom_title.empty()) {
-			d->metaData->addMetaData_string(Property::Title, rom_title);
+			d->metaData.addMetaData_string(Property::Title, rom_title);
 		}
 
 		// TODO: ISBN.
 		/*if (!rom_isbn.empty()) {
-			d->metaData->addMetaData_string(Property::ISBN, rom_isbn);
+			d->metaData.addMetaData_string(Property::ISBN, rom_isbn);
 		}*/
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -757,7 +754,7 @@ int iQuePlayer::loadInternalImage(ImageType imageType, rp_image_const_ptr &pImag
 	if (!d->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->iQueFileType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->iQueFileType) < 0) {
 		// Save file isn't valid.
 		return -EIO;
 	}
@@ -777,7 +774,7 @@ int iQuePlayer::loadInternalImage(ImageType imageType, rp_image_const_ptr &pImag
 	}
 
 	// TODO: -ENOENT if the file doesn't actually have an icon/banner.
-	return ((bool)pImage ? 0 : -EIO);
+	return (pImage) ? 0 : -EIO;
 }
 
-}
+} // namespace LibRomData

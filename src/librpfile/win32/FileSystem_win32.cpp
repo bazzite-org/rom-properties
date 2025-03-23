@@ -35,12 +35,18 @@ using std::wstring;
 // Windows includes.
 #include <direct.h>
 
-#define ISDRIVELETTERA(x) ((x) >= 'A' && (x) <= 'Z')
-#define ISDRIVELETTERW(x) ((x) >= L'A' && (x) <= L'Z')
+static inline constexpr bool IsDriveLetterA(char letter)
+{
+	return (letter >= 'A') && (letter <= 'Z');
+}
+static inline constexpr bool IsDriveLetterW(wchar_t letter)
+{
+	return (letter >= L'A') && (letter <= L'Z');
+}
 #ifdef _UNICODE
-#  define ISDRIVELETTER(x) ISDRIVELETTERW(x)
+#  define IsDriveLetter(x) IsDriveLetterW(x)
 #else /* !_UNICODE */
-#  define ISDRIVELETTER(x) ISDRIVELETTERA(x)
+#  define IsDriveLetter(x) IsDriveLetterA(x)
 #endif /* _UNICODE */
 
 namespace LibRpFile { namespace FileSystem {
@@ -62,7 +68,7 @@ static inline wstring makeWinPath(const char *filename)
 
 	// TODO: Don't bother if the filename is <= 240 characters?
 	wstring filenameW;
-	if (ISDRIVELETTERA(filename[0]) &&
+	if (IsDriveLetterA(filename[0]) &&
 	    filename[1] == ':' && filename[2] == '\\')
 	{
 		// Absolute path. Prepend "\\\\?\\" to the path.
@@ -91,7 +97,7 @@ static inline wstring makeWinPath(const string &filename)
 
 	// TODO: Don't bother if the filename is <= 240 characters?
 	wstring filenameW;
-	if (ISDRIVELETTERA(filename[0]) &&
+	if (IsDriveLetterA(filename[0]) &&
 	    filename[1] == ':' && filename[2] == '\\')
 	{
 		// Absolute path. Prepend "\\\\?\\" to the path.
@@ -121,7 +127,7 @@ static inline wstring makeWinPath(const wchar_t *filename)
 
 	// TODO: Don't bother if the filename is <= 240 characters?
 	wstring filenameW;
-	if (ISDRIVELETTERA(filename[0]) &&
+	if (IsDriveLetterW(filename[0]) &&
 	    filename[1] == ':' && filename[2] == '\\')
 	{
 		// Absolute path. Prepend "\\\\?\\" to the path.
@@ -150,7 +156,7 @@ static inline wstring makeWinPath(const wstring &filename)
 
 	// TODO: Don't bother if the filename is <= 240 characters?
 	wstring filenameW;
-	if (ISDRIVELETTERA(filename[0]) &&
+	if (IsDriveLetterW(filename[0]) &&
 	    filename[1] == ':' && filename[2] == '\\')
 	{
 		// Absolute path. Prepend "\\\\?\\" to the path.
@@ -231,16 +237,46 @@ static inline tstring makeWinPath(const wstring &filename)
  * NOTE: Only native separators ('\\' on Windows, '/' on everything else)
  * are supported by this function.
  *
- * @param path Path to recursively mkdir. (last component is ignored)
+ * @param path Path to recursively mkdir (last component is ignored)
+ * @param mode File mode (defaults to 0777; ignored on Windows)
  * @return 0 on success; negative POSIX error code on error.
  */
-int rmkdir(const string &path)
+int rmkdir(const string &path, int mode)
 {
 	// Windows uses UTF-16 natively, so handle it as UTF-16.
 	static_assert(sizeof(wchar_t) == sizeof(char16_t), "wchar_t is not 16-bit!");
+	RP_UNUSED(mode);
 
+	// NOTE: Explicitly calling U82W_s(), not U82T_s(), to prevent
+	// infinite recursion in ANSI builds.
+	// NOTE 2: This probably won't work in ANSI builds anyway...
 	// TODO: makeWinPath()?
-	tstring tpath = U82T_s(path);
+	return rmkdir(U82W_s(path));
+}
+
+/**
+ * Recursively mkdir() subdirectories.
+ *
+ * The last element in the path will be ignored, so if
+ * the entire pathname is a directory, a trailing slash
+ * must be included.
+ *
+ * NOTE: Only native separators ('\\' on Windows, '/' on everything else)
+ * are supported by this function.
+ *
+ * @param path Path to recursively mkdir (last component is ignored)
+ * @param mode File mode (defaults to 0777; ignored on Windows)
+ * @return 0 on success; non-zero on error.
+ */
+RP_LIBROMDATA_PUBLIC
+int rmkdir(const wstring &path, int mode)
+{
+	// Windows uses UTF-16 natively, so handle it as UTF-16.
+	static_assert(sizeof(wchar_t) == sizeof(char16_t), "wchar_t is not 16-bit!");
+	RP_UNUSED(mode);
+
+	// TODO: makeWinPath()? [and ANSI handling, or not...]
+	tstring tpath = path;
 
 	if (tpath.size() == 3) {
 		// 3 characters. Root directory is always present.
@@ -253,7 +289,7 @@ int rmkdir(const string &path)
 	// Find all backslashes and ensure the directory component exists.
 	// (Skip the drive letter and root backslash.)
 	size_t slash_pos = 4;
-	while ((slash_pos = tpath.find(static_cast<char16_t>(DIR_SEP_CHR), slash_pos)) != string::npos) {
+	while ((slash_pos = tpath.find(static_cast<char16_t>(DIR_SEP_CHR), slash_pos)) != tstring::npos) {
 		// Temporarily NULL out this slash.
 		tpath[slash_pos] = _T('\0');
 
@@ -560,26 +596,26 @@ bool is_symlink(const wchar_t *filename)
 
 // GetFinalPathnameByHandleW() lookup.
 static pthread_once_t once_gfpbh = PTHREAD_ONCE_INIT;
-typedef DWORD (WINAPI *PFNGETFINALPATHNAMEBYHANDLEA)(
+typedef DWORD (WINAPI *pfnGetFinalPathNameByHandleA_t)(
 	_In_  HANDLE hFile,
 	_Out_ LPSTR lpszFilePath,
 	_In_  DWORD  cchFilePath,
 	_In_  DWORD  dwFlags
 );
-typedef DWORD (WINAPI *PFNGETFINALPATHNAMEBYHANDLEW)(
+typedef DWORD (WINAPI *pfnGetFinalPathNameByHandleW_t)(
 	_In_  HANDLE hFile,
 	_Out_ LPWSTR lpszFilePath,
 	_In_  DWORD  cchFilePath,
 	_In_  DWORD  dwFlags
 );
 #ifdef UNICODE
-#  define PFNGETFINALPATHNAMEBYHANDLE PFNGETFINALPATHNAMEBYHANDLEW
-#  define GETFINALPATHNAMEBYHANDLE_FN "GetFinalPathNameByHandleW"
+using pfnGetFinalPathNameByHandle_t = pfnGetFinalPathNameByHandleW_t;
+static constexpr char GetFinalPathNameByHandle_fn[] = "GetFinalPathNameByHandleW";
 #else /* !UNICODE */
-#  define PFNGETFINALPATHNAMEBYHANDLE PFNGETFINALPATHNAMEBYHANDLEA
-#  define GETFINALPATHNAMEBYHANDLE_FN "GetFinalPathNameByHandleA"
+using pfnGetFinalPathNameByHandle_t = pfnGetFinalPathNameByHandleA_t;
+static constexpr char GetFinalPathNameByHandle_fn[] = "GetFinalPathNameByHandleA";
 #endif /* UNICODE */
-static PFNGETFINALPATHNAMEBYHANDLE pfnGetFinalPathnameByHandle = nullptr;
+static pfnGetFinalPathNameByHandle_t pfnGetFinalPathnameByHandle = nullptr;
 
 /**
  * Look up GetFinalPathnameByHandleW().
@@ -588,8 +624,8 @@ static void LookupGetFinalPathnameByHandle(void)
 {
 	HMODULE hKernel32 = GetModuleHandle(_T("kernel32.dll"));
 	if (hKernel32) {
-		pfnGetFinalPathnameByHandle = reinterpret_cast<PFNGETFINALPATHNAMEBYHANDLE>(
-			GetProcAddress(hKernel32, GETFINALPATHNAMEBYHANDLE_FN));
+		pfnGetFinalPathnameByHandle = reinterpret_cast<pfnGetFinalPathNameByHandle_t>(
+			GetProcAddress(hKernel32, GetFinalPathNameByHandle_fn));
 	}
 }
 
@@ -682,7 +718,7 @@ wstring resolve_symlink(const wchar_t *filename)
 {
 	assert(filename != nullptr);
 	assert(filename[0] != L'\0');
-	if (unlikely(!filename || filename[0] == '\0')) {
+	if (unlikely(!filename || filename[0] == L'\0')) {
 		return {};
 	}
 	const tstring tfilename = makeWinPath(filename);
@@ -737,12 +773,14 @@ bool is_directory(const wchar_t *filename)
  * We don't want to check files on e.g. procfs,
  * or on network file systems if the option is disabled.
  *
- * @param filename Filename (UTF-8)
+ * @tparam CharType Character type (char for UTF-8; wchar_t for Windows UTF-16)
+ * @param filename Filename
  * @param allowNetFS If true, allow network file systems.
  *
  * @return True if this file is on a "bad" file system; false if not.
  */
-bool isOnBadFS(const char *filename, bool allowNetFS)
+template<typename CharType>
+static inline bool T_isOnBadFS(const CharType *filename, bool allowNetFS)
 {
 	// TODO: More comprehensive check.
 	// For now, merely checking if it starts with "\\\\"
@@ -764,6 +802,22 @@ bool isOnBadFS(const char *filename, bool allowNetFS)
  * We don't want to check files on e.g. procfs,
  * or on network file systems if the option is disabled.
  *
+ * @param filename Filename (UTF-8)
+ * @param allowNetFS If true, allow network file systems.
+ *
+ * @return True if this file is on a "bad" file system; false if not.
+ */
+bool isOnBadFS(const char *filename, bool allowNetFS)
+{
+	return T_isOnBadFS(filename, allowNetFS);
+}
+
+/**
+ * Is a file located on a "bad" file system?
+ *
+ * We don't want to check files on e.g. procfs,
+ * or on network file systems if the option is disabled.
+ *
  * @param filename Filename (UTF-16)
  * @param allowNetFS If true, allow network file systems.
  *
@@ -771,18 +825,7 @@ bool isOnBadFS(const char *filename, bool allowNetFS)
  */
 bool isOnBadFS(const wchar_t *filename, bool allowNetFS)
 {
-	// TODO: More comprehensive check.
-	// For now, merely checking if it starts with "\\\\"
-	// and the third character is not '?' or '.'.
-	if (filename[0] == L'\\' && filename[1] == L'\\' &&
-	    filename[2] != L'\0' && filename[2] != L'?' && filename[2] != L'.')
-	{
-		// This file is located on a network share.
-		return !allowNetFS;
-	}
-
-	// Not on a network share.
-	return false;
+	return T_isOnBadFS(filename, allowNetFS);
 }
 
 /**

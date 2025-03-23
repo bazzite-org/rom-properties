@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE)                              *
  * KeyStoreItemDelegate.cpp: KeyStore item delegate for QListView.         *
  *                                                                         *
- * Copyright (c) 2013-2024 by David Korth.                                 *
+ * Copyright (c) 2013-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -104,7 +104,7 @@ void KeyStoreItemDelegate::paint(QPainter *painter,
 	const QStyleOptionViewItem &option,
 	const QModelIndex &index) const
 {
-	if (!index.isValid() || index.column() != (int)KeyStoreModel::Column::IsValid) {
+	if (!index.isValid() || index.column() != static_cast<int>(KeyStoreModel::Column::IsValid)) {
 		// Index is invalid, or this isn't the "Is Valid?" column.
 		// Use the default paint().
 		super::paint(painter, option, index);
@@ -130,11 +130,11 @@ void KeyStoreItemDelegate::paint(QPainter *painter,
 	// Center-align the image within the rectangle.
 	// TODO: Use Qt::TextAlignmentRole?
 	// FIXME: Verify High DPI on Qt6.
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 	const qreal dpm = pxm.devicePixelRatio();
-#else /* QT_VERSION < QT_VERSION_CHECK(5,0,0) */
+#else /* QT_VERSION < QT_VERSION_CHECK(5, 0, 0) */
 	static constexpr qreal dpm = 1.0;
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,0,0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) */
 	const QPointF pointF(
 		((((optionv4.rect.width() * dpm) - pxm.width()) / 2) + (optionv4.rect.left() * dpm)) / dpm,
 		((((optionv4.rect.height() * dpm) - pxm.height()) / 2) + (optionv4.rect.top() * dpm)) / dpm

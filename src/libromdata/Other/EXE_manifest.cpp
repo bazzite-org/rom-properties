@@ -105,11 +105,13 @@ int EXEPrivate::loadWin32ManifestResource(XMLDocument &doc, const char **ppResNa
 
 	// Search for a PE manifest resource.
 	IRpFilePtr f_manifest;
-	unsigned int id_idx;
-	for (id_idx = 0; id_idx < resource_id_tbl.size(); id_idx++) {
-		f_manifest = rsrcReader->open(RT_MANIFEST, resource_id_tbl[id_idx].id, -1);
-		if (f_manifest)
+	const char *res_name = nullptr;
+	for (const resource_id_t &id_idx : resource_id_tbl) {
+		f_manifest = rsrcReader->open(RT_MANIFEST, id_idx.id, -1);
+		if (f_manifest) {
+			res_name = id_idx.name;
 			break;
+		}
 	}
 
 	if (!f_manifest) {
@@ -188,7 +190,7 @@ int EXEPrivate::loadWin32ManifestResource(XMLDocument &doc, const char **ppResNa
 
 	// XML document loaded.
 	if (ppResName) {
-		*ppResName = resource_id_tbl[id_idx].name;
+		*ppResName = res_name;
 	}
 	return 0;
 }
@@ -280,7 +282,7 @@ int EXEPrivate::addFields_PE_Manifest(void)
 		Setting_ultraHighResolutionScrollingAware	= (1U << 6),
 	} WindowsSettings_t;
 
-	static const char *const WindowsSettings_names[] = {
+	static const array<const char*, 7> WindowsSettings_names = {{
 		NOP_C_("EXE|Manifest|WinSettings", "Auto Elevate"),
 		NOP_C_("EXE|Manifest|WinSettings", "Disable Theming"),
 		NOP_C_("EXE|Manifest|WinSettings", "Disable Window Filter"),
@@ -288,7 +290,7 @@ int EXEPrivate::addFields_PE_Manifest(void)
 		NOP_C_("EXE|Manifest|WinSettings", "Magic Future Setting"),
 		NOP_C_("EXE|Manifest|WinSettings", "Printer Driver Isolation"),
 		NOP_C_("EXE|Manifest|WinSettings", "Ultra High-Res Scroll"),
-	};
+	}};
 
 	// Windows settings.
 	// NOTE: application and windowsSettings may be
@@ -320,7 +322,7 @@ int EXEPrivate::addFields_PE_Manifest(void)
 
 			// Show the bitfield.
 			vector<string> *const v_WindowsSettings_names = RomFields::strArrayToVector_i18n(
-				"EXE|Manifest|WinSettings", WindowsSettings_names, ARRAY_SIZE(WindowsSettings_names));
+				"EXE|Manifest|WinSettings", WindowsSettings_names);
 			fields.addField_bitfield(C_("EXE|Manifest", "Settings"),
 				v_WindowsSettings_names, 2, settings);
 
@@ -354,14 +356,14 @@ int EXEPrivate::addFields_PE_Manifest(void)
 	} OS_Compatibility_t;
 
 	// NOTE: OS names aren't translatable, but "Long Path Aware" is.
-	static const char *const OS_Compatibility_names[] = {
+	static const array<const char*, 6> OS_Compatibility_names = {{
 		"Windows Vista",
 		"Windows 7",
 		"Windows 8",
 		"Windows 8.1",
 		"Windows 10",
 		NOP_C_("EXE|Manifest|OSCompatibility", "Long Path Aware"),
-	};
+	}};
 
 	FIRST_CHILD_ELEMENT_NS(compatibility, assembly, "compatibility", "asmv1");
 	if (compatibility) {
@@ -407,7 +409,7 @@ int EXEPrivate::addFields_PE_Manifest(void)
 
 			// Show the bitfield.
 			vector<string> *const v_OS_Compatibility_names = RomFields::strArrayToVector_i18n(
-				"EXE|Manifest|OSCompatibility", OS_Compatibility_names, ARRAY_SIZE(OS_Compatibility_names));
+				"EXE|Manifest|OSCompatibility", OS_Compatibility_names);
 			fields.addField_bitfield(C_("EXE|Manifest", "Compatibility"),
 				v_OS_Compatibility_names, 2, compat);
 		}

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE4/KF5)                         *
  * RomDataFormat.hpp: Common RomData string formatting functions.          *
  *                                                                         *
- * Copyright (c) 2017-2023 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -13,6 +13,9 @@
 #include "librpbase/RomFields.hpp"
 using LibRpBase::RomFields;
 
+// C++ STL classes
+using std::string;
+
 /**
  * Format an RFT_DATETIME.
  * @param date_time	[in] Date/Time
@@ -21,11 +24,7 @@ using LibRpBase::RomFields;
  */
 QString formatDateTime(time_t date_time, unsigned int flags)
 {
-	QDateTime dateTime;
-	dateTime.setTimeSpec(
-		(flags & RomFields::RFT_DATETIME_IS_UTC)
-			? Qt::UTC : Qt::LocalTime);
-	dateTime.setMSecsSinceEpoch(static_cast<qint64>(date_time) * 1000);
+	const QDateTime dateTime = unixTimeToQDateTime(date_time, !!(flags & RomFields::RFT_DATETIME_IS_UTC));
 
 	QString str;
 	const QLocale locale = QLocale::system();
@@ -76,23 +75,21 @@ QString formatDateTime(time_t date_time, unsigned int flags)
 /**
  * Format an RFT_DIMENSIONS.
  * @param dimensions	[in] Dimensions
- * @return Formatted RFT_DIMENSIONS, or nullptr on error. (allocated string; free with g_free)
+ * @return Formatted RFT_DIMENSIONS, or nullptr on error.
  */
 QString formatDimensions(const int dimensions[3])
 {
 	// TODO: 'x' or '×'? Using 'x' for now.
-	char buf[64];
+	QString qstr = QString::number(dimensions[0]);
+
 	if (dimensions[1] > 0) {
+		qstr += QLatin1Char('x');
+		qstr += QString::number(dimensions[1]);
 		if (dimensions[2] > 0) {
-			snprintf(buf, sizeof(buf), "%dx%dx%d",
-				dimensions[0], dimensions[1], dimensions[2]);
-		} else {
-			snprintf(buf, sizeof(buf), "%dx%d",
-				dimensions[0], dimensions[1]);
+			qstr += QLatin1Char('x');
+			qstr += QString::number(dimensions[2]);
 		}
-	} else {
-		snprintf(buf, sizeof(buf), "%d", dimensions[0]);
 	}
 
-	return QString::fromLatin1(buf);
+	return qstr;
 }

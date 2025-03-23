@@ -29,30 +29,29 @@ extern "C" {
 }
 
 // ADS functions (Windows Vista and later)
-typedef HANDLE (WINAPI *PFNFINDFIRSTSTREAMW)(_In_ LPCWSTR lpFileName, _In_ STREAM_INFO_LEVELS InfoLevel, _Out_ LPVOID lpFindStreamData, DWORD dwFlags);
-typedef HANDLE (WINAPI *PFNFINDNEXTSTREAMW)(_In_ HANDLE hFindStream, _Out_ LPVOID lpFindStreamData);
+typedef HANDLE (WINAPI *pfnFindFirstStreamW_t)(_In_ LPCWSTR lpFileName, _In_ STREAM_INFO_LEVELS InfoLevel, _Out_ LPVOID lpFindStreamData, DWORD dwFlags);
+typedef HANDLE (WINAPI *pfnFindNextStreamW_t)(_In_ HANDLE hFindStream, _Out_ LPVOID lpFindStreamData);
 
 namespace LibRpFile {
 
+// Valid MS-DOS attributes
+static constexpr unsigned int VALID_DOS_ATTRIBUTES_FAT = \
+	FILE_ATTRIBUTE_READONLY | \
+	FILE_ATTRIBUTE_HIDDEN | \
+	FILE_ATTRIBUTE_SYSTEM | \
+	FILE_ATTRIBUTE_ARCHIVE;
+
 /** XAttrReaderPrivate **/
 
+#ifdef _UNICODE
 XAttrReaderPrivate::XAttrReaderPrivate(const char *filename)
-	: filename(U82T_c(filename))
-	, lastError(0)
-	, hasExt2Attributes(false)
-	, hasXfsAttributes(false)
-	, hasDosAttributes(false)
-	, hasGenericXAttrs(false)
-	, ext2Attributes(0)
-	, xfsXFlags(0)
-	, xfsProjectId(0)
-	, dosAttributes(0)
-{
-	init();
-}
+	: XAttrReaderPrivate(U82T_c(filename))
+{}
 
-#ifdef UNICODE
 XAttrReaderPrivate::XAttrReaderPrivate(const wchar_t *filename)
+#else /* !_UNICODE */
+XAttrReaderPrivate::XAttrReaderPrivate(const char *filename)
+#endif /* _UNICODE */
 	: filename(filename)
 	, lastError(0)
 	, hasExt2Attributes(false)
@@ -63,17 +62,7 @@ XAttrReaderPrivate::XAttrReaderPrivate(const wchar_t *filename)
 	, xfsXFlags(0)
 	, xfsProjectId(0)
 	, dosAttributes(0)
-{
-	init();
-}
-#endif /* UNICODE */
-
-/**
- * Initialize attributes.
- * Internal fd (filename on Windows) must be set.
- * @return 0 on success; negative POSIX error code on error.
- */
-int XAttrReaderPrivate::init(void)
+	, validDosAttributes(0)
 {
 	// NOTE: While there is a GetFileInformationByHandle() function,
 	// there's no easy way to get alternate data streams using a
@@ -84,7 +73,6 @@ int XAttrReaderPrivate::init(void)
 	loadXfsAttrs();
 	loadDosAttrs();
 	loadGenericXattrs();
-	return 0;
 }
 
 /**
@@ -123,7 +111,50 @@ int XAttrReaderPrivate::loadDosAttrs(void)
 {
 	dosAttributes = GetFileAttributes(filename.c_str());
 	hasDosAttributes = (dosAttributes != INVALID_FILE_ATTRIBUTES);
-	return (hasDosAttributes ? 0 : -ENOTSUP);
+	if (!hasDosAttributes) {
+		// No MS-DOS attributes?
+		validDosAttributes = 0;
+		return -ENOTSUP;
+	}
+
+	// NOTE: Assuming generic FAT attributes if unable to determine the actual file system.
+	validDosAttributes = VALID_DOS_ATTRIBUTES_FAT;
+
+	// Get the volume path name.
+	TCHAR volumePathName[MAX_PATH];
+	if (!GetVolumePathName(filename.c_str(), volumePathName, _countof(volumePathName))) {
+		// Unable to get the volume path name.
+		return 0;
+	}
+
+	// Get the volume information.
+	DWORD fileSystemFlags = 0;
+	if (!GetVolumeInformation(
+		volumePathName,		// lpRootPathName
+		nullptr,		// lpVolumeNameBuffer
+		0,			// nVolumeNameSize
+		nullptr,		// lpVolumeSerialNumber
+		nullptr,		// lpMaximumComponentLength
+		&fileSystemFlags,	// lpFileSystemFlags
+		nullptr,		// lpFileSystemNameBuffer
+		0))			// nFileSystemNameSize
+	{
+		// Failed to get volume information.
+		return 0;
+	}
+
+	// Check the file system flags.
+	if (fileSystemFlags & FILE_FILE_COMPRESSION) {
+		// Compression is supported.
+		validDosAttributes |= FILE_ATTRIBUTE_COMPRESSED;
+	}
+	if (fileSystemFlags & FILE_SUPPORTS_ENCRYPTION) {
+		// Encryption is supported.
+		validDosAttributes |= FILE_ATTRIBUTE_ENCRYPTED;
+	}
+
+	// Valid MS-DOS attributes obtained.
+	return 0;
 }
 
 #ifdef UNICODE
@@ -140,11 +171,14 @@ int XAttrReaderPrivate::loadGenericXattrs_FindFirstStreamW(void)
 	// Windows XP: Use BackupRead(). [TODO]
 	HMODULE hKernel32 = GetModuleHandle(_T("kernel32.dll"));
 	assert(hKernel32 != nullptr);
-	if (!hKernel32)
+	if (!hKernel32) {
 		return -ENOMEM;
+	}
 
-	PFNFINDFIRSTSTREAMW pfnFindFirstStreamW = (PFNFINDFIRSTSTREAMW)GetProcAddress(hKernel32, "FindFirstStreamW");
-	PFNFINDNEXTSTREAMW pfnFindNextStreamW = (PFNFINDNEXTSTREAMW)GetProcAddress(hKernel32, "FindNextStreamW");
+	pfnFindFirstStreamW_t pfnFindFirstStreamW = reinterpret_cast<pfnFindFirstStreamW_t>(
+		GetProcAddress(hKernel32, "FindFirstStreamW"));
+	pfnFindNextStreamW_t pfnFindNextStreamW = reinterpret_cast<pfnFindNextStreamW_t>(
+		GetProcAddress(hKernel32, "FindNextStreamW"));
 	if (!pfnFindFirstStreamW || !pfnFindNextStreamW) {
 		// Unable to retrieve the procedure addresses.
 		return -ENOTSUP;
@@ -298,4 +332,4 @@ int XAttrReaderPrivate::loadGenericXattrs(void)
 	return loadGenericXattrs_BackupRead();
 }
 
-}
+} // namespace LibRpFile

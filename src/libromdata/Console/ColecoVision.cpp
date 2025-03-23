@@ -18,6 +18,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
 
 namespace LibRomData {
@@ -25,7 +26,7 @@ namespace LibRomData {
 class ColecoVisionPrivate final : public RomDataPrivate
 {
 public:
-	ColecoVisionPrivate(const IRpFilePtr &file);
+	explicit ColecoVisionPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -33,8 +34,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -64,20 +65,20 @@ ROMDATA_IMPL(ColecoVision)
 /** ColecoVisionPrivate **/
 
 /* RomDataInfo */
-const char *const ColecoVisionPrivate::exts[] = {
+const array<const char*, 1+1> ColecoVisionPrivate::exts = {{
 	".col",
 
 	nullptr
-};
-const char *const ColecoVisionPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> ColecoVisionPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-colecovision-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo ColecoVisionPrivate::romDataInfo = {
-	"ColecoVision", exts, mimeTypes
+	"ColecoVision", exts.data(), mimeTypes.data()
 };
 
 ColecoVisionPrivate::ColecoVisionPrivate(const IRpFilePtr &file)
@@ -94,8 +95,9 @@ ColecoVisionPrivate::ColecoVisionPrivate(const IRpFilePtr &file)
  */
 string ColecoVisionPrivate::getTitle(int *pOutYear) const
 {
-	static constexpr uint8_t magic_has_logo[2] = {0xAA, 0x55};
-	if (memcmp(romHeader.magic, magic_has_logo, sizeof(romHeader.magic)) != 0) {
+	// ROM header needs to have the "Show Logo" magic in order for
+	// the Title field to be valid.
+	if (le16_to_cpu(romHeader.magic) != COLECOVISION_MAGIC_SHOW_LOGO) {
 		// Not the correct magic. No title.
 		if (pOutYear) {
 			*pOutYear = -1;
@@ -340,8 +342,14 @@ ColecoVision::ColecoVision(const IRpFilePtr &file)
 int ColecoVision::isRomSupported_static(const DetectInfo *info)
 {
 	assert(info != nullptr);
-	if (!info || !info->ext) {
-		// Needs the file extension...
+	assert(info->header.pData != nullptr);
+	if (!info || !info->ext || !info->header.pData ||
+	    info->header.addr != 0 ||
+	    info->header.size < sizeof(ColecoVision_ROMHeader))
+	{
+		// Either no detection information was specified,
+		// or the header is too small.
+		// Also, a file extension is needed.
 		return -1;
 	}
 
@@ -354,13 +362,24 @@ int ColecoVision::isRomSupported_static(const DetectInfo *info)
 	// The ColecoVision ROM header doesn't have enough magic
 	// to conclusively determine if it's a ColecoVision ROM,
 	// so check the file extension.
-	// TODO: Also check for AA55/55AA?
-	for (const char *const *ext = ColecoVisionPrivate::exts;
+	for (const char *const *ext = ColecoVisionPrivate::exts.data();
 	     *ext != nullptr; ext++)
 	{
 		if (!strcasecmp(info->ext, *ext)) {
 			// File extension is supported.
-			return 0;
+			// Also check for a valid magic number.
+			const ColecoVision_ROMHeader *const romHeader =
+				reinterpret_cast<const ColecoVision_ROMHeader*>(info->header.pData);
+			switch (le16_to_cpu(romHeader->magic)) {
+				case COLECOVISION_MAGIC_SHOW_LOGO:
+				case COLECOVISION_MAGIC_SKIP_LOGO:
+				case COLECOVISION_MAGIC_BIOS:
+				case COLECOVISION_MAGIC_MONITOR_TEST:
+					// Magic number is valid.
+					return 0;
+				default:
+					break;
+			}
 		}
 	}
 
@@ -385,9 +404,9 @@ const char *ColecoVision::systemName(unsigned int type) const
 		"ColecoVision::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"ColecoVision", "ColecoVision", "CV", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -451,7 +470,7 @@ int ColecoVision::loadFieldData(void)
 int ColecoVision::loadMetaData(void)
 {
 	RP_D(ColecoVision);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -462,26 +481,23 @@ int ColecoVision::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(2);	// Maximum of 2 metadata properties.
-
 	//const ColecoVision_ROMHeader *const romHeader = &d->romHeader;
+	d->metaData.reserve(2);	// Maximum of 2 metadata properties.
 
 	// Title
 	int year = -1;
 	const string title = d->getTitle(&year);
 	if (!title.empty()) {
-		d->metaData->addMetaData_string(Property::Title, title);
+		d->metaData.addMetaData_string(Property::Title, title);
 	}
 
 	// Release year (actually copyright year)
 	if (year >= 0) {
-		d->metaData->addMetaData_uint(Property::ReleaseYear, static_cast<unsigned int>(year));
+		d->metaData.addMetaData_uint(Property::ReleaseYear, static_cast<unsigned int>(year));
 	}
 
 	// Finished reading the metadata.
-	return (d->metaData ? static_cast<int>(d->metaData->count()) : -ENOENT);
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

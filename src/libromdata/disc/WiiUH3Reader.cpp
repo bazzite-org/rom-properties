@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * WiiUH3Reader.hpp: Wii U H3 content reader.                              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -22,8 +22,10 @@
 using namespace LibRpBase;
 using namespace LibRpFile;
 
-// C++ STL classes
+#ifdef ENABLE_DECRYPTION
+using std::array;
 using std::unique_ptr;
+#endif /* ENABLE_DECRYPTION */
 
 namespace LibRomData {
 
@@ -31,7 +33,6 @@ class WiiUH3ReaderPrivate final
 {
 public:
 	WiiUH3ReaderPrivate(WiiUH3Reader *q, const uint8_t *pKey, size_t keyLen);
-	~WiiUH3ReaderPrivate();
 
 private:
 	RP_DISABLE_COPY(WiiUH3ReaderPrivate)
@@ -60,7 +61,7 @@ public:
 #ifdef ENABLE_DECRYPTION
 public:
 	// AES cipher for this content file's encryption key
-	IAesCipher *cipher;
+	unique_ptr<IAesCipher> cipher;
 #endif
 };
 
@@ -72,9 +73,6 @@ WiiUH3ReaderPrivate::WiiUH3ReaderPrivate(WiiUH3Reader *q, const uint8_t *pKey, s
 	, partition_size(0)
 	, data_size(0)
 	, sector_num(~0)
-#ifdef ENABLE_DECRYPTION
-	, cipher(nullptr)
-#endif /* ENABLE_DECRYPTION */
 {
 	// Key must be 128-bit.
 	assert(pKey != nullptr);
@@ -87,9 +85,10 @@ WiiUH3ReaderPrivate::WiiUH3ReaderPrivate(WiiUH3Reader *q, const uint8_t *pKey, s
 
 #ifdef ENABLE_DECRYPTION
 	// Initialize the cipher.
-	cipher = AesCipherFactory::create();
+	cipher.reset(AesCipherFactory::create());
 	if (!cipher || !cipher->isInit()) {
 		// Error initializing the cipher.
+		cipher.reset();
 		q->m_lastError = EIO;
 		q->m_file.reset();
 		return;
@@ -101,6 +100,7 @@ WiiUH3ReaderPrivate::WiiUH3ReaderPrivate(WiiUH3Reader *q, const uint8_t *pKey, s
 	ret |= cipher->setChainingMode(IAesCipher::ChainingMode::CBC);
 	if (ret != 0) {
 		// Error initializing the cipher.
+		cipher.reset();
 		q->m_lastError = EIO;
 		q->m_file.reset();
 		return;
@@ -114,11 +114,9 @@ WiiUH3ReaderPrivate::WiiUH3ReaderPrivate(WiiUH3Reader *q, const uint8_t *pKey, s
 #endif /* ENABLE_DECRYPTION */
 }
 
-WiiUH3ReaderPrivate::~WiiUH3ReaderPrivate()
+WiiUH3Reader::~WiiUH3Reader()
 {
-#ifdef ENABLE_DECRYPTION
-	delete cipher;
-#endif /* ENABLE_DECRYPTION */
+	delete d_ptr;
 }
 
 /**
@@ -157,10 +155,15 @@ int WiiUH3ReaderPrivate::readSector(uint32_t sector_num)
 	}
 
 #ifdef ENABLE_DECRYPTION
+	if (!cipher) {
+		// Cipher was not initialized...
+		q->m_lastError = EIO;
+		return -1;
+	}
 	// Decrypt the hashes. (IV is zero)
-	uint8_t iv[16];
-	memset(iv, 0, sizeof(iv));
-	size_t size = cipher->decrypt(reinterpret_cast<uint8_t*>(&sector_buf.hashes), sizeof(sector_buf.hashes), iv, sizeof(iv));
+	array<uint8_t, 16> iv;
+	iv.fill(0);
+	size_t size = cipher->decrypt(reinterpret_cast<uint8_t*>(&sector_buf.hashes), sizeof(sector_buf.hashes), iv.data(), iv.size());
 	if (size != sizeof(sector_buf.hashes)) {
 		// Decryption failed.
 		// NOTE: sector_buf may be invalid.

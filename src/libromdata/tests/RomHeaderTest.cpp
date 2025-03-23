@@ -5,7 +5,7 @@
  * Parses various sample ROM headers and compares them to reference        *
  * text and JSON files.                                                    *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -42,6 +42,9 @@ using std::ostringstream;
 using std::shared_ptr;
 using std::string;
 
+// libfmt
+#include "rp-libfmt.h"
+
 // Uninitialized vector class
 #include "uvector.h"
 
@@ -77,7 +80,7 @@ inline ::std::ostream& operator<<(::std::ostream& os, const RomHeaderTest_mode& 
 };
 
 // Maximum file size for files within the .tar archives.
-static constexpr uint64_t MAX_BIN_FILESIZE  =  4U*1024U*1024U;	// 4 MB (for MD lock-on)
+static constexpr uint64_t MAX_BIN_FILESIZE  =  8U*1024U*1024U;	// 8 MB (for MD lock-on and some WonderSwan titles)
 static constexpr uint64_t MAX_TXT_FILESIZE  = 32U*1024U;	// 32 KB
 static constexpr uint64_t MAX_JSON_FILESIZE = 32U*1024U;	// 32 KB
 
@@ -293,7 +296,7 @@ TEST_P(RomHeaderTest, Text)
 	ASSERT_GT(last_bin_data.size(), 0U) << "Binary file is empty.";
 
 	// Get the text output for this binary file, e.g. as if we're running `rpcli`.
-	const shared_ptr<MemFile> memFile = std::make_shared<MemFile>(last_bin_data.data(), last_bin_data.size());
+	const MemFilePtr memFile = std::make_shared<MemFile>(last_bin_data.data(), last_bin_data.size());
 	ASSERT_NE(memFile, nullptr) << "Unable to create MemFile object for binary data.";
 	memFile->setFilename(mode.bin_filename);	// needed for SNES
 	const RomDataPtr romData = RomDataFactory::create(memFile);
@@ -339,7 +342,7 @@ TEST_P(RomHeaderTest, JSON)
 	ASSERT_GT(last_bin_data.size(), 0U) << "Binary file is empty.";
 
 	// Get the JSON output for this binary file, e.g. as if we're running `rpcli -j`.
-	const shared_ptr<MemFile> memFile = std::make_shared<MemFile>(last_bin_data.data(), last_bin_data.size());
+	const MemFilePtr memFile = std::make_shared<MemFile>(last_bin_data.data(), last_bin_data.size());
 	ASSERT_NE(memFile, nullptr) << "Unable to create MemFile object for binary data.";
 	memFile->setFilename(mode.bin_filename);	// needed for SNES
 	const RomDataPtr romData = RomDataFactory::create(memFile);
@@ -489,6 +492,20 @@ INSTANTIATE_TEST_SUITE_P(ADX_SADX, RomHeaderTest,
 
 /* Console */
 
+INSTANTIATE_TEST_SUITE_P(Atari7800, RomHeaderTest,
+	testing::ValuesIn(RomHeaderTest::ReadTestCasesFromDisk(
+		"Console/Atari7800.bin.tar.zst",
+		"Console/Atari7800.txt.tar.zst",
+		"Console/Atari7800.json.tar.zst"))
+	, RomHeaderTest::test_case_suffix_generator);
+
+INSTANTIATE_TEST_SUITE_P(ColecoVision, RomHeaderTest,
+	testing::ValuesIn(RomHeaderTest::ReadTestCasesFromDisk(
+		"Console/ColecoVision.bin.tar.zst",
+		"Console/ColecoVision.txt.tar.zst",
+		"Console/ColecoVision.json.tar.zst"))
+	, RomHeaderTest::test_case_suffix_generator);
+
 INSTANTIATE_TEST_SUITE_P(DreamcastSave, RomHeaderTest,
 	testing::ValuesIn(RomHeaderTest::ReadTestCasesFromDisk(
 		"Console/DreamcastSave.bin.tar.zst",
@@ -502,6 +519,13 @@ INSTANTIATE_TEST_SUITE_P(GameCubeWiaRvz, RomHeaderTest,
 		"Console/GameCube.wia-rvz.bin.tar.zst",
 		"Console/GameCube.wia-rvz.txt.tar.zst",
 		"Console/GameCube.wia-rvz.json.tar.zst"))
+	, RomHeaderTest::test_case_suffix_generator);
+
+INSTANTIATE_TEST_SUITE_P(Intellivision, RomHeaderTest,
+	testing::ValuesIn(RomHeaderTest::ReadTestCasesFromDisk(
+		"Console/Intellivision.bin.tar.zst",
+		"Console/Intellivision.txt.tar.zst",
+		"Console/Intellivision.json.tar.zst"))
 	, RomHeaderTest::test_case_suffix_generator);
 
 INSTANTIATE_TEST_SUITE_P(MegaDrive, RomHeaderTest,
@@ -590,9 +614,16 @@ INSTANTIATE_TEST_SUITE_P(SufamiTurbo, RomHeaderTest,
 
 /* Handheld */
 
+INSTANTIATE_TEST_SUITE_P(AtariLynx, RomHeaderTest,
+	testing::ValuesIn(RomHeaderTest::ReadTestCasesFromDisk(
+		"Handheld/AtariLynx.bin.tar.zst",
+		"Handheld/AtariLynx.txt.tar.zst",
+		"Handheld/AtariLynx.json.tar.zst"))
+	, RomHeaderTest::test_case_suffix_generator);
+
 INSTANTIATE_TEST_SUITE_P(DMG, RomHeaderTest,
 	testing::ValuesIn(RomHeaderTest::ReadTestCasesFromDisk(
-		"Handheld/DMG.bin.tar.zst",
+			"Handheld/DMG.bin.tar.zst",
 		"Handheld/DMG.txt.tar.zst",
 		"Handheld/DMG.json.tar.zst"))
 	, RomHeaderTest::test_case_suffix_generator);
@@ -602,6 +633,13 @@ INSTANTIATE_TEST_SUITE_P(GameBoyAdvance, RomHeaderTest,
 		"Handheld/GameBoyAdvance.bin.tar.zst",
 		"Handheld/GameBoyAdvance.txt.tar.zst",
 		"Handheld/GameBoyAdvance.json.tar.zst"))
+	, RomHeaderTest::test_case_suffix_generator);
+
+INSTANTIATE_TEST_SUITE_P(NGPC, RomHeaderTest,
+	testing::ValuesIn(RomHeaderTest::ReadTestCasesFromDisk(
+		"Handheld/NGPC.bin.tar.zst",
+		"Handheld/NGPC.txt.tar.zst",
+		"Handheld/NGPC.json.tar.zst"))
 	, RomHeaderTest::test_case_suffix_generator);
 
 INSTANTIATE_TEST_SUITE_P(Nintendo3DS_3DSident, RomHeaderTest,
@@ -616,6 +654,20 @@ INSTANTIATE_TEST_SUITE_P(NintendoDS, RomHeaderTest,
 		"Handheld/NintendoDS.bin.tar.zst",
 		"Handheld/NintendoDS.txt.tar.zst",
 		"Handheld/NintendoDS.json.tar.zst"))
+	, RomHeaderTest::test_case_suffix_generator);
+
+INSTANTIATE_TEST_SUITE_P(PokemonMini, RomHeaderTest,
+	testing::ValuesIn(RomHeaderTest::ReadTestCasesFromDisk(
+		"Handheld/PokemonMini.bin.tar.zst",
+		"Handheld/PokemonMini.txt.tar.zst",
+		"Handheld/PokemonMini.json.tar.zst"))
+	, RomHeaderTest::test_case_suffix_generator);
+
+INSTANTIATE_TEST_SUITE_P(WonderSwan, RomHeaderTest,
+	testing::ValuesIn(RomHeaderTest::ReadTestCasesFromDisk(
+		"Handheld/WonderSwan.bin.tar.zst",
+		"Handheld/WonderSwan.txt.tar.zst",
+		"Handheld/WonderSwan.json.tar.zst"))
 	, RomHeaderTest::test_case_suffix_generator);
 
 /* Other */
@@ -638,7 +690,7 @@ INSTANTIATE_TEST_SUITE_P(DirectDrawSurface, RomHeaderTest,
 
 extern "C" int gtest_main(int argc, TCHAR *argv[])
 {
-	fprintf(stderr, "LibRomData test suite: RomHeader tests.\n\n");
+	fmt::print(stderr, FSTR("LibRomData test suite: RomHeader tests.\n\n"));
 	fflush(nullptr);
 
 	// Check for amiibo-data.bin in the current directory or bin/.
@@ -651,7 +703,7 @@ extern "C" int gtest_main(int argc, TCHAR *argv[])
 	if (!_taccess(AMIIBO_DATA_BIN_BASE, R_OK)) {
 		// Found in the current directory.
 		if (!_tgetcwd(amiibo_data_bin_path, ARRAY_SIZE(amiibo_data_bin_path))) {
-			_ftprintf(stderr, _T("*** ERROR: getcwd() failed: %s\n"), _tcserror(errno));
+			fmt::print(stderr, FSTR(_T("*** ERROR: getcwd() failed: {:s}\n")), _tcserror(errno));
 			return EXIT_FAILURE;
 		}
 		if (_tcslen(amiibo_data_bin_path) < (ARRAY_SIZE(amiibo_data_bin_path) - 32)) {
@@ -660,7 +712,7 @@ extern "C" int gtest_main(int argc, TCHAR *argv[])
 	} else if (!_taccess(AMIIBO_DATA_BIN_WITH_BIN_DIR, R_OK)) {
 		// Found in the current directory.
 		if (!_tgetcwd(amiibo_data_bin_path, ARRAY_SIZE(amiibo_data_bin_path))) {
-			_ftprintf(stderr, _T("*** ERROR: getcwd() failed: %s\n"), _tcserror(errno));
+			fmt::print(stderr, FSTR(_T("*** ERROR: getcwd() failed: {:s}\n")), _tcserror(errno));
 			return EXIT_FAILURE;
 		}
 		if (_tcslen(amiibo_data_bin_path) < (ARRAY_SIZE(amiibo_data_bin_path) - 32)) {
@@ -671,7 +723,7 @@ extern "C" int gtest_main(int argc, TCHAR *argv[])
 	else if (!_taccess(AMIIBO_DATA_BIN_WITH_DOTDOT_DOTDOT_DOTDOT_BIN_DIR, R_OK)) {
 		// We're in ${CMAKE_CURRENT_BINARY_DIR}.
 		if (!_tgetcwd(amiibo_data_bin_path, ARRAY_SIZE(amiibo_data_bin_path))) {
-			_ftprintf(stderr, _T("*** ERROR: getcwd() failed: %s\n"), _tcserror(errno));
+			fmt::print(stderr, FSTR(_T("*** ERROR: getcwd() failed: {:s}\n")), _tcserror(errno));
 			return EXIT_FAILURE;
 		}
 		if (_tcslen(amiibo_data_bin_path) < (ARRAY_SIZE(amiibo_data_bin_path) - 32)) {
@@ -680,10 +732,7 @@ extern "C" int gtest_main(int argc, TCHAR *argv[])
 	}
 #endif /* !_WIN32 */
 	if (amiibo_data_bin_path[0] != _T('\0')) {
-		fputs("Setting amiibo-data.bin override to:\n", stderr);
-		_fputts(amiibo_data_bin_path, stderr);
-		fputs("\n\n", stderr);
-
+		fmt::print(stderr, FSTR(_T("Setting amiibo-data.bin override to:\n{:s}\n\n")), amiibo_data_bin_path);
 		LibRomData::AmiiboData::overrideAmiiboDataBinFilename(amiibo_data_bin_path);
 	}
 
@@ -727,7 +776,7 @@ extern "C" int gtest_main(int argc, TCHAR *argv[])
 	}
 
 	if (!is_found) {
-		fputs("*** ERROR: Cannot find the png_data test images directory.\n", stderr);
+		fputs("*** ERROR: Cannot find the RomHeaders test files directory.\n", stderr);
 		return EXIT_FAILURE;
 	}
 

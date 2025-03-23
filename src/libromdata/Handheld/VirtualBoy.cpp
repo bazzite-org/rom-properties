@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * VirtualBoy.cpp: Nintendo Virtual Boy ROM reader.                        *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * Copyright (c) 2016-2018 by Egor.                                        *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
@@ -18,6 +18,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
 
 namespace LibRomData {
@@ -25,7 +26,7 @@ namespace LibRomData {
 class VirtualBoyPrivate final : public RomDataPrivate
 {
 public:
-	VirtualBoyPrivate(const IRpFilePtr &file);
+	explicit VirtualBoyPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -33,8 +34,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -88,22 +89,22 @@ ROMDATA_IMPL(VirtualBoy)
 /** VirtualBoyPrivate **/
 
 /* RomDataInfo */
-const char *const VirtualBoyPrivate::exts[] = {
+const array<const char*, 1+1> VirtualBoyPrivate::exts = {{
 	// NOTE: These extensions may cause conflicts on
 	// Windows if fallback handling isn't working.
 
 	".vb",	// Visual Basic .NET source files
 
 	nullptr
-};
-const char *const VirtualBoyPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> VirtualBoyPrivate::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	"application/x-virtual-boy-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo VirtualBoyPrivate::romDataInfo = {
-	"VirtualBoy", exts, mimeTypes
+	"VirtualBoy", exts.data(), mimeTypes.data()
 };
 
 VirtualBoyPrivate::VirtualBoyPrivate(const IRpFilePtr &file)
@@ -169,7 +170,11 @@ VirtualBoy::VirtualBoy(const IRpFilePtr &file)
 
 	if (!d->isValid) {
 		d->file.reset();
+		return;
 	}
+
+	// Is PAL?
+	d->isPAL = (d->romFooter.gameid[3] == 'P');
 }
 
 /** ROM detection functions. **/
@@ -278,9 +283,9 @@ const char *VirtualBoy::systemName(unsigned int type) const
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"VirtualBoy::systemName() array index optimization needs to be updated.");
 	
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Nintendo Virtual Boy", "Virtual Boy", "VB", nullptr,
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -328,10 +333,14 @@ int VirtualBoy::loadFieldData(void)
 		if (ISALNUM(romFooter->publisher[0]) &&
 		    ISALNUM(romFooter->publisher[1]))
 		{
-			s_publisher = rp_sprintf(C_("RomData", "Unknown (%.2s)"),
-				romFooter->publisher);
+			const array<char, 3> s_company = {{
+				romFooter->publisher[0],
+				romFooter->publisher[1],
+				'\0'
+			}};
+			s_publisher = fmt::format(FRUN(C_("RomData", "Unknown ({:s})")), s_company.data());
 		} else {
-			s_publisher = rp_sprintf(C_("RomData", "Unknown (%02X %02X)"),
+			s_publisher = fmt::format(FRUN(C_("RomData", "Unknown ({:0>2X} {:0>2X})")),
 				static_cast<uint8_t>(romFooter->publisher[0]),
 				static_cast<uint8_t>(romFooter->publisher[1]));
 		}
@@ -359,7 +368,7 @@ int VirtualBoy::loadFieldData(void)
 		d->fields.addField_string(C_("RomData", "Region Code"), s_region);
 	} else {
 		d->fields.addField_string(C_("RomData", "Region Code"),
-			rp_sprintf(C_("RomData", "Unknown (0x%02X)"),
+			fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")),
 				static_cast<uint8_t>(romFooter->gameid[3])));
 	}
 
@@ -374,7 +383,7 @@ int VirtualBoy::loadFieldData(void)
 int VirtualBoy::loadMetaData(void)
 {
 	RP_D(VirtualBoy);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -386,39 +395,40 @@ int VirtualBoy::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(2);	// Maximum of 2 metadata properties.
-
 	// Virtual Boy ROM footer, excluding the vector table.
 	const VB_RomFooter *const romFooter = &d->romFooter;
+	d->metaData.reserve(2);	// Maximum of 2 metadata properties.
 
 	// Title
-	d->metaData->addMetaData_string(Property::Title,
+	d->metaData.addMetaData_string(Property::Title,
 		cp1252_sjis_to_utf8(romFooter->title, sizeof(romFooter->title)));
 
 	// Publisher (aka manufacturer)
 	// Look up the publisher.
 	const char *const publisher = NintendoPublishers::lookup(romFooter->publisher);
 	if (publisher) {
-		d->metaData->addMetaData_string(Property::Publisher, publisher);
+		d->metaData.addMetaData_string(Property::Publisher, publisher);
 	} else {
 		string s_publisher;
 		if (ISALNUM(romFooter->publisher[0]) &&
 		    ISALNUM(romFooter->publisher[1]))
 		{
-			s_publisher = rp_sprintf(C_("RomData", "Unknown (%.2s)"),
-				romFooter->publisher);
+			const array<char, 3> s_company = {{
+				romFooter->publisher[0],
+				romFooter->publisher[1],
+				'\0'
+			}};
+			s_publisher = fmt::format(FRUN(C_("RomData", "Unknown ({:s})")), s_company.data());
 		} else {
-			s_publisher = rp_sprintf(C_("RomData", "Unknown (%02X %02X)"),
+			s_publisher = fmt::format(FRUN(C_("RomData", "Unknown ({:0>2X} {:0>2X})")),
 				static_cast<uint8_t>(romFooter->publisher[0]),
 				static_cast<uint8_t>(romFooter->publisher[1]));
 		}
-		d->metaData->addMetaData_string(Property::Publisher, s_publisher);
+		d->metaData.addMetaData_string(Property::Publisher, s_publisher);
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

@@ -14,12 +14,19 @@
 namespace LibRomData {
 
 ROMDATA_DECL_BEGIN(XboxDisc)
+ROMDATA_DECL_CTOR_DIRECTORY(XboxDisc)
 ROMDATA_DECL_CLOSE()
 ROMDATA_DECL_METADATA()
 ROMDATA_DECL_IMGSUPPORT()
 ROMDATA_DECL_IMGPF()
 ROMDATA_DECL_IMGINT()
 ROMDATA_DECL_VIEWED_ACHIEVEMENTS()
+
+private:
+	/**
+	 * Internal initialization function for the three constructors.
+	 */
+	void init();
 
 public:
 	/**

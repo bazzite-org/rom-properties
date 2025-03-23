@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpfile)                        *
  * VectorFile.cpp: IRpFile implementation using an std::vector.            *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -11,13 +11,6 @@
 
 // C++ STL classes.
 using std::string;
-
-// TextOut_json isn't used by libromdata directly,
-// so use some linker hax to force linkage.
-extern "C" {
-	extern unsigned char RP_LibRpFile_VectorFile_ForceLinkage;
-	unsigned char RP_LibRpFile_VectorFile_ForceLinkage;
-}
 
 namespace LibRpFile {
 
@@ -29,8 +22,7 @@ static constexpr off64_t VECTOR_FILE_MAX_SIZE = 128U*1024U*1024U;
  * The resulting IRpFile is writable.
  */
 VectorFile::VectorFile()
-	: super()
-	, m_pVector(new std::vector<uint8_t>())
+	: m_pVector(new std::vector<uint8_t>())
 	, m_pos(0)
 {
 	// Reserve at least 16 KB.

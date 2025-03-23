@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * WonderSwan.cpp: Bandai WonderSwan (Color) ROM reader.                   *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -26,7 +26,7 @@ namespace LibRomData {
 class WonderSwanPrivate final : public RomDataPrivate
 {
 public:
-	WonderSwanPrivate(const IRpFilePtr &file);
+	explicit WonderSwanPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -34,8 +34,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 3+1> exts;
+	static const array<const char*, 3+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -68,7 +68,7 @@ ROMDATA_IMPL(WonderSwan)
 /** WonderSwanPrivate **/
 
 /* RomDataInfo */
-const char *const WonderSwanPrivate::exts[] = {
+const array<const char*, 3+1> WonderSwanPrivate::exts = {{
 	// NOTE: These extensions may cause conflicts on
 	// Windows if fallback handling isn't working.
 
@@ -77,8 +77,8 @@ const char *const WonderSwanPrivate::exts[] = {
 	".pc2",	// Pocket Challenge V2
 
 	nullptr
-};
-const char *const WonderSwanPrivate::mimeTypes[] = {
+}};
+const array<const char*, 3+1> WonderSwanPrivate::mimeTypes = {{
 	// NOTE: Ordering matches RomType.
 
 	// Unofficial MIME types from FreeDesktop.org.
@@ -90,9 +90,9 @@ const char *const WonderSwanPrivate::mimeTypes[] = {
 	"application/x-pocket-challenge-v2-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo WonderSwanPrivate::romDataInfo = {
-	"WonderSwan", exts, mimeTypes
+	"WonderSwan", exts.data(), mimeTypes.data()
 };
 
 WonderSwanPrivate::WonderSwanPrivate(const IRpFilePtr &file)
@@ -124,10 +124,8 @@ string WonderSwanPrivate::getGameID(void) const
 		sys_id = 'C';
 	}
 
-	char game_id[16];
-	snprintf(game_id, sizeof(game_id), "SWJ-%s%c%02X",
+	return fmt::format(FSTR("SWJ-{:s}{:c}{:0>2X}"),
 		publisher_code, sys_id, romFooter.game_id);
-	return {game_id};
 }
 
 /** WonderSwan **/
@@ -194,6 +192,7 @@ WonderSwan::WonderSwan(const IRpFilePtr &file)
 
 	if (!d->isValid) {
 		d->file.reset();
+		return;
 	}
 
 	// Check for certain ROMs that have incorrect footers.
@@ -321,7 +320,7 @@ WonderSwan::WonderSwan(const IRpFilePtr &file)
 	// MIME type.
 	// TODO: Set to application/x-pocket-challenge-v2-rom if the extension is .pc2?
 	if ((int)d->romType >= 0) {
-		d->mimeType = d->mimeTypes[(int)d->romType];
+		d->mimeType = d->mimeTypes[static_cast<int>(d->romType)];
 	}
 }
 
@@ -415,10 +414,10 @@ const char *WonderSwan::systemName(unsigned int type) const
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"WonderSwan::systemName() array index optimization needs to be updated.");
 	
-	static const char *const sysNames[2][4] = {
-		{"Bandai WonderSwan", "WonderSwan", "WS", nullptr},
-		{"Bandai WonderSwan Color", "WonderSwan Color", "WSC", nullptr},
-	};
+	static const array<array<const char*, 4>, 2> sysNames = {{
+		{{"Bandai WonderSwan", "WonderSwan", "WS", nullptr}},
+		{{"Bandai WonderSwan Color", "WonderSwan Color", "WSC", nullptr}},
+	}};
 
 	return sysNames[d->romFooter.system_id & 1][type & SYSNAME_TYPE_MASK];
 }
@@ -546,16 +545,16 @@ int WonderSwan::loadFieldData(void)
 	if (publisher) {
 		s_publisher = publisher;
 	} else {
-		s_publisher = rp_sprintf(C_("RomData", "Unknown (0x%02X)"), romFooter->publisher);
+		s_publisher = fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), romFooter->publisher);
 	}
 	d->fields.addField_string(C_("RomData", "Publisher"), s_publisher);
 
 	// System
-	static const char *const system_bitfield_names[] = {
+	static const array<const char*, 2> system_bitfield_names = {{
 		"WonderSwan", "WonderSwan Color"
-	};
-	vector<string> *const v_system_bitfield_names = RomFields::strArrayToVector(
-		system_bitfield_names, ARRAY_SIZE(system_bitfield_names));
+	}};
+	// TODO: Localize?
+	vector<string> *const v_system_bitfield_names = RomFields::strArrayToVector(system_bitfield_names);
 	const uint32_t ws_system = (romFooter->system_id & 1) ? 3 : 1;
 	d->fields.addField_bitfield(C_("WonderSwan", "System"),
 		v_system_bitfield_names, 0, ws_system);
@@ -572,7 +571,7 @@ int WonderSwan::loadFieldData(void)
 			formatFileSizeKiB(rom_size_tbl[romFooter->rom_size]));
 	} else {
 		d->fields.addField_string(rom_size_title,
-			rp_sprintf(C_("RomData", "Unknown (%u)"), romFooter->publisher));
+			fmt::format(FRUN(C_("RomData", "Unknown ({:d})")), romFooter->publisher));
 	}
 
 	// Save size and type
@@ -585,7 +584,7 @@ int WonderSwan::loadFieldData(void)
 	} else if (romFooter->save_type < sram_size_tbl.size()) {
 		d->fields.addField_string(save_memory_title,
 			// tr: Parameter 2 indicates the save type, e.g. "SRAM" or "EEPROM".
-			rp_sprintf_p(C_("WonderSwan|SaveMemory", "%1$u KiB (%2$s)"),
+			fmt::format(FRUN(C_("WonderSwan|SaveMemory", "{0:d} KiB ({1:s})")),
 				sram_size_tbl[romFooter->save_type],
 				C_("WonderSwan|SaveMemory", "SRAM")));
 	} else {
@@ -603,23 +602,23 @@ int WonderSwan::loadFieldData(void)
 			const char *fmtstr;
 			if (eeprom_bytes >= 1024) {
 				// tr: Parameter 2 indicates the save type, e.g. "SRAM" or "EEPROM".
-				fmtstr = C_("WonderSwan|SaveMemory", "%1$u KiB (%2$s)");
+				fmtstr = C_("WonderSwan|SaveMemory", "{0:d} KiB ({1:s})");
 				eeprom_bytes /= 1024;
 			} else {
 				// tr: Parameter 2 indicates the save type, e.g. "SRAM" or "EEPROM".
-				fmtstr = C_("WonderSwan|SaveMemory", "%1$u bytes (%2$s)");
+				fmtstr = C_("WonderSwan|SaveMemory", "{0:d} bytes ({1:s})");
 			}
 			d->fields.addField_string(save_memory_title,
-				rp_sprintf_p(fmtstr, eeprom_bytes, C_("WonderSwan|SaveMemory", "EEPROM")));
+				fmt::format(FRUN(fmtstr), eeprom_bytes, C_("WonderSwan|SaveMemory", "EEPROM")));
 		}
 	}
 
 	// Features (aka RTC Present)
-	static const char *const ws_feature_bitfield_names[] = {
+	static const array<const char*, 1> ws_feature_bitfield_names = {{
 		NOP_C_("WonderSwan|Features", "RTC Present"),
-	};
+	}};
 	vector<string> *const v_ws_feature_bitfield_names = RomFields::strArrayToVector_i18n(
-		"WonderSwan|Features", ws_feature_bitfield_names, ARRAY_SIZE(ws_feature_bitfield_names));
+		"WonderSwan|Features", ws_feature_bitfield_names);
 	d->fields.addField_bitfield(C_("WonderSwan", "Features"),
 		v_ws_feature_bitfield_names, 0, romFooter->rtc_present);
 
@@ -652,32 +651,29 @@ int WonderSwan::loadFieldData(void)
 int WonderSwan::loadMetaData(void)
 {
 	RP_D(WonderSwan);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->romType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->romType) < 0) {
 		// Unknown ROM image type.
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
 	// WonderSwan ROM footer
 	const WS_RomFooter *const romFooter = &d->romFooter;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Publisher
 	const char *const publisher = WonderSwanPublishers::lookup_name(romFooter->publisher);
 	if (publisher) {
-		d->metaData->addMetaData_string(Property::Publisher, publisher);
+		d->metaData.addMetaData_string(Property::Publisher, publisher);
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -688,17 +684,17 @@ int WonderSwan::loadMetaData(void)
  * try to get the size that most closely matches the
  * requested size.
  *
- * @param imageType	[in]     Image type.
- * @param pExtURLs	[out]    Output vector.
+ * @param imageType	[in]     Image type
+ * @param extURLs	[out]    Output vector
  * @param size		[in,opt] Requested image size. This may be a requested
  *                               thumbnail size in pixels, or an ImageSizeType
  *                               enum value.
  * @return 0 on success; negative POSIX error code on error.
  */
-int WonderSwan::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
+int WonderSwan::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) const
 {
-	ASSERT_extURLs(imageType, pExtURLs);
-	pExtURLs->clear();
+	extURLs.clear();
+	ASSERT_extURLs(imageType);
 
 	// "Pocket Challenge v2" ROMs don't have a publisher or
 	// game ID set, so we can't get a title screen.
@@ -746,16 +742,16 @@ int WonderSwan::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size)
 	subdir[1] = '\0';
 
 	// Add the URLs.
-	pExtURLs->resize(1);
-	auto extURL_iter = pExtURLs->begin();
-	extURL_iter->url = d->getURL_RPDB("ws", imageTypeName, subdir, game_id.c_str(), ext);
-	extURL_iter->cache_key = d->getCacheKey_RPDB("ws", imageTypeName, subdir, game_id.c_str(), ext);
-	extURL_iter->width = sizeDefs[0].width;
-	extURL_iter->height = sizeDefs[0].height;
-	extURL_iter->high_res = (sizeDefs[0].index >= 2);
+	extURLs.resize(1);
+	ExtURL &extURL = extURLs[0];
+	extURL.url = d->getURL_RPDB("ws", imageTypeName, subdir, game_id.c_str(), ext);
+	extURL.cache_key = d->getCacheKey_RPDB("ws", imageTypeName, subdir, game_id.c_str(), ext);
+	extURL.width = sizeDefs[0].width;
+	extURL.height = sizeDefs[0].height;
+	extURL.high_res = (sizeDefs[0].index >= 2);
 
 	// All URLs added.
 	return 0;
 }
 
-}
+} // namespace LibRomData

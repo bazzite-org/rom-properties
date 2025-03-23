@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * DirectDrawSurface.hpp: DirectDraw Surface image reader.                 *
  *                                                                         *
- * Copyright (c) 2017-2024 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -20,7 +20,6 @@
 #include "librptext/fourCC.hpp"
 using namespace LibRpFile;
 using LibRpBase::RomFields;
-using LibRpText::rp_sprintf;
 
 // librptexture
 #include "ImageSizeCalc.hpp"
@@ -40,108 +39,107 @@ namespace LibRpTexture {
 
 class DirectDrawSurfacePrivate final : public FileFormatPrivate
 {
-	public:
-		DirectDrawSurfacePrivate(DirectDrawSurface *q, const IRpFilePtr &file);
-		~DirectDrawSurfacePrivate() final = default;
+public:
+	DirectDrawSurfacePrivate(DirectDrawSurface *q, const IRpFilePtr &file);
 
-	private:
-		typedef FileFormatPrivate super;
-		RP_DISABLE_COPY(DirectDrawSurfacePrivate)
+private:
+	typedef FileFormatPrivate super;
+	RP_DISABLE_COPY(DirectDrawSurfacePrivate)
 
-	public:
-		/** TextureInfo **/
-		static const char *const exts[];
-		static const char *const mimeTypes[];
-		static const TextureInfo textureInfo;
+public:
+	/** TextureInfo **/
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 2+1> mimeTypes;
+	static const TextureInfo textureInfo;
 
-	public:
-		// DDS header
-		DDS_HEADER ddsHeader;
-		DDS_HEADER_DXT10 dxt10Header;
-		DDS_HEADER_XBOX xb1Header;
+public:
+	// DDS header
+	DDS_HEADER ddsHeader;
+	DDS_HEADER_DXT10 dxt10Header;
+	DDS_HEADER_XBOX xb1Header;
 
-		// Texture data start address
-		unsigned int texDataStartAddr;
+	// Texture data start address
+	unsigned int texDataStartAddr;
 
-		// Decoded mipmaps
-		// Mipmap 0 is the full image.
-		vector<rp_image_ptr> mipmaps;
+	// Image format identifiers
+	ImageDecoder::PixelFormat pxf_uncomp;	// Pixel format for uncompressed images. (If 0, compressed.)
+	uint8_t bytespp;	// Bytes per pixel. (Uncompressed only; set to 0 for compressed.)
+	uint8_t dxgi_format;	// DXGI_FORMAT for compressed images. (If 0, uncompressed.)
+	uint8_t dxgi_alpha;	// DDS_DXT10_MISC_FLAGS2 - alpha format.
 
-		// Pixel format message
-		// NOTE: Used for both valid and invalid pixel formats
-		// due to various bit specifications.
-		char pixel_format[32];
+	// Decoded mipmaps
+	// Mipmap 0 is the full image.
+	vector<rp_image_ptr> mipmaps;
 
-		/**
-		 * Calculate the expected image size.
-		 *
-		 * Width/height must be specified here for mipmap support.
-		 * Other values are determined from the DDS header.
-		 *
-		 * @param width		[in]
-		 * @param height	[in]
-		 * @param mip		[in] Mipmap level (for stride calculation)
-		 * @param pStride	[out] Stride (for uncompressed formats)
-		 * @return Expected image size, or 0 on error
-		 */
-		unsigned int calcExpectedSize(int width, int height, int mip, unsigned int *pStride);
+	// Pixel format message
+	// NOTE: Used for both valid and invalid pixel formats
+	// due to various bit specifications.
+	mutable string pixel_format;
 
-		/**
-		 * Load the image.
-		 * @param mip Mipmap number. (0 == full image)
-		 * @return Image, or nullptr on error.
-		 */
-		rp_image_const_ptr loadImage(int mip);
+	/**
+	 * Calculate the expected image size.
+	 *
+	 * Width/height must be specified here for mipmap support.
+	 * Other values are determined from the DDS header.
+	 *
+	 * @param width		[in]
+	 * @param height	[in]
+	 * @param mip		[in] Mipmap level (for stride calculation)
+	 * @param pStride	[out] Stride (for uncompressed formats)
+	 * @return Expected image size, or 0 on error
+	 */
+	unsigned int calcExpectedSize(int width, int height, int mip, unsigned int *pStride);
 
-	public:
-		// Supported uncompressed RGB formats.
-		struct RGB_Format_Table_t {
-			uint32_t Rmask;
-			uint32_t Gmask;
-			uint32_t Bmask;
-			uint32_t Amask;
-			char desc[15];
-			ImageDecoder::PixelFormat px_format;	// ImageDecoder::PixelFormat
-		};
-		ASSERT_STRUCT(RGB_Format_Table_t, sizeof(uint32_t)*4 + 15 + 1);
+	/**
+	 * Load the image.
+	 * @param mip Mipmap number. (0 == full image)
+	 * @return Image, or nullptr on error.
+	 */
+	rp_image_const_ptr loadImage(int mip);
 
-		static const array<RGB_Format_Table_t,  1> rgb_fmt_tbl_8;	// 8-bit RGB
-		static const array<RGB_Format_Table_t, 17> rgb_fmt_tbl_16;	// 16-bit RGB
-		static const array<RGB_Format_Table_t,  2> rgb_fmt_tbl_24;	// 24-bit RGB
-		static const array<RGB_Format_Table_t, 11> rgb_fmt_tbl_32;	// 32-bit RGB
-		static const array<RGB_Format_Table_t,  9> rgb_fmt_tbl_luma;	// Luminance
-		static const array<RGB_Format_Table_t,  1> rgb_fmt_tbl_alpha;	// Alpha
+public:
+	// Supported uncompressed RGB formats.
+	struct RGB_Format_Table_t {
+		uint32_t Rmask;
+		uint32_t Gmask;
+		uint32_t Bmask;
+		uint32_t Amask;
+		char desc[15];
+		ImageDecoder::PixelFormat px_format;	// ImageDecoder::PixelFormat
+	};
+	ASSERT_STRUCT(RGB_Format_Table_t, sizeof(uint32_t)*4 + 15 + 1);
 
-		/**
-		 * Get an RGB_Format_Table_t entry from an RGB format table.
-		 * @param ddspf DirectDraw Surface pixel format
-		 * @return Pointer to RGB_Format_Table_t, or nullptr if not found.
-		 */
-		static const RGB_Format_Table_t *getRGBFormatTableEntry(const DDS_PIXELFORMAT &ddspf);
+	static const array<RGB_Format_Table_t,  1> rgb_fmt_tbl_8;	// 8-bit RGB
+	static const array<RGB_Format_Table_t, 17> rgb_fmt_tbl_16;	// 16-bit RGB
+	static const array<RGB_Format_Table_t,  2> rgb_fmt_tbl_24;	// 24-bit RGB
+	static const array<RGB_Format_Table_t, 11> rgb_fmt_tbl_32;	// 32-bit RGB
+	static const array<RGB_Format_Table_t,  9> rgb_fmt_tbl_luma;	// Luminance
+	static const array<RGB_Format_Table_t,  1> rgb_fmt_tbl_alpha;	// Alpha
 
-		// Image format identifiers.
-		ImageDecoder::PixelFormat pxf_uncomp;	// Pixel format for uncompressed images. (If 0, compressed.)
-		uint8_t bytespp;	// Bytes per pixel. (Uncompressed only; set to 0 for compressed.)
-		uint8_t dxgi_format;	// DXGI_FORMAT for compressed images. (If 0, uncompressed.)
-		uint8_t dxgi_alpha;	// DDS_DXT10_MISC_FLAGS2 - alpha format.
+	/**
+	 * Get an RGB_Format_Table_t entry from an RGB format table.
+	 * @param ddspf DirectDraw Surface pixel format
+	 * @return Pointer to RGB_Format_Table_t, or nullptr if not found.
+	 */
+	static const RGB_Format_Table_t *getRGBFormatTableEntry(const DDS_PIXELFORMAT &ddspf);
 
-		/**
-		 * Get the format name of an uncompressed DirectDraw surface pixel format.
-		 * @param ddspf DDS_PIXELFORMAT
-		 * @return Format name, or nullptr if not supported.
-		 */
-		static inline const char *getPixelFormatName(const DDS_PIXELFORMAT &ddspf);
+	/**
+	 * Get the format name of an uncompressed DirectDraw surface pixel format.
+	 * @param ddspf DDS_PIXELFORMAT
+	 * @return Format name, or nullptr if not supported.
+	 */
+	static inline const char *getPixelFormatName(const DDS_PIXELFORMAT &ddspf);
 
-		/**
-		 * Get the pixel formats of the DDS texture.
-		 * DDS texture headers must have been loaded.
-		 *
-		 * If uncompressed, this sets pxf_uncomp and bytespp.
-		 * If compressed, this sets dxgi_format.
-		 *
-		 * @return 0 on success; negative POSIX error code on error.
-		 */
-		int updatePixelFormat(void);
+	/**
+	 * Get the pixel formats of the DDS texture.
+	 * DDS texture headers must have been loaded.
+	 *
+	 * If uncompressed, this sets pxf_uncomp and bytespp.
+	 * If compressed, this sets dxgi_format.
+	 *
+	 * @return 0 on success; negative POSIX error code on error.
+	 */
+	int updatePixelFormat(void);
 };
 
 FILEFORMAT_IMPL(DirectDrawSurface)
@@ -149,12 +147,12 @@ FILEFORMAT_IMPL(DirectDrawSurface)
 /** DirectDrawSurfacePrivate **/
 
 /* TextureInfo */
-const char *const DirectDrawSurfacePrivate::exts[] = {
+const array<const char*, 1+1> DirectDrawSurfacePrivate::exts = {{
 	".dds",	// DirectDraw Surface
 
 	nullptr
-};
-const char *const DirectDrawSurfacePrivate::mimeTypes[] = {
+}};
+const array<const char*, 2+1> DirectDrawSurfacePrivate::mimeTypes = {{
 	// Vendor-specific MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"image/vnd.ms-dds",
@@ -163,9 +161,9 @@ const char *const DirectDrawSurfacePrivate::mimeTypes[] = {
 	"image/x-dds",
 
 	nullptr
-};
+}};
 const TextureInfo DirectDrawSurfacePrivate::textureInfo = {
-	exts, mimeTypes
+	exts.data(), mimeTypes.data()
 };
 
 // Supported 16-bit uncompressed RGB formats
@@ -384,7 +382,7 @@ int DirectDrawSurfacePrivate::updatePixelFormat(void)
 			uint8_t dxgi_format;
 			uint8_t dxgi_alpha;
 		};
-		static const array<fourCC_dxgi_tbl_t, 28> fourCC_dxgi_tbl = {{
+		static const array<fourCC_dxgi_tbl_t, 31> fourCC_dxgi_tbl = {{
 			{DDPF_FOURCC_DXT1, DXGI_FORMAT_BC1_UNORM, DDS_ALPHA_MODE_STRAIGHT},
 			{DDPF_FOURCC_DXT2, DXGI_FORMAT_BC2_UNORM, DDS_ALPHA_MODE_PREMULTIPLIED},
 			{DDPF_FOURCC_DXT3, DXGI_FORMAT_BC2_UNORM, DDS_ALPHA_MODE_STRAIGHT},
@@ -402,6 +400,10 @@ int DirectDrawSurfacePrivate::updatePixelFormat(void)
 			// TODO: PVRTC no-alpha formats?
 			{DDPF_FOURCC_PTC2, DXGI_FORMAT_FAKE_PVRTC_2bpp, DDS_ALPHA_MODE_STRAIGHT},
 			{DDPF_FOURCC_PTC4, DXGI_FORMAT_FAKE_PVRTC_4bpp, DDS_ALPHA_MODE_STRAIGHT},
+
+			{DDPF_FOURCC_ATC, DXGI_FORMAT_FAKE_ATC, DDS_ALPHA_MODE_STRAIGHT},
+			{DDPF_FOURCC_ATCE, DXGI_FORMAT_FAKE_ATCE, DDS_ALPHA_MODE_STRAIGHT},
+			{DDPF_FOURCC_ATCI, DXGI_FORMAT_FAKE_ATCI, DDS_ALPHA_MODE_STRAIGHT},
 
 			{DDPF_FOURCC_ASTC4x4, DXGI_FORMAT_ASTC_4X4_UNORM, DDS_ALPHA_MODE_STRAIGHT},
 			{DDPF_FOURCC_ASTC5x4, DXGI_FORMAT_ASTC_5X4_UNORM, DDS_ALPHA_MODE_STRAIGHT},
@@ -544,7 +546,6 @@ DirectDrawSurfacePrivate::DirectDrawSurfacePrivate(DirectDrawSurface *q, const I
 	memset(&ddsHeader, 0, sizeof(ddsHeader));
 	memset(&dxt10Header, 0, sizeof(dxt10Header));
 	memset(&xb1Header, 0, sizeof(xb1Header));
-	memset(pixel_format, 0, sizeof(pixel_format));
 }
 
 /**
@@ -629,6 +630,7 @@ unsigned int DirectDrawSurfacePrivate::calcExpectedSize(int width, int height, i
 		case DXGI_FORMAT_BC4_TYPELESS:
 		case DXGI_FORMAT_BC4_UNORM:
 		//case DXGI_FORMAT_BC4_SNORM:
+		case DXGI_FORMAT_FAKE_ATC:
 			// 16 pixels compressed into 64 bits. (4bpp)
 			// NOTE: Width and height must be rounded to the nearest tile. (4x4)
 			expected_size = ImageSizeCalc::T_calcImageSize(ALIGN_BYTES(4, width), ALIGN_BYTES(4, height)) / 2;
@@ -649,6 +651,8 @@ unsigned int DirectDrawSurfacePrivate::calcExpectedSize(int width, int height, i
 		case DXGI_FORMAT_BC7_TYPELESS:
 		case DXGI_FORMAT_BC7_UNORM:
 		case DXGI_FORMAT_BC7_UNORM_SRGB:
+		case DXGI_FORMAT_FAKE_ATCE:
+		case DXGI_FORMAT_FAKE_ATCI:
 			// 16 pixels compressed into 128 bits. (8bpp)
 			// NOTE: Width and height must be rounded to the nearest tile. (4x4)
 			expected_size = ImageSizeCalc::T_calcImageSize(ALIGN_BYTES(4, width), ALIGN_BYTES(4, height));
@@ -1252,60 +1256,57 @@ const char *DirectDrawSurface::pixelFormat(void) const
 	if (!d->isValid)
 		return nullptr;
 
-	if (d->pixel_format[0] != '\0') {
+	if (!d->pixel_format.empty()) {
 		// We already determined the pixel format.
-		return d->pixel_format;
+		return d->pixel_format.c_str();
 	}
 
 	// Pixel format.
-	DirectDrawSurfacePrivate *const d_nc = const_cast<DirectDrawSurfacePrivate*>(d);
 	const DDS_PIXELFORMAT &ddspf = d->ddsHeader.ddspf;
 	if (ddspf.dwFlags & DDPF_FOURCC) {
 		// Compressed RGB data.
 		// NOTE: If DX10, see dxgi_format.
-		LibRpText::fourCCtoString(d_nc->pixel_format, sizeof(d_nc->pixel_format), ddspf.dwFourCC);
-		return d_nc->pixel_format;
+		d->pixel_format = LibRpText::fourCCtoString(ddspf.dwFourCC);
+		return d->pixel_format.c_str();
 	}
 
 	const char *const pxfmt = d->getPixelFormatName(ddspf);
 	if (pxfmt) {
 		// Got the pixel format name.
-		strcpy(d_nc->pixel_format, pxfmt);
-		return d_nc->pixel_format;
+		d->pixel_format = pxfmt;
+		return d->pixel_format.c_str();
 	}
 
 	// Manually determine the pixel format.
 	if (ddspf.dwFlags & DDPF_RGB) {
 		// Uncompressed RGB data
-		snprintf(d_nc->pixel_format, sizeof(d_nc->pixel_format),
-			 "RGB (%u-bit)", ddspf.dwRGBBitCount);
+		d->pixel_format = fmt::format(
+			 FRUN(C_("DirectDrawSurface", "RGB ({:d}-bit)")), ddspf.dwRGBBitCount);
 	} else if (ddspf.dwFlags & DDPF_ALPHA) {
 		// Alpha channel
-		snprintf(d_nc->pixel_format, sizeof(d_nc->pixel_format),
-			C_("DirectDrawSurface", "Alpha (%u-bit)"), ddspf.dwRGBBitCount);
+		d->pixel_format = fmt::format(
+			FRUN(C_("DirectDrawSurface", "Alpha ({:d}-bit)")), ddspf.dwRGBBitCount);
 	} else if (ddspf.dwFlags & DDPF_YUV) {
 		// YUV (TODO: Determine the format.)
-		snprintf(d_nc->pixel_format, sizeof(d_nc->pixel_format),
-			C_("DirectDrawSurface", "YUV (%u-bit)"), ddspf.dwRGBBitCount);
+		d->pixel_format = fmt::format(
+			FRUN(C_("DirectDrawSurface", "YUV ({:d}-bit)")), ddspf.dwRGBBitCount);
 	} else if (ddspf.dwFlags & DDPF_LUMINANCE) {
 		// Luminance
 		if (ddspf.dwFlags & DDPF_ALPHAPIXELS) {
-			snprintf(d_nc->pixel_format, sizeof(d_nc->pixel_format),
-				C_("DirectDrawSurface", "Luminance + Alpha (%u-bit)"),
+			d->pixel_format = fmt::format(
+				FRUN(C_("DirectDrawSurface", "Luminance + Alpha ({:d}-bit)")),
 				ddspf.dwRGBBitCount);
 		} else {
-			snprintf(d_nc->pixel_format, sizeof(d_nc->pixel_format),
-				C_("DirectDrawSurface", "Luminance (%u-bit)"),
+			d->pixel_format = fmt::format(
+				FRUN(C_("DirectDrawSurface", "Luminance ({:d}-bit)")),
 				ddspf.dwRGBBitCount);
 		}
 	} else {
 		// Unknown pixel format
-		strncpy(d_nc->pixel_format,
-			C_("FileFormat", "Unknown"), sizeof(d_nc->pixel_format));
-		d_nc->pixel_format[sizeof(d_nc->pixel_format)-1] = '\0';
+		d->pixel_format = C_("RomData", "Unknown");
 	}
 
-	return d->pixel_format;
+	return d->pixel_format.c_str();
 }
 
 #ifdef ENABLE_LIBRPBASE_ROMFIELDS
@@ -1346,14 +1347,14 @@ int DirectDrawSurface::getFields(RomFields *fields) const
 		const char *const texFormat = DX10Formats::lookup_dxgiFormat(d->dxgi_format);
 		fields->addField_string(C_("DirectDrawSurface", "DX10 Format"),
 			(texFormat ? texFormat :
-				rp_sprintf(C_("FileFormat", "Unknown (0x%08X)"), d->dxgi_format)));
+				fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>8X})")), d->dxgi_format)));
 	}
 
 	// nVidia Texture Tools header
 	if (ddsHeader->nvtt.dwNvttMagic == cpu_to_be32(NVTT_MAGIC)) {
 		const uint32_t nvtt_version = le32_to_cpu(ddsHeader->nvtt.dwNvttVersion);
 		fields->addField_string(C_("DirectDrawSurface", "NVTT Version"),
-			rp_sprintf("%u.%u.%u",
+			fmt::format(FSTR("{:d}.{:d}.{:d}"),
 				   (nvtt_version >> 16) & 0xFF,
 				   (nvtt_version >>  8) & 0xFF,
 				    nvtt_version        & 0xFF));
@@ -1372,7 +1373,7 @@ int DirectDrawSurface::getFields(RomFields *fields) const
 	}
 
 	// dwFlags
-	static const char *const dwFlags_names[] = {
+	static const array<const char*, 24> dwFlags_names = {{
 		// 0x1-0x8
 		NOP_C_("DirectDrawSurface|dwFlags", "Caps"),
 		NOP_C_("DirectDrawSurface|dwFlags", "Height"),
@@ -1393,25 +1394,23 @@ int DirectDrawSurface::getFields(RomFields *fields) const
 		// 0x100000-0x800000
 		nullptr, nullptr, nullptr,
 		NOP_C_("DirectDrawSurface|dwFlags", "Depth"),
-	};
-	vector<string> *const v_dwFlags_names = RomFields::strArrayToVector_i18n(
-		"DirectDrawSurface|dwFlags", dwFlags_names, ARRAY_SIZE(dwFlags_names));
+	}};
+	vector<string> *const v_dwFlags_names = RomFields::strArrayToVector_i18n("DirectDrawSurface|dwFlags", dwFlags_names);
 	fields->addField_bitfield(C_("DirectDrawSurface", "Flags"),
 		v_dwFlags_names, 3, ddsHeader->dwFlags);
 
 	// ddspf.dwFlags (high bits; nVidia-specific)
 	const uint32_t pf_flags_high = (ddsHeader->ddspf.dwFlags >> 30);
-	static const char *const ddspf_dwFlags_names[] = {
+	static const array<const char*, 2> ddspf_dwFlags_names = {{
 		"sRGB",	// Not translatable
 		NOP_C_("DirectDrawSurface|ddspf", "Normal Map"),
-	};
-	vector<string> *const v_ddspf_dwFlags_names = RomFields::strArrayToVector_i18n(
-		"DirectDrawSurface|ddspf", ddspf_dwFlags_names, ARRAY_SIZE(ddspf_dwFlags_names));
+	}};
+	vector<string> *const v_ddspf_dwFlags_names = RomFields::strArrayToVector_i18n("DirectDrawSurface|ddspf", ddspf_dwFlags_names);
 	fields->addField_bitfield(C_("DirectDrawSurface", "PF Flags"),
 		v_ddspf_dwFlags_names, 4, pf_flags_high);
 
 	// dwCaps
-	static const char *const dwCaps_names[] = {
+	static const array<const char*, 23> dwCaps_names = {{
 		// 0x1-0x8
 		nullptr, nullptr, nullptr,
 		NOP_C_("DirectDrawSurface|dwCaps", "Complex"),
@@ -1427,14 +1426,13 @@ int DirectDrawSurface::getFields(RomFields *fields) const
 		// 0x100000-0x400000
 		nullptr, nullptr,
 		NOP_C_("DirectDrawSurface|dwCaps", "Mipmap"),
-	};
-	vector<string> *const v_dwCaps_names = RomFields::strArrayToVector_i18n(
-		"DirectDrawSurface|dwFlags", dwCaps_names, ARRAY_SIZE(dwCaps_names));
+	}};
+	vector<string> *const v_dwCaps_names = RomFields::strArrayToVector_i18n("DirectDrawSurface|dwFlags", dwCaps_names);
 	fields->addField_bitfield(C_("DirectDrawSurface", "Caps"),
 		v_dwCaps_names, 3, ddsHeader->dwCaps);
 
 	// dwCaps2 (rshifted by 8)
-	static const char *const dwCaps2_names[] = {
+	static const array<const char*, 14> dwCaps2_names = {{
 		// 0x100-0x800
 		nullptr,
 		NOP_C_("DirectDrawSurface|dwCaps2", "Cubemap"),
@@ -1450,9 +1448,8 @@ int DirectDrawSurface::getFields(RomFields *fields) const
 		// 0x100000-0x200000
 		nullptr,
 		NOP_C_("DirectDrawSurface|dwCaps2", "Volume"),
-	};
-	vector<string> *const v_dwCaps2_names = RomFields::strArrayToVector_i18n(
-		"DirectDrawSurface|dwCaps2", dwCaps2_names, ARRAY_SIZE(dwCaps2_names));
+	}};
+	vector<string> *const v_dwCaps2_names = RomFields::strArrayToVector_i18n("DirectDrawSurface|dwCaps2", dwCaps2_names);
 	fields->addField_bitfield(C_("DirectDrawSurface", "Caps2"),
 		v_dwCaps2_names, 4, (ddsHeader->dwCaps2 >> 8));
 
@@ -1506,4 +1503,4 @@ rp_image_const_ptr DirectDrawSurface::mipmap(int mip) const
 	return const_cast<DirectDrawSurfacePrivate*>(d)->loadImage(mip);
 }
 
-}
+} // namespace LibRpTexture

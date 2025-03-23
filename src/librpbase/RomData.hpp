@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpbase)                        *
  * RomData.hpp: ROM data base class.                                       *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -13,9 +13,9 @@
 #include "dll-macros.h"	// for RP_LIBROMDATA_PUBLIC
 #include "RomData_decl.hpp"
 
-// C includes
-#include <stddef.h>	/* size_t */
-#include <stdint.h>
+// C includes (C++ namespace)
+#include <cstddef>	/* size_t */
+#include <cstdint>
 
 // C++ includes
 #include <memory>
@@ -244,6 +244,15 @@ public:
 	RP_LIBROMDATA_PUBLIC
 	const char *mimeType(void) const;
 
+	/**
+	 * Is this a PAL-region title?
+	 * Mostly used to select between US/GB flags in the
+	 * language dropdown box for multi-language titles.
+	 * @return True if it's definitely PAL; false if not or unknown.
+	 */
+	RP_LIBROMDATA_PUBLIC
+	bool isPAL(void) const;
+
 	// TODO:
 	// - List of supported systems.
 	// - Get logo from current system and/or other system?
@@ -364,6 +373,10 @@ public:
 		// be rendered with a smaller size)
 		// FIXME: Better way to get the rescale size.
 		IMGPF_RESCALE_RFT_DIMENSIONS_2	= (1U << 5),
+
+		// Image is internally stored as a PNG file.
+		// (Internal images only)
+		IMGPF_INTERNAL_PNG_FORMAT	= (1U << 6),
 	};
 
 	struct ImageSizeDef {
@@ -521,14 +534,14 @@ public:
 	 * try to get the size that most closely matches the
 	 * requested size.
 	 *
-	 * @param imageType	[in]     Image type.
-	 * @param pExtURLs	[out]    Output vector.
+	 * @param imageType	[in]     Image type
+	 * @param extURLs	[out]    Output vector
 	 * @param size		[in,opt] Requested image size. This may be a requested
 	 *                               thumbnail size in pixels, or an ImageSizeType
 	 *                               enum value.
 	 * @return 0 on success; negative POSIX error code on error.
 	 */
-	virtual int extURLs(ImageType imageType, std::vector<ExtURL> *pExtURLs, int size = IMAGE_SIZE_DEFAULT) const;
+	virtual int extURLs(ImageType imageType, std::vector<ExtURL> &extURLs, int size = IMAGE_SIZE_DEFAULT) const;
 
 	/**
 	 * Get the name of an image type

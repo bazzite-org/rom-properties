@@ -36,10 +36,12 @@ SET(${PROJECT_NAME}_SRCS
 	rp-download.cpp
 	IDownloader.cpp
 	http-status.cpp
+	CacheKeyVerify.cpp
 	)
 SET(${PROJECT_NAME}_H
 	IDownloader.hpp
 	http-status.hpp
+	CacheKeyVerify.hpp
 	)
 
 # Determine which IDownloader backend to use.
@@ -97,7 +99,7 @@ SET_WINDOWS_SUBSYSTEM(${PROJECT_NAME} CONSOLE)
 SET_WINDOWS_NO_MANIFEST(${PROJECT_NAME})
 SET_WINDOWS_ENTRYPOINT(${PROJECT_NAME} wmain OFF)
 
-TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE rpsecure cachecommon)
+TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE rpfile rpsecure cachecommon)
 TARGET_INCLUDE_DIRECTORIES(${PROJECT_NAME}
 	PUBLIC	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>		# rp-download
 		$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>		# rp-download
@@ -124,6 +126,11 @@ IF(APPLE)
 	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE ${CORESERVICES_LIBRARY})
 ENDIF(APPLE)
 
+# libfmt
+IF(Fmt_FOUND)
+	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE ${Fmt_LIBRARY})
+ENDIF(Fmt_FOUND)
+
 # Make sure git_version.h is created before compiling this target.
 IF(TARGET git_version)
 	ADD_DEPENDENCIES(${PROJECT_NAME} git_version)
@@ -135,6 +142,11 @@ IF(MINGW)
 	SET(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -I \"${CMAKE_CURRENT_BINARY_DIR}/..\"")
 	SET(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -I \"${CMAKE_CURRENT_BINARY_DIR}\"")
 ENDIF(MINGW)
+
+# Test suite
+IF(BUILD_TESTING)
+	ADD_SUBDIRECTORY(tests)
+ENDIF(BUILD_TESTING)
 
 ###########################
 # Install the executable. #

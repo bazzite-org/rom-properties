@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librptext/tests)                  *
  * TextFuncsTest.cpp: Text conversion functions test                       *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -27,8 +27,8 @@ using std::array;
 using std::string;
 using std::u16string;
 
-#define C8(x) reinterpret_cast<const char*>(x.data())
-#define C16(x) reinterpret_cast<const char16_t*>(x.data())
+#define C8(x) reinterpret_cast<const char*>((x).data())
+#define C16(x) reinterpret_cast<const char16_t*>((x).data())
 
 #define C16_ARRAY_SIZE(x) (sizeof(x)/sizeof(char16_t))
 #define C16_ARRAY_SIZE_I(x) static_cast<int>(sizeof(x)/sizeof(char16_t))
@@ -64,7 +64,6 @@ class TextFuncsTest : public ::testing::Test
 		 * cp1252 to UTF-16 test string.
 		 * Contains the expected result from:
 		 * - cp1252_to_utf16(cp1252_data, sizeof(cp1252_data))
-		 * - cp1252_sjis_to_utf16(cp1252_data, sizeof(cp1252_data))
 		 */
 		static const array<char16_t, 250> cp1252_utf16_data;
 
@@ -85,13 +84,6 @@ class TextFuncsTest : public ::testing::Test
 		static const array<uint8_t, 53> sjis_utf8_data;
 
 		/**
-		 * Shift-JIS to UTF-16 test string.
-		 * Contains the expected result from:
-		 * - cp1252_sjis_to_utf16(sjis_data, ARRAY_SIZE_I(sjis_data))
-		 */
-		static const array<char16_t, 19> sjis_utf16_data;
-
-		/**
 		 * Shift-JIS test string with a cp1252 copyright symbol. (0xA9)
 		 * This string is incorrectly detected as Shift-JIS because
 		 * all bytes are valid.
@@ -103,12 +95,6 @@ class TextFuncsTest : public ::testing::Test
 		 * - cp1252_sjis_to_utf8(sjis_copyright_in, sizeof(sjis_copyright_in))
 		 */
 		static const array<uint8_t, 18> sjis_copyright_out_utf8;
-
-		/**
-		 * UTF-16 result from:
-		 * - cp1252_sjis_to_utf16(sjis_copyright_in, sizeof(sjis_copyright_in))
-		 */
-		static const array<char16_t, 16> sjis_copyright_out_utf16;
 
 		/**
 		 * UTF-8 test string.
@@ -382,118 +368,6 @@ TEST_F(TextFuncsTest, cp1252_sjis_to_utf8_japanese)
 	str = cp1252_sjis_to_utf8(C8(sjis_data), (int)sjis_data.size());
 	EXPECT_EQ(sjis_utf8_data.size()-1, str.size());
 	EXPECT_EQ(C8(sjis_utf8_data), str);
-}
-
-/**
- * Test cp1252_sjis_to_utf16() fallback functionality.
- * This strings should be detected as cp1252 due to
- * Shift-JIS decoding errors.
- */
-TEST_F(TextFuncsTest, cp1252_sjis_to_utf16_fallback)
-{
-	// Test with implicit length.
-	u16string str = cp1252_sjis_to_utf16(C8(cp1252_data), -1);
-	EXPECT_EQ(cp1252_utf16_data.size()-1, str.size());
-	EXPECT_EQ(cp1252_utf16_data.data(), str);
-
-	// Test with explicit length.
-	str = cp1252_sjis_to_utf16(C8(cp1252_data), (int)cp1252_data.size()-1);
-	EXPECT_EQ(cp1252_utf16_data.size()-1, str.size());
-	EXPECT_EQ(cp1252_utf16_data.data(), str);
-
-	// Test with explicit length and an extra NULL.
-	// The extra NULL should be trimmed.
-	str = cp1252_sjis_to_utf16(C8(cp1252_data), (int)cp1252_data.size());
-	EXPECT_EQ(cp1252_utf16_data.size()-1, str.size());
-	EXPECT_EQ(cp1252_utf16_data.data(), str);
-}
-
-/**
- * Test cp1252_sjis_to_utf8() fallback functionality.
- * This string is incorrectly detected as Shift-JIS because
- * all bytes are valid.
- */
-TEST_F(TextFuncsTest, cp1252_sjis_to_utf16_copyright)
-{
-	// cp1252 code point 0xA9 is the copyright symbol,
-	// but it's also halfwidth katakana "U" in Shift-JIS.
-
-	// Test with implicit length.
-	u16string str = cp1252_sjis_to_utf16(C8(sjis_copyright_in), -1);
-	EXPECT_EQ(sjis_copyright_out_utf16.size()-1, str.size());
-	EXPECT_EQ(sjis_copyright_out_utf16.data(), str);
-
-	// Test with explicit length.
-	str = cp1252_sjis_to_utf16(C8(sjis_copyright_in), (int)sjis_copyright_in.size()-1);
-	EXPECT_EQ(sjis_copyright_out_utf16.size()-1, str.size());
-	EXPECT_EQ(sjis_copyright_out_utf16.data(), str);
-
-	// Test with explicit length and an extra NULL.
-	// The extra NULL should be trimmed.
-	str = cp1252_sjis_to_utf16(C8(sjis_copyright_in), (int)sjis_copyright_in.size());
-	EXPECT_EQ(sjis_copyright_out_utf16.size()-1, str.size());
-	EXPECT_EQ(sjis_copyright_out_utf16.data(), str);
-}
-
-/**
- * Test cp1252_sjis_to_utf16() with ASCII strings.
- * Note that backslashes will *not* be converted to
- * yen symbols, so this should be a no-op.
- *
- * FIXME: Backslash may be converted to yen symbols
- * on Windows if the system has a Japanese locale.
- */
-TEST_F(TextFuncsTest, cp1252_sjis_to_utf16_ascii)
-{
-	static constexpr char cp1252_in[] = "C:\\Windows\\System32";
-
-	// NOTE: Need to manually initialize the char16_t[] array
-	// due to the way _RP() is implemented for versions of
-	// MSVC older than 2015.
-	static constexpr array<char16_t, 19+1> utf16_out = {{
-		'C',':','\\','W','i','n','d','o',
-		'w','s','\\','S','y','s','t','e',
-		'm','3','2',0
-	}};
-
-	// Test with implicit length.
-	u16string str = cp1252_sjis_to_utf16(cp1252_in, -1);
-	EXPECT_EQ(utf16_out.size()-1, str.size());
-	EXPECT_EQ(utf16_out.data(), str);
-
-	// Test with explicit length.
-	str = cp1252_sjis_to_utf16(cp1252_in, ARRAY_SIZE_I(cp1252_in)-1);
-	EXPECT_EQ(utf16_out.size()-1, str.size());
-	EXPECT_EQ(utf16_out.data(), str);
-
-	// Test with explicit length and an extra NULL.
-	// The extra NULL should be trimmed.
-	str = cp1252_sjis_to_utf16(cp1252_in, ARRAY_SIZE_I(cp1252_in));
-	EXPECT_EQ(utf16_out.size()-1, str.size());
-	EXPECT_EQ(utf16_out.data(), str);
-}
-
-/**
- * Test cp1252_sjis_to_utf16() with Japanese text.
- * This includes a wave dash character (8160).
- */
-TEST_F(TextFuncsTest, cp1252_sjis_to_utf16_japanese)
-{
-	// Test with implicit length.
-	u16string str = cp1252_sjis_to_utf16(C8(sjis_data), -1);
-	EXPECT_EQ(sjis_utf16_data.size()-1, str.size());
-	EXPECT_EQ(sjis_utf16_data.data(), str);
-
-	// Test with explicit length.
-	str = cp1252_sjis_to_utf16(C8(sjis_data), (int)sjis_data.size()-1);
-	EXPECT_EQ(sjis_utf16_data.size()-1, str.size());
-	EXPECT_EQ(sjis_utf16_data.data(), str);
-
-	// Test with explicit length and an extra NULL.
-	// The extra NULL should be trimmed.
-	str = cp1252_sjis_to_utf16(C8(sjis_data), (int)sjis_data.size());
-	EXPECT_EQ(sjis_utf16_data.size()-1, str.size());
-	EXPECT_EQ(sjis_utf16_data.data(), str);
 }
 
 /** UTF-8 to UTF-16 and vice-versa **/
@@ -804,104 +678,6 @@ TEST_F(TextFuncsTest, u16_strlen)
 	EXPECT_EQ(u16smp_in.size()-1, u16_strlen(u16smp_in.data()));
 }
 
-/**
- * Test u16_strdup().
- */
-TEST_F(TextFuncsTest, u16_strdup)
-{
-	// NOTE: u16_strdup() is a wrapper for wcsdup() on Windows.
-	// On all other systems, it's a simple implementation.
-
-	// Test string.
-	static constexpr array<char16_t, 44+1> u16_str = {{
-		'T','h','e',' ','q','u','i','c','k',' ','b','r',
-		'o','w','n',' ','f','o','x',' ','j','u','m','p',
-		's',' ','o','v','e','r',' ','t','h','e',' ','l',
-		'a','z','y',' ','d','o','g','.',0
-	}};
-
-	char16_t *const u16_dup = u16_strdup(u16_str.data());
-	ASSERT_TRUE(u16_dup != nullptr);
-
-	// Verify the NULL terminator.
-	EXPECT_EQ(0, u16_dup[u16_str.size()-1]);
-	if (u16_dup[u16_str.size()-1] != 0) {
-		// NULL terminator not found.
-		// u16_strlen() and u16_strcmp() may crash,
-		// so exit early.
-		// NOTE: We can't use ASSERT_EQ() because we
-		// have to free the u16_strdup()'d string.
-		free(u16_dup);
-		return;
-	}
-
-	// Verify the string length.
-	EXPECT_EQ(u16_str.size()-1, u16_strlen(u16_dup));
-
-	// Verify the string contents.
-	// NOTE: EXPECT_STREQ() supports const wchar_t*,
-	// but not const char16_t*.
-	EXPECT_EQ(0, u16_strcmp(u16_str.data(), u16_dup));
-
-	free(u16_dup);
-}
-
-/**
- * Test u16_strcmp().
- */
-TEST_F(TextFuncsTest, u16_strcmp)
-{
-	// NOTE: u16_strcmp() is a wrapper for wcscmp() on Windows.
-	// On all other systems, it's a simple implementation.
-
-	// Three test strings.
-	// TODO: Update these strings so they would fail if tested
-	// using u16_strcasecmp().
-	static constexpr array<char16_t, 8> u16_str1 = {{'a','b','c','d','e','f','g',0}};
-	static constexpr array<char16_t, 8> u16_str2 = {{'a','b','d','e','f','g','h',0}};
-	static constexpr array<char16_t, 8> u16_str3 = {{'d','e','f','g','h','i','j',0}};
-
-	// Compare strings to themselves.
-	EXPECT_EQ(0, u16_strcmp(u16_str1.data(), u16_str1.data()));
-	EXPECT_EQ(0, u16_strcmp(u16_str2.data(), u16_str2.data()));
-	EXPECT_EQ(0, u16_strcmp(u16_str3.data(), u16_str3.data()));
-
-	// Compare strings to each other.
-	EXPECT_LT(u16_strcmp(u16_str1.data(), u16_str2.data()), 0);
-	EXPECT_LT(u16_strcmp(u16_str1.data(), u16_str3.data()), 0);
-	EXPECT_GT(u16_strcmp(u16_str2.data(), u16_str1.data()), 0);
-	EXPECT_LT(u16_strcmp(u16_str2.data(), u16_str3.data()), 0);
-	EXPECT_GT(u16_strcmp(u16_str3.data(), u16_str1.data()), 0);
-	EXPECT_GT(u16_strcmp(u16_str3.data(), u16_str2.data()), 0);
-}
-
-/**
- * Test u16_strcasecmp().
- */
-TEST_F(TextFuncsTest, u16_strcasecmp)
-{
-	// NOTE: u16_strcasecmp() is a wrapper for wcsicmp() on Windows.
-	// On all other systems, it's a simple implementation.
-
-	// Three test strings.
-	static constexpr array<char16_t, 8> u16_str1 = {{'A','b','C','d','E','f','G',0}};
-	static constexpr array<char16_t, 8> u16_str2 = {{'a','B','d','E','f','G','h',0}};
-	static constexpr array<char16_t, 8> u16_str3 = {{'D','e','F','g','H','i','J',0}};
-
-	// Compare strings to themselves.
-	EXPECT_EQ(0, u16_strcasecmp(u16_str1.data(), u16_str1.data()));
-	EXPECT_EQ(0, u16_strcasecmp(u16_str2.data(), u16_str2.data()));
-	EXPECT_EQ(0, u16_strcasecmp(u16_str3.data(), u16_str3.data()));
-
-	// Compare strings to each other.
-	EXPECT_LT(u16_strcasecmp(u16_str1.data(), u16_str2.data()), 0);
-	EXPECT_LT(u16_strcasecmp(u16_str1.data(), u16_str3.data()), 0);
-	EXPECT_GT(u16_strcasecmp(u16_str2.data(), u16_str1.data()), 0);
-	EXPECT_LT(u16_strcasecmp(u16_str2.data(), u16_str3.data()), 0);
-	EXPECT_GT(u16_strcasecmp(u16_str3.data(), u16_str1.data()), 0);
-	EXPECT_GT(u16_strcasecmp(u16_str3.data(), u16_str2.data()), 0);
-}
-
 /** Specialized code page functions. **/
 
 TEST_F(TextFuncsTest, atariST_to_utf8)
@@ -979,13 +755,12 @@ TEST_F(TextFuncsTest, utf8_disp_strlen)
 	EXPECT_EQ(15U, strlen(utf8_3byte_text));
 	EXPECT_EQ(5U, utf8_disp_strlen(utf8_3byte_text));
 
-#ifndef _WIN32
 	// Test string with 4-byte UTF-8 code points. (U+10000 - U+10FFFF)
-	// FIXME: Broken on Windows... (returns 7)
+	// U+1F5AC (SOFT SHELL FLOPPY DISK) is w=1 for some reason.
+	// The others are all w=2.
 	static constexpr char utf8_4byte_text[] = "😂🙄💾🖬";
 	EXPECT_EQ(16U, strlen(utf8_4byte_text));
-	EXPECT_EQ(4U, utf8_disp_strlen(utf8_4byte_text));
-#endif /* !_WIN32 */
+	EXPECT_EQ(7U, utf8_disp_strlen(utf8_4byte_text));
 }
 
 /**

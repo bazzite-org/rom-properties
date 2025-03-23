@@ -30,6 +30,9 @@ namespace Gdiplus {
 // for IsThemeActive()
 #include <uxtheme.h>
 
+// C++ STL classes
+using std::unique_ptr;
+
 class DragImageLabelPrivate
 {
 public:
@@ -81,7 +84,7 @@ public:
 			}
 		}
 	};
-	anim_vars *anim;
+	unique_ptr<anim_vars> anim;
 
 	// Use nearest-neighbor scaling?
 	bool useNearestNeighbor;
@@ -129,21 +132,22 @@ DragImageLabelPrivate::DragImageLabelPrivate(HWND hwndParent)
 	, ecksBawks(false)
 {
 	// TODO: Set rect/size as parameters?
-	requiredSize.cx = DIL_REQ_IMAGE_SIZE;
-	requiredSize.cy = DIL_REQ_IMAGE_SIZE;
-	actualSize.cx = DIL_REQ_IMAGE_SIZE;
-	actualSize.cy = DIL_REQ_IMAGE_SIZE;
+	// TODO: Adjust on DPI change?
+	const LONG iconSizeForDpi = rp_AdjustSizeForDpi(32, rp_GetDpiForWindow(hwndParent));
+
+	requiredSize.cx = iconSizeForDpi;
+	requiredSize.cy = iconSizeForDpi;
+	actualSize.cx = iconSizeForDpi;
+	actualSize.cy = iconSizeForDpi;
 
 	rect.left = 0;
-	rect.right = DIL_REQ_IMAGE_SIZE;
+	rect.right = iconSizeForDpi;
 	rect.top = 0;
-	rect.bottom = DIL_REQ_IMAGE_SIZE;
+	rect.bottom = iconSizeForDpi;
 }
 
 DragImageLabelPrivate::~DragImageLabelPrivate()
 {
-	delete anim;
-
 	if (hbmpImg) {
 		DeleteBitmap(hbmpImg);
 	}
@@ -243,10 +247,11 @@ bool DragImageLabelPrivate::updateBitmaps(void)
 		}
 
 		// Set up the IconAnimHelper.
-		anim->iconAnimHelper.setIconAnimData(iconAnimData);
-		if (anim->iconAnimHelper.isAnimated()) {
+		IconAnimHelper &iconAnimHelper = anim->iconAnimHelper;
+		iconAnimHelper.setIconAnimData(iconAnimData);
+		if (iconAnimHelper.isAnimated()) {
 			// Initialize the animation.
-			anim->last_frame_number = anim->iconAnimHelper.frameNumber();
+			anim->last_frame_number = iconAnimHelper.frameNumber();
 
 			// Icon animation timer is set in startAnimTimer().
 		}
@@ -529,9 +534,9 @@ bool DragImageLabel::setIconAnimData(const IconAnimDataConstPtr &iconAnimData)
 	RP_D(DragImageLabel);
 
 	if (!d->anim) {
-		d->anim = new DragImageLabelPrivate::anim_vars(d->hwndParent);
+		d->anim.reset(new DragImageLabelPrivate::anim_vars(d->hwndParent));
 	}
-	auto *const anim = d->anim;
+	auto *const anim = d->anim.get();
 
 	// NOTE: We're not checking if the image pointer matches the
 	// previously stored image, since the underlying image may
@@ -584,7 +589,13 @@ void DragImageLabel::clearRp(void)
 void DragImageLabel::startAnimTimer(void)
 {
 	RP_D(DragImageLabel);
-	if (!d->anim || !d->anim->iconAnimHelper.isAnimated()) {
+	if (!d->anim) {
+		// Not an animated icon.
+		return;
+	}
+
+	const IconAnimHelper &iconAnimHelper = d->anim->iconAnimHelper;
+	if (!iconAnimHelper.isAnimated()) {
 		// Not an animated icon.
 		return;
 	}
@@ -595,8 +606,8 @@ void DragImageLabel::startAnimTimer(void)
 	}
 
 	// Get the current frame information.
-	d->anim->last_frame_number = d->anim->iconAnimHelper.frameNumber();
-	const int delay = d->anim->iconAnimHelper.frameDelay();
+	d->anim->last_frame_number = iconAnimHelper.frameNumber();
+	const int delay = iconAnimHelper.frameDelay();
 	assert(delay > 0);
 	if (delay <= 0) {
 		// Invalid delay value.

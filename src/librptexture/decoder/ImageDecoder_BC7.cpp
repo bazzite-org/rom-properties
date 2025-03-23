@@ -279,14 +279,14 @@ static int decodeBC7Block(array<argb32_t, 4*4> &tileBuf, const uint64_t *bc7_src
 	// If no alpha is present, this will be 255.
 	// For modes with alpha components, there is always
 	// one alpha channel per endpoint.
-	uint8_t alpha[4];
+	array<uint8_t, 4> alpha;
 
 	// Anchor indexes.
 	// Subset 0 is always anchored at 0.
 	// Other subsets depend on subset count and partition number.
 	// NOTE: Index 3 is invalid. It's present here for alignment
 	// and because the subset index is 2-bit.
-	uint8_t anchor_index[4];
+	array<uint8_t, 4> anchor_index;
 	anchor_index[0] = 0;
 
 	/** END: Temporary values. **/
@@ -296,7 +296,9 @@ static int decodeBC7Block(array<argb32_t, 4*4> &tileBuf, const uint64_t *bc7_src
 
 	// Check the block mode.
 	const int mode = get_mode(static_cast<uint32_t>(block.lsb));
-	if (mode < 0) {
+	assert(mode >= 0);
+	assert(mode < 8);
+	if (mode < 0 || mode >= 8) {
 		// Invalid mode.
 		return -EIO;
 	}
@@ -665,9 +667,9 @@ rp_image_ptr fromBC7(int width, int height,
 	const int physWidth = ALIGN_BYTES(4, width);
 	const int physHeight = ALIGN_BYTES(4, height);
 
-	assert(img_siz >= ((size_t)width * (size_t)height));
+	assert(img_siz >= (static_cast<size_t>(physWidth) * static_cast<size_t>(physHeight)));
 	if (!img_buf || width <= 0 || height <= 0 ||
-	    img_siz < ((size_t)physWidth * (size_t)physHeight))
+	    img_siz < (static_cast<size_t>(physWidth) * static_cast<size_t>(physHeight)))
 	{
 		return nullptr;
 	}

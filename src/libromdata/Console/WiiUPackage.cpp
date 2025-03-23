@@ -2,19 +2,26 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * WiiUPackage.cpp: Wii U NUS Package reader.                              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
 #include "stdafx.h"
+
 #include "WiiUPackage.hpp"
 #include "WiiUPackage_p.hpp"
+#include "data/WiiUData.hpp"
+#include "GameCubeRegions.hpp"
+
+// for extURLs_int()
+#include "WiiU.hpp"
 
 // TGA FileFormat
 #include "librptexture/fileformat/TGA.hpp"
 
 // Other rom-properties libraries
 #include "librpbase/disc/PartitionFile.hpp"
+#include "librpbase/SystemRegion.hpp"
 using namespace LibRpBase;
 using namespace LibRpFile;
 using namespace LibRpText;
@@ -22,6 +29,8 @@ using namespace LibRpTexture;
 
 #ifdef _WIN32
 #  include "librptext/wchar.hpp"
+#else /* _WIN32 */
+#  define U82T_c(str) (str)
 #endif /* _WIN32 */
 
 // C++ STL classes
@@ -39,22 +48,23 @@ ROMDATA_IMPL_IMG(WiiUPackage)
 /** WiiUPackagePrivate **/
 
 /* RomDataInfo */
-const char *const WiiUPackagePrivate::exts[] = {
+const array<const char*, 0+1> WiiUPackagePrivate::exts = {{
 	// No file extensions; NUS packages are directories.
 	nullptr
-};
-const char *const WiiUPackagePrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> WiiUPackagePrivate::mimeTypes = {{
 	// NUS packages are directories.
 	"inode/directory",
 
 	nullptr
-};
+}};
 const RomDataInfo WiiUPackagePrivate::romDataInfo = {
-	"WiiUPackage", exts, mimeTypes
+	"WiiUPackage", exts.data(), mimeTypes.data()
 };
 
 WiiUPackagePrivate::WiiUPackagePrivate(const char *path)
 	: super({}, &romDataInfo)
+	, packageType(PackageType::Unknown)
 	, ticket(nullptr)
 	, tmd(nullptr)
 	, fst(nullptr)
@@ -62,12 +72,10 @@ WiiUPackagePrivate::WiiUPackagePrivate(const char *path)
 	if (path && path[0] != '\0') {
 #ifdef _WIN32
 		// Windows: Storing the path as UTF-16 internally.
-		this->path = _tcsdup(U82T_c(path));
+		this->path.assign(U82T_c(path));
 #else /* !_WIN32 */
-		this->path = strdup(path);
+		this->path.assign(path);
 #endif /* _WIN32 */
-	} else {
-		this->path = nullptr;
 	}
 
 #ifdef ENABLE_DECRYPTION
@@ -79,14 +87,13 @@ WiiUPackagePrivate::WiiUPackagePrivate(const char *path)
 #if defined(_WIN32) && defined(_UNICODE)
 WiiUPackagePrivate::WiiUPackagePrivate(const wchar_t *path)
 	: super({}, &romDataInfo)
+	, packageType(PackageType::Unknown)
 	, ticket(nullptr)
 	, tmd(nullptr)
 	, fst(nullptr)
 {
 	if (path && path[0] != L'\0') {
-		this->path = _tcsdup(path);
-	} else {
-		this->path = nullptr;
+		this->path.assign(path);
 	}
 
 #ifdef ENABLE_DECRYPTION
@@ -96,28 +103,16 @@ WiiUPackagePrivate::WiiUPackagePrivate(const wchar_t *path)
 }
 #endif /* _WIN32 && _UNICODE */
 
-WiiUPackagePrivate::~WiiUPackagePrivate()
-{
-	free(path);
-	delete ticket;
-	delete tmd;
-	delete fst;
-}
-
 /**
  * Clear everything.
  */
 void WiiUPackagePrivate::reset(void)
 {
-	free(path);
-	delete ticket;
-	delete tmd;
-	delete fst;
+	path.clear();
 
-	path = nullptr;
-	ticket = nullptr;
-	tmd = nullptr;
-	path = nullptr;
+	ticket.reset();
+	tmd.reset();
+	fst.reset();
 }
 
 /**
@@ -127,9 +122,13 @@ void WiiUPackagePrivate::reset(void)
  */
 IDiscReaderPtr WiiUPackagePrivate::openContentFile(unsigned int idx)
 {
+	assert(packageType == PackageType::NUS);
 	assert(idx < contentsReaders.size());
-	if (idx >= contentsReaders.size())
+	if (packageType != PackageType::NUS ||
+	    idx >= contentsReaders.size())
+	{
 		return {};
+	}
 
 	if (contentsReaders[idx]) {
 		// Content is already open.
@@ -141,19 +140,17 @@ IDiscReaderPtr WiiUPackagePrivate::openContentFile(unsigned int idx)
 	const WUP_Content_Entry &entry = contentsTable[idx];
 	tstring s_path(this->path);
 	s_path += DIR_SEP_CHR;
+	const size_t orig_path_size = s_path.size();
 
 	// Try with lowercase hex first.
 	const uint32_t content_id = be32_to_cpu(entry.content_id);
-	TCHAR fnbuf[16];
-	_sntprintf(fnbuf, ARRAY_SIZE(fnbuf), _T("%08x.app"), content_id);
-	s_path += fnbuf;
+	s_path += fmt::format(FSTR(_T("{:0>8x}.app")), content_id);
 
 	IRpFilePtr subfile = std::make_shared<RpFile>(s_path.c_str(), RpFile::FM_OPEN_READ);
 	if (!subfile->isOpen()) {
 		// Try with uppercase hex.
-		_sntprintf(fnbuf, ARRAY_SIZE(fnbuf), _T("%08X.app"), content_id);
-		s_path.resize(s_path.size()-12);
-		s_path += fnbuf;
+		s_path.resize(orig_path_size);
+		s_path += fmt::format(FSTR(_T("{:0>8X}.app")), content_id);
 
 		subfile = std::make_shared<RpFile>(s_path.c_str(), RpFile::FM_OPEN_READ);
 		if (!subfile->isOpen()) {
@@ -174,11 +171,11 @@ IDiscReaderPtr WiiUPackagePrivate::openContentFile(unsigned int idx)
 		// Content is not H3-hashed.
 
 		// IV is the 2-byte content index, followed by zeroes.
-		uint8_t iv[16];
-		memcpy(iv, &entry.index, 2);
-		memset(&iv[2], 0, 14);
+		array<uint8_t, 16> iv;
+		iv.fill(0);
+		memcpy(iv.data(), &entry.index, 2);
 
-		discReader = std::make_shared<CBCReader>(subfile, 0, subfile->size(), title_key, iv);
+		discReader = std::make_shared<CBCReader>(subfile, 0, subfile->size(), title_key, iv.data());
 	}
 	if (!discReader->isOpen()) {
 		// Unable to open the CBC reader.
@@ -201,6 +198,40 @@ IDiscReaderPtr WiiUPackagePrivate::openContentFile(unsigned int idx)
  */
 IRpFilePtr WiiUPackagePrivate::open(const char *filename)
 {
+	if (!filename || filename[0] == '\0') {
+		return {};
+	}
+
+	if (packageType == PackageType::Extracted) {
+		// Extracted package format. Open the file directly.
+		// TODO: Change slashes to backslashes on Windows?
+		tstring ts_full_filename(path);
+		ts_full_filename += DIR_SEP_CHR;
+
+		// Remove leading slashes, if present.
+		while (*filename == _T('/')) {
+			filename++;
+		}
+		if (*filename == '\0') {
+			// Oops, no filename...
+			return {};
+		}
+
+#ifdef _WIN32
+		const size_t old_sz = ts_full_filename.size();
+#endif /* _WIN32 */
+		ts_full_filename += U82T_c(filename);
+#ifdef _WIN32
+		// Replace all slashes with backslashes.
+		const auto start_iter = ts_full_filename.begin() + old_sz;
+		std::transform(start_iter, ts_full_filename.end(), start_iter, [](TCHAR c) {
+			return (c == '/') ? DIR_SEP_CHR : c;
+		});
+#endif /* _WIN32 */
+
+		return std::make_shared<RpFile>(ts_full_filename.c_str(), RpFile::FM_OPEN_READ);
+	}
+
 	assert(fst != nullptr);
 	if (!fst) {
 		// No FST.
@@ -235,7 +266,7 @@ rp_image_const_ptr WiiUPackagePrivate::loadIcon(void)
 	if (img_icon) {
 		// Icon has already been loaded.
 		return img_icon;
-	} else if (!this->isValid || !this->fst) {
+	} else if (!this->isValid) {
 		// Can't load the icon.
 		return {};
 	}
@@ -248,14 +279,14 @@ rp_image_const_ptr WiiUPackagePrivate::loadIcon(void)
 	}
 
 	// Attempt to open the icon as TGA.
-	unique_ptr<TGA> tga(new TGA(f_icon));
-	if (!tga->isValid()) {
+	TGA tga(f_icon);
+	if (!tga.isValid()) {
 		// Not a valid TGA file.
 		return {};
 	}
 
 	// Get the icon.
-	img_icon = tga->image();
+	img_icon = tga.image();
 	return img_icon;
 }
 
@@ -282,7 +313,6 @@ WiiUPackage::WiiUPackage(const IRpFilePtr &file)
 {
 	// Not supported!
 	RP_UNUSED(file);
-	return;
 }
 
 /**
@@ -291,13 +321,7 @@ WiiUPackage::WiiUPackage(const IRpFilePtr &file)
  * NOTE: Wii U NUS packages are directories. This constructor
  * takes a local directory path.
  *
- * A ROM image must be opened by the caller. The file handle
- * will be ref()'d and must be kept open in order to load
- * data from the ROM image.
- *
- * To close the file, either delete this object or call close().
- *
- * NOTE: Check isValid() to determine if this is a valid ROM.
+ * NOTE: Check isValid() to determine if the directory is supported by this class.
  *
  * @param path Local directory path (UTF-8)
  */
@@ -314,13 +338,7 @@ WiiUPackage::WiiUPackage(const char *path)
  * NOTE: Wii U NUS packages are directories. This constructor
  * takes a local directory path.
  *
- * A ROM image must be opened by the caller. The file handle
- * will be ref()'d and must be kept open in order to load
- * data from the ROM image.
- *
- * To close the file, either delete this object or call close().
- *
- * NOTE: Check isValid() to determine if this is a valid ROM.
+ * NOTE: Check isValid() to determine if the directory is supported by this class.
  *
  * @param path Local directory path (UTF-8)
  */
@@ -337,27 +355,35 @@ WiiUPackage::WiiUPackage(const wchar_t *path)
 void WiiUPackage::init(void)
 {
 	RP_D(WiiUPackage);
+	d->mimeType = "inode/directory";
 	d->fileType = FileType::ApplicationPackage;
 
-	if (!d->path) {
+	if (d->path.empty()) {
 		// No path specified...
 		d->reset();
 		return;
 	}
 
 	// Check if this path is supported.
-	d->isValid = (isDirSupported_static(d->path) >= 0);
+	d->packageType = static_cast<WiiUPackagePrivate::PackageType>(isDirSupported_static(d->path));
 
+	d->isValid = ((int)d->packageType >= 0);
 	if (!d->isValid) {
 		d->reset();
 		return;
 	}
 
 	// Open the ticket.
+	// NOTE: May not be present in extracted packages.
 	WiiTicket *ticket = nullptr;
 
 	tstring s_path(d->path);
 	s_path += DIR_SEP_CHR;
+	const size_t orig_path_size = s_path.size();
+	if (d->packageType == WiiUPackagePrivate::PackageType::Extracted) {
+		s_path += _T("code");
+		s_path += DIR_SEP_CHR;
+	}
 	s_path += _T("title.tik");
 	IRpFilePtr subfile = std::make_shared<RpFile>(s_path, RpFile::FM_OPEN_READ);
 	if (subfile->isOpen()) {
@@ -375,18 +401,23 @@ void WiiUPackage::init(void)
 		}
 	}
 	subfile.reset();
-	if (!ticket) {
+	if (!ticket && d->packageType == WiiUPackagePrivate::PackageType::NUS) {
 		// Unable to load the ticket.
 		d->reset();
 		d->isValid = false;
 		return;
 	}
-	d->ticket = ticket;
+	d->ticket.reset(ticket);
 
 	// Open the TMD.
+	// NOTE: May not be present in extracted packages.
 	WiiTMD *tmd = nullptr;
 
-	s_path.resize(s_path.size()-9);
+	s_path.resize(orig_path_size);
+	if (d->packageType == WiiUPackagePrivate::PackageType::Extracted) {
+		s_path += _T("code");
+		s_path += DIR_SEP_CHR;
+	}
 	s_path += _T("title.tmd");
 	subfile = std::make_shared<RpFile>(s_path, RpFile::FM_OPEN_READ);
 	if (subfile->isOpen()) {
@@ -404,13 +435,19 @@ void WiiUPackage::init(void)
 		}
 	}
 	subfile.reset();
-	if (!tmd) {
+	if (!tmd && d->packageType == WiiUPackagePrivate::PackageType::NUS) {
 		// Unable to load the TMD.
 		d->reset();
 		d->isValid = false;
 		return;
 	}
-	d->tmd = tmd;
+	d->tmd.reset(tmd);
+
+	if (d->packageType != WiiUPackagePrivate::PackageType::NUS) {
+		// Only NUS format needs decryption.
+		// Extracted format is already decrypted.
+		return;
+	}
 
 	// NOTE: From this point on, if an error occurs, we won't reset fields.
 	// This will allow Ticket and TMD to be displayed, even if we can't
@@ -475,9 +512,10 @@ void WiiUPackage::init(void)
 	if (!fst->isOpen()) {
 		// FST is invalid?
 		// NOTE: boot1 does not have an FST.
+		delete fst;
 		return;
 	}
-	d->fst = fst;
+	d->fst.reset(fst);
 
 	// FST loaded.
 }
@@ -496,57 +534,39 @@ int WiiUPackage::isRomSupported_static(const DetectInfo *info)
 
 /**
  * Is a directory supported by this class?
- * @tparam T Character type (char for UTF-8; wchar_t for Windows UTF-16)
- * @param path Directory to check
- * @param filenames_to_check Array of filenames to check
- * @return Class-specific system ID (>= 0) if supported; -1 if not.
- */
-template<typename T>
-int WiiUPackagePrivate::T_isDirSupported_static(const T *path, const array<const T*, 3> &filenames_to_check)
-{
-	assert(path != nullptr);
-	assert(path[0] != '\0');
-	if (!path || path[0] == '\0') {
-		// No path specified.
-		return -1;
-	}
-
-	std::basic_string<T> s_path(path);
-	s_path += DIR_SEP_CHR;
-	const size_t path_orig_size = s_path.size();
-
-	// Check for the required files.
-	for (const auto filename : filenames_to_check) {
-		s_path.resize(path_orig_size);
-		s_path += filename;
-
-		if (FileSystem::access(s_path.c_str(), R_OK) != 0) {
-			// File is missing.
-			return -1;
-		}
-	}
-
-	// This appears to be a Wii U NUS package.
-	return 0;
-}
-
-/**
- * Is a directory supported by this class?
  * @param path Directory to check
  * @return Class-specific system ID (>= 0) if supported; -1 if not.
  */
 int WiiUPackage::isDirSupported_static(const char *path)
 {
-	static const array<const char*, 3> filenames_to_check = {{
+	// Check for an NUS package.
+	static const array<const char*, 3> NUS_package_filenames = {{
 		"title.tik",	// Ticket
 		"title.tmd",	// TMD
 		"title.cert",	// Certificate chain
 	}};
 
-	return WiiUPackagePrivate::T_isDirSupported_static(path, filenames_to_check);
+	if (RomDataPrivate::T_isDirSupported_allFiles_static(path, NUS_package_filenames)) {
+		return static_cast<int>(WiiUPackagePrivate::PackageType::NUS);
+	}
+
+	// Check for an extracted title.
+	// NOTE: Ticket, TMD, and certificate chain might not be present.
+	static const array<const char*, 3> extracted_package_filenames = {{
+		"code/app.xml",
+		"code/cos.xml",
+		"meta/meta.xml",
+	}};
+
+	if (RomDataPrivate::T_isDirSupported_allFiles_static(path, extracted_package_filenames)) {
+		return static_cast<int>(WiiUPackagePrivate::PackageType::Extracted);
+	}
+
+	// Not supported.
+	return static_cast<int>(WiiUPackagePrivate::PackageType::Unknown);
 }
 
-#ifdef _WIN32
+#if defined(_WIN32) && defined(_UNICODE)
 /**
  * Is a directory supported by this class?
  * @param path Directory to check
@@ -554,15 +574,33 @@ int WiiUPackage::isDirSupported_static(const char *path)
  */
 int WiiUPackage::isDirSupported_static(const wchar_t *path)
 {
-	static const array<const wchar_t*, 3> filenames_to_check = {{
+	// Check for an NUS package.
+	static const array<const wchar_t*, 3> NUS_package_filenames = {{
 		L"title.tik",	// Ticket
 		L"title.tmd",	// TMD
 		L"title.cert",	// Certificate chain
 	}};
 
-	return WiiUPackagePrivate::T_isDirSupported_static(path, filenames_to_check);
+	if (RomDataPrivate::T_isDirSupported_allFiles_static(path, NUS_package_filenames)) {
+		return static_cast<int>(WiiUPackagePrivate::PackageType::NUS);
+	}
+
+	// Check for an extracted title.
+	// NOTE: Ticket, TMD, and certificate chain might not be present.
+	static const array<const wchar_t*, 3> extracted_package_filenames = {{
+		L"code/app.xml",
+		L"code/cos.xml",
+		L"meta/meta.xml",
+	}};
+
+	if (RomDataPrivate::T_isDirSupported_allFiles_static(path, extracted_package_filenames)) {
+		return static_cast<int>(WiiUPackagePrivate::PackageType::Extracted);
+	}
+
+	// Not supported.
+	return static_cast<int>(WiiUPackagePrivate::PackageType::Unknown);
 }
-#endif /* _WIN32 */
+#endif /* defined(_WIN32) && defined(_UNICODE) */
 
 /**
  * Get the name of the system the loaded ROM is designed for.
@@ -581,9 +619,9 @@ const char *WiiUPackage::systemName(unsigned int type) const
 		"WiiUPackage::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Nintendo Wii U", "Wii U", "Wii U", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -594,7 +632,21 @@ const char *WiiUPackage::systemName(unsigned int type) const
  */
 uint32_t WiiUPackage::supportedImageTypes_static(void)
 {
-	return IMGBF_INT_ICON;;
+#ifdef ENABLE_XML
+
+#ifdef HAVE_JPEG
+	return IMGBF_INT_ICON |
+	       IMGBF_EXT_MEDIA |
+	       IMGBF_EXT_COVER | IMGBF_EXT_COVER_3D |
+	       IMGBF_EXT_COVER_FULL;
+#else /* !HAVE_JPEG */
+	return IMGBF_INT_ICON |
+	       IMGBF_EXT_MEDIA | IMGBF_EXT_COVER_3D;
+#endif /* HAVE_JPEG */
+
+#else /* !ENABLE_XML */
+	return IMGBF_INT_ICON;
+#endif /* ENABLE_XML */
 }
 
 /**
@@ -608,8 +660,34 @@ vector<RomData::ImageSizeDef> WiiUPackage::supportedImageSizes_static(ImageType 
 
 	switch (imageType) {
 		case IMG_INT_ICON:
-			// Wii U icons are usually 128x128.
+			// Wii U icons are usually 128x128
 			return {{nullptr, 128, 128, 0}};
+
+#ifdef ENABLE_XML
+		case IMG_EXT_MEDIA:
+			return {
+				{nullptr, 160, 160, 0},
+				{"M", 500, 500, 1},
+			};
+#ifdef HAVE_JPEG
+		case IMG_EXT_COVER:
+			return {
+				{nullptr, 160, 224, 0},
+				{"M", 350, 500, 1},
+				{"HQ", 768, 1080, 2},
+			};
+#endif /* HAVE_JPEG */
+		case IMG_EXT_COVER_3D:
+			return {{nullptr, 176, 248, 0}};
+#ifdef HAVE_JPEG
+		case IMG_EXT_COVER_FULL:
+			return {
+				{nullptr, 340, 224, 0},
+				{"M", 752, 500, 1},
+				{"HQ", 1632, 1080, 2},
+			};
+#endif /* HAVE_JPEG */
+#endif /* ENABLE_XML */
 		default:
 			break;
 	}
@@ -629,7 +707,7 @@ int WiiUPackage::loadFieldData(void)
 	if (!d->fields.empty()) {
 		// Field data *has* been loaded...
 		return 0;
-	} else if (!d->path) {
+	} else if (d->path.empty()) {
 		// No directory...
 		return -EBADF;
 	} else if (!d->isValid) {
@@ -642,31 +720,41 @@ int WiiUPackage::loadFieldData(void)
 	// TODO: Show a decryption key warning and/or "no XMLs".
 	d->fields.setTabName(0, "Wii U");
 
-	// Check if the decryption keys were loaded.
-	const KeyManager::VerifyResult verifyResult = d->ticket->verifyResult();
-	if (verifyResult == KeyManager::VerifyResult::OK) {
-		// Decryption keys were loaded. We can add XML fields.
-#ifdef ENABLE_XML
-		// Parse the Wii U System XMLs.
-		// NOTE: Only if the FST was loaded.
-		if (d->fst) {
-			d->addFields_System_XMLs();
+	bool canLoadXMLs = false;
+	if (d->packageType == WiiUPackagePrivate::PackageType::NUS) {
+		// Check if the decryption keys were loaded.
+		const KeyManager::VerifyResult verifyResult = d->ticket->verifyResult();
+		if (verifyResult == KeyManager::VerifyResult::OK) {
+			// We can decrypt the XMLs if the FST was loaded.
+			canLoadXMLs = (d->fst != nullptr);
+		} else {
+			// No decryption keys, so we can't decrypt the XMLs.
+			// Show a warning.
+			// NOTE: We can still show ticket/TMD fields.
+			canLoadXMLs = false;
+			const char *err = KeyManager::verifyResultToString(verifyResult);
+			if (!err) {
+				err = C_("RomData", "Unknown error. (THIS IS A BUG!)");
+			}
+			d->fields.addField_string(C_("RomData", "Warning"), err,
+				RomFields::STRF_WARNING);
 		}
-#else /* !ENABLE_XML */
-		d->fields.addField_string(C_("RomData", "Warning"),
-			C_("RomData", "XML parsing is disabled in this build."),
-			RomFields::STRF_WARNING);
-#endif /* ENABLE_XML */
-	} else {
-		// Decryption keys were NOT loaded. Show a warning.
-		// NOTE: We can still show ticket/TMD fields.
-		const char *err = KeyManager::verifyResultToString(verifyResult);
-		if (!err) {
-			err = C_("RomData", "Unknown error. (THIS IS A BUG!)");
-		}
-		d->fields.addField_string(C_("RomData", "Warning"), err,
-			RomFields::STRF_WARNING);
+	} else if (d->packageType == WiiUPackagePrivate::PackageType::Extracted) {
+		// XML can always be loaded in extracted packages.
+		canLoadXMLs = true;
 	}
+
+#ifdef ENABLE_XML
+	// Parse the Wii U System XMLs.
+	// NOTE: Only if the FST was loaded, or reading an extracted package.
+	if (canLoadXMLs) {
+		d->addFields_System_XMLs();
+	}
+#else /* !ENABLE_XML */
+	d->fields.addField_string(C_("RomData", "Warning"),
+		C_("RomData", "XML parsing is disabled in this build."),
+		RomFields::STRF_WARNING);
+#endif /* ENABLE_XML */
 
 	// Add the ticket and/or TMD fields.
 	// NOTE: If the XMLs aren't found, we'll need to reuse tab 0.
@@ -708,10 +796,10 @@ int WiiUPackage::loadFieldData(void)
 int WiiUPackage::loadMetaData(void)
 {
 	RP_D(WiiUPackage);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
-	} else if (!d->path) {
+	} else if (d->path.empty()) {
 		// No directory...
 		return -EBADF;
 	} else if (!d->isValid) {
@@ -719,16 +807,13 @@ int WiiUPackage::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(2);	// Maximum of 2 metadata properties.
-
 #ifdef ENABLE_XML
 	// Check if the decryption keys were loaded.
 	const KeyManager::VerifyResult verifyResult = d->ticket->verifyResult();
 	if (verifyResult == KeyManager::VerifyResult::OK) {
 		// Decryption keys were loaded. We can add XML fields.
 		// Parse the Wii U System XMLs.
+		d->metaData.reserve(2);	// Maximum of 2 metadata properties.
 		d->addMetaData_System_XMLs();
 	}
 #endif /* ENABLE_XML */
@@ -737,7 +822,7 @@ int WiiUPackage::loadMetaData(void)
 	// "Title" property, which is the Title ID.
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -753,11 +838,59 @@ int WiiUPackage::loadInternalImage(ImageType imageType, rp_image_const_ptr &pIma
 	RP_D(WiiUPackage);
 	ROMDATA_loadInternalImage_single(
 		IMG_INT_ICON,	// ourImageType
-		d->path,	// file (NOTE: Using d->path because we don't have a "file")
+		d->path.c_str(),// file (NOTE: Using d->path because we don't have a "file")
 		d->isValid,	// isValid
 		0,		// romType
 		d->img_icon,	// imgCache
 		d->loadIcon);	// func
 }
 
+/**
+ * Get a list of URLs for an external image type.
+ *
+ * A thumbnail size may be requested from the shell.
+ * If the subclass supports multiple sizes, it should
+ * try to get the size that most closely matches the
+ * requested size.
+ *
+ * @param imageType	[in]     Image type
+ * @param extURLs	[out]    Output vector
+ * @param size		[in,opt] Requested image size. This may be a requested
+ *                               thumbnail size in pixels, or an ImageSizeType
+ *                               enum value.
+ * @return 0 on success; negative POSIX error code on error.
+ */
+int WiiUPackage::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) const
+{
+	extURLs.clear();
+
+	RP_D(const WiiUPackage);
+	if (!d->isValid) {
+		// Package isn't valid.
+		return -EIO;
+	}
+
+#ifdef ENABLE_XML
+	// Get the game ID and application type from the system XML.
+	// Format: "WUP-X-ABCD"
+	uint32_t applType = 0;
+	const string productCode = const_cast<WiiUPackagePrivate*>(d)->getProductCodeAndApplType_xml(&applType);
+	if (productCode.empty() || productCode.size() != 10 || productCode.compare(0, 4, "WUP-", 4) != 0 || productCode[5] != '-') {
+		// Invalid product code.
+		// TODO: Check 'X'?
+		return -ENOENT;
+	} else if (applType != 0x80000000) {
+		// Not a game.
+		return -ENOENT;
+	}
+
+	const char *const id4 = &productCode[6];
+
+	return WiiU::extURLs_int(id4, imageType, extURLs, size);
+#else /* !ENABLE_XML */
+	// Cannot check the system XML without XML support.
+	return -ENOTSUP;
+#endif /* ENABLE_XML */
 }
+
+} // namespace LibRomData

@@ -25,10 +25,10 @@ IF(UNIX AND NOT APPLE)
 	# Reference: https://cmake.org/pipermail/cmake/2016-October/064342.html
 	OPTION_UI(KDE4 "Build the KDE4 plugin.")
 	OPTION_UI(KF5 "Build the KDE Frameworks 5 plugin.")
-	OPTION_UI(KF6 "Build the KDE Frameworks 6 plugin. (EXPERIMENTAL)")
+	OPTION_UI(KF6 "Build the KDE Frameworks 6 plugin.")
 	OPTION_UI(XFCE "Build the XFCE (GTK+ 2.x) plugin. (Thunar 1.7 and earlier)")
 	OPTION_UI(GTK3 "Build the GTK+ 3.x plugin.")
-	OPTION_UI(GTK4 "Build the GTK 4.x plugin. (EXPERIMENTAL)")
+	OPTION_UI(GTK4 "Build the GTK 4.x plugin.")
 
 	# QT_SELECT must be unset before compiling.
 	UNSET(ENV{QT_SELECT})
@@ -38,7 +38,7 @@ ENDIF()
 
 OPTION(BUILD_CLI "Build the `rpcli` command line program." ON)
 
-# ZLIB, libpng, XML, zstd
+# ZLIB, libpng, XML, zstd, libfmt
 # Internal versions are always used on Windows.
 OPTION(ENABLE_XML "Enable XML parsing for e.g. Windows manifests." ON)
 OPTION(ENABLE_ZSTD "Enable ZSTD decompression. (Required for some unit tests.)" ON)
@@ -52,6 +52,7 @@ IF(WIN32)
 	SET(USE_INTERNAL_ZSTD ${ENABLE_ZSTD})
 	SET(USE_INTERNAL_LZ4 ${ENABLE_LZ4})
 	SET(USE_INTERNAL_LZO ${ENABLE_LZO})
+	SET(USE_INTERNAL_FMT ON)
 ELSE(WIN32)
 	OPTION(USE_INTERNAL_ZLIB "Use the internal copy of zlib." OFF)
 	OPTION(USE_INTERNAL_PNG "Use the internal copy of libpng." OFF)
@@ -59,6 +60,7 @@ ELSE(WIN32)
 	OPTION(USE_INTERNAL_ZSTD "Use the internal copy of zstd." OFF)
 	OPTION(USE_INTERNAL_LZ4 "Use the internal copy of LZ4." OFF)
 	OPTION(USE_INTERNAL_LZO "Use the internal copy of LZO." OFF)
+	OPTION(USE_INTERNAL_FMT "Use the internal copy of libfmt." OFF)
 ENDIF()
 
 # TODO: If APNG export is added, verify that system libpng
@@ -100,7 +102,7 @@ ELSE()
 	SET(ENABLE_PCH OFF CACHE INTERNAL "Enable precompiled headers for faster builds." FORCE)
 ENDIF()
 
-# Link-time optimization.
+# Link-time optimization
 # FIXME: Not working in clang builds and Ubuntu's gcc...
 IF(MSVC)
 	SET(LTO_DEFAULT ON)
@@ -109,7 +111,7 @@ ELSE()
 ENDIF()
 OPTION(ENABLE_LTO "Enable link-time optimization in release builds." ${LTO_DEFAULT})
 
-# Split debug information into a separate file.
+# Split debug information into a separate file
 # FIXME: macOS `strip` shows an error:
 # error: symbols referenced by indirect symbol table entries that can't be stripped in: [library]
 # NOTE: Disabled on Emscripten because it's JavaScript/WebAssembly.
@@ -120,7 +122,7 @@ ELSE(APPLE)
 	OPTION(SPLIT_DEBUG "Split debug information into a separate file." ON)
 ENDIF(APPLE)
 
-# Install the split debug file.
+# Install the split debug file
 OPTION(INSTALL_DEBUG "Install the split debug files." ON)
 IF(INSTALL_DEBUG AND NOT SPLIT_DEBUG)
 	# Cannot install debug files if we're not splitting them.
@@ -128,13 +130,13 @@ IF(INSTALL_DEBUG AND NOT SPLIT_DEBUG)
 ENDIF(INSTALL_DEBUG AND NOT SPLIT_DEBUG)
 ENDIF(NOT EMSCRIPTEN)
 
-# Enable coverage checking. (gcc/clang only)
+# Enable coverage checking (gcc/clang only)
 OPTION(ENABLE_COVERAGE "Enable code coverage checking. (gcc/clang only)" OFF)
 IF(ENABLE_COVERAGE)
 	ADD_DEFINITIONS(-DGCOV)
 ENDIF(ENABLE_COVERAGE)
 
-# Enable NLS. (internationalization)
+# Enable NLS (internationalization)
 IF(NOT WIN32 OR NOT MSVC)
 	OPTION(ENABLE_NLS "Enable NLS using gettext for localized messages." ON)
 ELSEIF(MSVC AND _MSVC_C_ARCHITECTURE_FAMILY MATCHES "^([iI]?[xX3]86)|([xX]64)$")
@@ -143,15 +145,23 @@ ELSE()
 	SET(ENABLE_NLS OFF CACHE INTERNAL "Enable NLS using gettext for localized messages." FORCE)
 ENDIF()
 
-# Linux security options.
+# Linux security options
 IF(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	OPTION(INSTALL_APPARMOR "Install AppArmor profiles." ON)
 ELSE(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	SET(INSTALL_APPARMOR OFF)
 ENDIF(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
-# Achievements. (TODO: "AUTO" option?)
+# Special handling for NixOS
+IF(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	OPTION(ENABLE_NIXOS "Enable special handling for NixOS builds." OFF)
+ENDIF(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+
+# Achievements (TODO: "AUTO" option?)
 OPTION(ENABLE_ACHIEVEMENTS "Enable achievement pop-ups." ON)
+
+# Network support for e.g. downloads of external artwork and update checking
+OPTION(ENABLE_NETWORKING "Enable network support for e.g. downloads of external artwork and update checking" ON)
 
 # Install documentation
 OPTION(INSTALL_DOC "Install documentation." ON)

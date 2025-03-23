@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librptexture)                     *
  * TGA.cpp: TrueVision TGA reader.                                         *
  *                                                                         *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -34,75 +34,74 @@ namespace LibRpTexture {
 
 class TGAPrivate final : public FileFormatPrivate
 {
-	public:
-		TGAPrivate(TGA *q, const IRpFilePtr &file);
-		~TGAPrivate() final = default;
+public:
+	TGAPrivate(TGA *q, const IRpFilePtr &file);
 
-	private:
-		typedef FileFormatPrivate super;
-		RP_DISABLE_COPY(TGAPrivate)
+private:
+	typedef FileFormatPrivate super;
+	RP_DISABLE_COPY(TGAPrivate)
 
-	public:
-		/** TextureInfo **/
-		static const char *const exts[];
-		static const char *const mimeTypes[];
-		static const TextureInfo textureInfo;
+public:
+	/** TextureInfo **/
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 8+1> mimeTypes;
+	static const TextureInfo textureInfo;
 
-	public:
-		enum class TexType {
-			Unknown		= -1,
+public:
+	enum class TexType {
+		Unknown		= -1,
 
-			TGA1		= 0,	// Old TGA (1.0)
-			TGA2		= 1,	// New TGA (2.0)
+		TGA1		= 0,	// Old TGA (1.0)
+		TGA2		= 1,	// New TGA (2.0)
 
-			Max
-		};
-		TexType texType;
+		Max
+	};
+	TexType texType;
 
-		// TGA headers
-		TGA_Header tgaHeader;
-		TGA_ExtArea tgaExtArea;
-		TGA_Footer tgaFooter;
+	// TGA headers
+	TGA_Header tgaHeader;
+	TGA_ExtArea tgaExtArea;
+	TGA_Footer tgaFooter;
 
-		// Alpha channel type
-		TGA_AlphaType_e alphaType;
+	// Is HFlip/VFlip needed?
+	// Some textures may be stored upside-down due to
+	// the way GL texture coordinates are interpreted.
+	// Default without orientation metadata is HFlip=false, VFlip=false
+	rp_image::FlipOp flipOp;
 
-		// Decoded image
-		rp_image_ptr img;
+	// Alpha channel type
+	TGA_AlphaType_e alphaType;
 
-		// Is HFlip/VFlip needed?
-		// Some textures may be stored upside-down due to
-		// the way GL texture coordinates are interpreted.
-		// Default without orientation metadata is HFlip=false, VFlip=false
-		rp_image::FlipOp flipOp;
+	// Decoded image
+	rp_image_ptr img;
 
-		/**
-		 * Decompress RLE image data.
-		 * @param pDest Output buffer.
-		 * @param dest_len Size of output buffer.
-		 * @param pSrc Input buffer.
-		 * @param src_len Size of input buffer.
-		 * @param bytespp Bytes per pixel.
-		 * @return 0 on success; non-zero on error.
-		 */
-		ATTR_ACCESS_SIZE(write_only, 1, 2)
-		ATTR_ACCESS_SIZE(read_only, 3, 4)
-		static int decompressRLE(uint8_t *pDest, size_t dest_len,
-					 const uint8_t *pSrc, size_t s_len,
-					 uint8_t bytespp);
+	/**
+	 * Decompress RLE image data.
+	 * @param pDest Output buffer.
+	 * @param dest_len Size of output buffer.
+	 * @param pSrc Input buffer.
+	 * @param src_len Size of input buffer.
+	 * @param bytespp Bytes per pixel.
+	 * @return 0 on success; non-zero on error.
+	 */
+	ATTR_ACCESS_SIZE(write_only, 1, 2)
+	ATTR_ACCESS_SIZE(read_only, 3, 4)
+	static int decompressRLE(uint8_t *pDest, size_t dest_len,
+				 const uint8_t *pSrc, size_t s_len,
+				 uint8_t bytespp);
 
-		/**
-		 * Load the TGA image.
-		 * @return Image, or nullptr on error.
-		 */
-		rp_image_const_ptr loadImage(void);
+	/**
+	 * Load the TGA image.
+	 * @return Image, or nullptr on error.
+	 */
+	rp_image_const_ptr loadImage(void);
 
-		/**
-		 * Convert a TGA timestamp to UNIX time.
-		 * @param timestamp TGA timestamp. (little-endian)
-		 * @return UNIX time, or -1 if invalid or not set.
-		 */
-		static time_t tgaTimeToUnixTime(const TGA_DateStamp *timestamp);
+	/**
+	 * Convert a TGA timestamp to UNIX time.
+	 * @param timestamp TGA timestamp. (little-endian)
+	 * @return UNIX time, or -1 if invalid or not set.
+	 */
+	static time_t tgaTimeToUnixTime(const TGA_DateStamp *timestamp);
 };
 
 FILEFORMAT_IMPL(TGA)
@@ -110,13 +109,13 @@ FILEFORMAT_IMPL(TGA)
 /** TGAPrivate **/
 
 /* TextureInfo */
-const char *const TGAPrivate::exts[] = {
+const array<const char*, 1+1> TGAPrivate::exts = {{
 	".tga",
 	// TODO: Other obsolete file extensions?
 
 	nullptr
-};
-const char *const TGAPrivate::mimeTypes[] = {
+}};
+const array<const char*, 8+1> TGAPrivate::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	"image/x-tga",
 	"image/x-targa",
@@ -130,17 +129,17 @@ const char *const TGAPrivate::mimeTypes[] = {
 	"application/x-tga",
 
 	nullptr
-};
+}};
 const TextureInfo TGAPrivate::textureInfo = {
-	exts, mimeTypes
+	exts.data(), mimeTypes.data()
 };
 
 TGAPrivate::TGAPrivate(TGA *q, const IRpFilePtr &file)
 	: super(q, file, &textureInfo)
 	, texType(TexType::Unknown)
-	, alphaType(TGA_ALPHATYPE_PRESENT)
 	, flipOp(rp_image::FLIP_V)	// default orientation requires vertical flip
-{
+	, alphaType(TGA_ALPHATYPE_PRESENT)
+	{
 	// Clear the structs.
 	memset(&tgaHeader, 0, sizeof(tgaHeader));
 	memset(&tgaExtArea, 0, sizeof(tgaExtArea));
@@ -241,7 +240,7 @@ rp_image_const_ptr TGAPrivate::loadImage(void)
 	}
 
 	// Image data starts immediately after the TGA header.
-	const unsigned int img_data_offset = (unsigned int)sizeof(tgaHeader) + tgaHeader.id_length;
+	const unsigned int img_data_offset = static_cast<unsigned int>(sizeof(tgaHeader) + tgaHeader.id_length);
 	if (file->seek(img_data_offset) != 0) {
 		// Seek error.
 		return nullptr;
@@ -292,7 +291,7 @@ rp_image_const_ptr TGAPrivate::loadImage(void)
 	// Allocate a buffer for the image.
 	// NOTE: Assuming scanlines are not padded. (pitch == width)
 	const unsigned int bytespp = (tgaHeader.img.bpp == 15 ? 2 : (tgaHeader.img.bpp / 8));
-	const size_t img_siz = (size_t)tgaHeader.img.width * (size_t)tgaHeader.img.height * bytespp;
+	const size_t img_siz = static_cast<size_t>(tgaHeader.img.width) * static_cast<size_t>(tgaHeader.img.height) * bytespp;
 	auto img_data = aligned_uptr<uint8_t>(16, img_siz);
 
 	if (tgaHeader.image_type == TGA_IMAGETYPE_HUFFMAN_COLORMAP) {
@@ -470,14 +469,14 @@ rp_image_const_ptr TGAPrivate::loadImage(void)
 
 	// Post-processing: Check if a flip is needed.
 	if (imgtmp && flipOp != rp_image::FLIP_NONE) {
-		const rp_image_ptr flipimg = imgtmp->flip(flipOp);
+		rp_image_ptr flipimg = imgtmp->flip(flipOp);
 		if (flipimg) {
-			imgtmp = flipimg;
+			imgtmp = std::move(flipimg);
 		}
 	}
 
 	img = imgtmp;
-	return img;
+	return imgtmp;
 }
 
 /**
@@ -593,8 +592,8 @@ TGA::TGA(const IRpFilePtr &file)
 	if (d->texType == TGAPrivate::TexType::TGA2) {
 		// Check for an extension area.
 		const uint32_t ext_offset = le32_to_cpu(d->tgaFooter.ext_offset);
-		if (ext_offset != 0 && fileSize > (off64_t)sizeof(d->tgaExtArea) &&
-		    (ext_offset < (fileSize - (off64_t)sizeof(d->tgaExtArea))))
+		if (ext_offset != 0 && fileSize > static_cast<off64_t>(sizeof(d->tgaExtArea)) &&
+		    (ext_offset < (fileSize - static_cast<off64_t>(sizeof(d->tgaExtArea)))))
 		{
 			// We have an extension area.
 			size = d->file->seekAndRead(ext_offset, &d->tgaExtArea, sizeof(d->tgaExtArea));
@@ -651,7 +650,7 @@ TGA::TGA(const IRpFilePtr &file)
 const char *TGA::pixelFormat(void) const
 {
 	RP_D(const TGA);
-	if (!d->isValid || (int)d->texType < 0) {
+	if (!d->isValid || static_cast<int>(d->texType) < 0) {
 		// Not supported.
 		return nullptr;
 	}
@@ -767,7 +766,7 @@ int TGA::getFields(RomFields *fields) const
 		return 0;
 
 	RP_D(const TGA);
-	if (!d->isValid || (int)d->texType < 0) {
+	if (!d->isValid || static_cast<int>(d->texType) < 0) {
 		// Not valid.
 		return -EIO;
 	}
@@ -809,7 +808,7 @@ int TGA::getFields(RomFields *fields) const
 		NOP_C_("TGA|AlphaType", "Present"),
 		NOP_C_("TGA|AlphaType", "Premultiplied"),
 	}};
-	s_alphaType = alphaType_tbl[d->alphaType >= 0 && (int)d->alphaType < (int)alphaType_tbl.size()
+	s_alphaType = alphaType_tbl[d->alphaType >= 0 && static_cast<size_t>(d->alphaType) < alphaType_tbl.size()
 		? d->alphaType : TGA_ALPHATYPE_UNDEFINED_IGNORE];
 	fields->addField_string(C_("TGA", "Alpha Type"), s_alphaType);
 
@@ -861,7 +860,7 @@ int TGA::getFields(RomFields *fields) const
 		    tgaExtArea->job_time.secs != cpu_to_le16(0))
 		{
 			fields->addField_string(C_("TGA", "Job Time"),
-				rp_sprintf("%u'%u\"%u",
+				fmt::format(FSTR("{:d}'{:d}\"{:d}"),
 					le16_to_cpu(tgaExtArea->job_time.hours),
 					le16_to_cpu(tgaExtArea->job_time.mins),
 					le16_to_cpu(tgaExtArea->job_time.secs)));
@@ -877,13 +876,14 @@ int TGA::getFields(RomFields *fields) const
 		if (tgaExtArea->sw_version.number != 0 ||
 		    tgaExtArea->sw_version.letter != ' ')
 		{
-			char lstr[2] = {tgaExtArea->sw_version.letter, '\0'};
+			array<char, 2> lstr = {{tgaExtArea->sw_version.letter, '\0'}};
 			if (lstr[0] == ' ')
 				lstr[0] = '\0';
 
 			fields->addField_string(C_("TGA", "Software Version"),
-				rp_sprintf("%01u.%02u%s", tgaExtArea->sw_version.number / 100,
-					tgaExtArea->sw_version.number % 100, lstr));
+				fmt::format(FSTR("{:0>1d}.{:0>2d}{:s}"),
+					tgaExtArea->sw_version.number / 100,
+					tgaExtArea->sw_version.number % 100, lstr.data()));
 		}
 
 		// Key color
@@ -897,16 +897,18 @@ int TGA::getFields(RomFields *fields) const
 		// Pixel aspect ratio
 		if (tgaExtArea->pixel_aspect_ratio.denominator != cpu_to_le16(0)) {
 			fields->addField_string(C_("TGA", "Pixel Aspect Ratio"),
-				rp_sprintf("%u:%u", tgaExtArea->pixel_aspect_ratio.numerator,
+				fmt::format(FSTR("{:d}:{:d}"),
+					tgaExtArea->pixel_aspect_ratio.numerator,
 					tgaExtArea->pixel_aspect_ratio.denominator));
 		}
 
 		// Gamma value
 		if (tgaExtArea->gamma_value.denominator != cpu_to_le16(0)) {
-			const int gamma = (int)(((double)tgaExtArea->gamma_value.numerator /
-						 (double)tgaExtArea->gamma_value.denominator) * 10);
+			const int gamma = static_cast<int>(
+				static_cast<double>(tgaExtArea->gamma_value.numerator) /
+				static_cast<double>(tgaExtArea->gamma_value.denominator) * 10);
 			fields->addField_string(C_("TGA", "Gamma Value"),
-				rp_sprintf("%u.%u",
+				fmt::format(FSTR("{:d}.{:d}"),
 					static_cast<unsigned int>(gamma / 10),
 					static_cast<unsigned int>(gamma % 10)));
 		}
@@ -928,7 +930,7 @@ int TGA::getFields(RomFields *fields) const
 rp_image_const_ptr TGA::image(void) const
 {
 	RP_D(const TGA);
-	if (!d->isValid || (int)d->texType < 0) {
+	if (!d->isValid || static_cast<int>(d->texType) < 0) {
 		// Unknown file type.
 		return nullptr;
 	}
@@ -937,4 +939,4 @@ rp_image_const_ptr TGA::image(void) const
 	return const_cast<TGAPrivate*>(d)->loadImage();
 }
 
-}
+} // namespace LibRpTexture

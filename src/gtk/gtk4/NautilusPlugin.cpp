@@ -49,20 +49,16 @@ rp_nautilus_register_types(GTypeModule *module)
 	/* Setup the plugin provider type list */
 	type_list[0] = RP_TYPE_NAUTILUS_PROPERTIES_MODEL_PROVIDER;
 	type_list[1] = RP_TYPE_NAUTILUS_MENU_PROVIDER;
-}
-
-/** Per-frontend initialization functions. **/
 
 #ifdef ENABLE_ACHIEVEMENTS
-#  define REGISTER_ACHDBUS() AchGDBus::instance()
-#else /* !ENABLE_ACHIEVEMENTS */
-#  define REGISTER_ACHDBUS() do { } while (0)
+	// Register AchGDBus.
+	AchGDBus::instance();
 #endif /* ENABLE_ACHIEVEMENTS */
+}
 
-#define NAUTILUS_MODULE_INITIALIZE_FUNC(prefix) \
-extern "C" G_MODULE_EXPORT void \
-prefix##_module_initialize(GTypeModule *module) \
-{ \
+/** Per-frontend initialization functions **/
+
+#define NAUTILUS_MODULE_INITIALIZE_FUNC_INT(prefix) do { \
 	CHECK_UID(); \
 	SHOW_INIT_MESSAGE(); \
 	VERIFY_GTK_VERSION(); \
@@ -96,18 +92,18 @@ prefix##_module_initialize(GTypeModule *module) \
 	DLSYM(nautilus_properties_model_new,			prefix##_properties_model_new); \
 	DLSYM(nautilus_properties_item_get_type,		prefix##_properties_item_get_type); \
 	DLSYM(nautilus_properties_item_new,			prefix##_properties_item_new); \
-\
-	/* Symbols loaded. Register our types. */ \
-	rp_nautilus_register_types(module); \
-\
-	/* Register AchGDBus if it's available. */ \
-	REGISTER_ACHDBUS(); \
+} while (0)
+
+extern "C" G_MODULE_EXPORT void
+nautilus_module_initialize(GTypeModule *g_module)
+{
+	NAUTILUS_MODULE_INITIALIZE_FUNC_INT(nautilus);
+
+	// Symbols loaded. Register our types.
+	rp_nautilus_register_types(g_module);
 }
 
-NAUTILUS_MODULE_INITIALIZE_FUNC(nautilus)
-// TODO: Re-enable these if/when Caja and Nemo switch to GTK4.
-//NAUTILUS_MODULE_INITIALIZE_FUNC(caja)
-//NAUTILUS_MODULE_INITIALIZE_FUNC(nemo)
+// TODO: Add Caja/Nemo versions if/when they switch to GTK4.
 
 /** Common shutdown and list_types functions. **/
 

@@ -16,6 +16,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
 
 namespace LibRomData {
@@ -23,7 +24,7 @@ namespace LibRomData {
 class Sega8BitPrivate final : public RomDataPrivate
 {
 public:
-	Sega8BitPrivate(const IRpFilePtr &file);
+	explicit Sega8BitPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -31,8 +32,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 2+1> exts;
+	static const array<const char*, 2+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -66,6 +67,16 @@ public:
 	 * @return Unix timestamp, or -1 on error.
 	 */
 	static time_t sdsc_date_to_unix_time(const Sega8_SDSC_Date *date);
+
+	/**
+	 * Is this a Game Gear ROM?
+	 *
+	 * NOTE: This checks the value in the "TMR SEGA" header,
+	 * and might not be 100% accurate.
+	 *
+	 * @return True if this is a Game Gear ROM; false if not.
+	 */
+	bool isGameGearROM(void) const;
 };
 
 ROMDATA_IMPL(Sega8Bit)
@@ -73,22 +84,22 @@ ROMDATA_IMPL(Sega8Bit)
 /** Sega8BitPrivate **/
 
 /* RomDataInfo */
-const char *const Sega8BitPrivate::exts[] = {
+const array<const char*, 2+1> Sega8BitPrivate::exts = {{
 	".sms",	// Sega Master System
 	".gg",	// Sega Game Gear
 	// TODO: Other Sega 8-bit formats?
 
 	nullptr
-};
-const char *const Sega8BitPrivate::mimeTypes[] = {
+}};
+const array<const char*, 2+1> Sega8BitPrivate::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	"application/x-sms-rom",
 	"application/x-gamegear-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo Sega8BitPrivate::romDataInfo = {
-	"Sega8Bit", exts, mimeTypes
+	"Sega8Bit", exts.data(), mimeTypes.data()
 };
 
 Sega8BitPrivate::Sega8BitPrivate(const IRpFilePtr &file)
@@ -212,6 +223,29 @@ time_t Sega8BitPrivate::sdsc_date_to_unix_time(const Sega8_SDSC_Date *date)
 	return timegm(&sdsctime);
 }
 
+/**
+ * Is this a Game Gear ROM?
+ *
+ * NOTE: This checks the value in the "TMR SEGA" header,
+ * and might not be 100% accurate.
+ *
+ * @return True if this is a Game Gear ROM; false if not.
+ */
+bool Sega8BitPrivate::isGameGearROM(void) const
+{
+	switch ((romHeader.tmr.region_and_size >> 4) & 0xF) {
+		case Sega8_SMS_Japan:
+		case Sega8_SMS_Export:
+		default:
+			return false;
+
+		case Sega8_GG_Japan:
+		case Sega8_GG_Export:
+		case Sega8_GG_International:
+			return true;
+	}
+}
+
 /** Sega8Bit **/
 
 /**
@@ -231,7 +265,6 @@ Sega8Bit::Sega8Bit(const IRpFilePtr &file)
 	: super(new Sega8BitPrivate(file))
 {
 	RP_D(Sega8Bit);
-	d->mimeType = "application/x-sms-rom";	// unofficial (TODO: SMS vs. GG)
 
 	if (!d->file) {
 		// Could not ref() the file handle.
@@ -256,7 +289,13 @@ Sega8Bit::Sega8Bit(const IRpFilePtr &file)
 
 	if (!d->isValid) {
 		d->file.reset();
+		return;
 	}
+
+	// Set the MIME type.
+	d->mimeType = (d->isGameGearROM())
+		? "application/x-gamegear-rom"	// unofficial
+		: "application/x-sms-rom";	// unofficial
 }
 
 /**
@@ -310,18 +349,15 @@ const char *Sega8Bit::systemName(unsigned int type) const
 		return nullptr;
 
 	// TODO: Region-specific variants.
-	// Also SMS vs. GG.
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"Sega8Bit::systemName() array index optimization needs to be updated.");
 
-	static const char *const sysNames[4] = {
-		"Sega Master System",
-		"Master System",
-		"SMS",
-		nullptr
-	};
+	static const array<array<const char*, 4>, 2> sysNames = {{
+		{{"Sega Master System", "Master System", "SMS", nullptr}},
+		{{"Sega Game Gear", "Game Gear", "GG", nullptr}},
+	}};
 
-	return sysNames[type & SYSNAME_TYPE_MASK];
+	return sysNames[!!d->isGameGearROM()][type & SYSNAME_TYPE_MASK];
 }
 
 /**
@@ -509,7 +545,7 @@ int Sega8Bit::loadFieldData(void)
 int Sega8Bit::loadMetaData(void)
 {
 	RP_D(Sega8Bit);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -524,45 +560,43 @@ int Sega8Bit::loadMetaData(void)
 	    static_cast<uint32_t>(le16_to_cpu(d->romHeader.codemasters.checksum_compl)))
 	{
 		// Codemasters checksums match.
-		d->metaData = new RomMetaData();
-		d->metaData->reserve(1);	// Maximum of 1 metadata property.
+		d->metaData.reserve(1);	// Maximum of 1 metadata property.
 		const Sega8_Codemasters_RomHeader *const codemasters = &d->romHeader.codemasters;
 
 		// Build time.
 		// NOTE: CreationDate is currently handled as QDate on KDE.
 		time_t ctime = d->codemasters_timestamp_to_unix_time(&codemasters->timestamp);
-		d->metaData->addMetaData_timestamp(Property::CreationDate, ctime);
+		d->metaData.addMetaData_timestamp(Property::CreationDate, ctime);
 	} else if (d->romHeader.sdsc.magic == cpu_to_be32(SDSC_MAGIC)) {
 		// SDSC header is present.
-		d->metaData = new RomMetaData();
-		d->metaData->reserve(4);	// Maximum of 4 metadata properties.
+		d->metaData.reserve(4);	// Maximum of 4 metadata properties.
 		const Sega8_SDSC_RomHeader *const sdsc = &d->romHeader.sdsc;
 
 		// Build date
 		const time_t ctime = d->sdsc_date_to_unix_time(&sdsc->date);
-		d->metaData->addMetaData_timestamp(Property::CreationDate, ctime);
+		d->metaData.addMetaData_timestamp(Property::CreationDate, ctime);
 
 		// Author
 		string str = d->getSdscString(le16_to_cpu(sdsc->author_ptr));
 		if (!str.empty()) {
-			d->metaData->addMetaData_string(Property::Author, str);
+			d->metaData.addMetaData_string(Property::Author, str);
 		}
 
 		// Name (Title)
 		str = d->getSdscString(le16_to_cpu(sdsc->name_ptr));
 		if (!str.empty()) {
-			d->metaData->addMetaData_string(Property::Title, str);
+			d->metaData.addMetaData_string(Property::Title, str);
 		}
 
 		// Description
                 str = d->getSdscString(le16_to_cpu(sdsc->desc_ptr));
 		if (!str.empty()) {
-			d->metaData->addMetaData_string(Property::Description, str);
+			d->metaData.addMetaData_string(Property::Description, str);
 		}
 	}
 
 	// Finished reading the metadata.
-	return (d->metaData ? static_cast<int>(d->metaData->count()) : -ENOENT);
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

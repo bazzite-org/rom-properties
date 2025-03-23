@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (Win32)                            *
  * RpFile_IStream.hpp: IRpFile using an IStream*.                          *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -55,6 +55,7 @@ public:
 	 * @param size Amount of data to read, in bytes.
 	 * @return Number of bytes read.
 	 */
+	ATTR_ACCESS_SIZE(write_only, 2, 3)
 	size_t read(void *ptr, size_t size) final;
 
 	/**
@@ -63,6 +64,7 @@ public:
 	 * @param size Amount of data to read, in bytes.
 	 * @return Number of bytes written.
 	 */
+	ATTR_ACCESS_SIZE(read_only, 2, 3)
 	size_t write(const void *ptr, size_t size) final;
 
 	/**
@@ -123,7 +125,7 @@ public:
 
 protected:
 	IStreamPtr m_pStream;
-	char *m_filename;
+	std::string m_filename;
 
 	// zlib
 	unsigned int m_z_uncomp_sz;

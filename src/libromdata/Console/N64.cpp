@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * N64.cpp: Nintendo 64 ROM image reader.                                  *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -16,6 +16,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
 
 namespace LibRomData {
@@ -23,7 +24,7 @@ namespace LibRomData {
 class N64Private final : public RomDataPrivate
 {
 public:
-	N64Private(const IRpFilePtr &file);
+	explicit N64Private(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -31,8 +32,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 3+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -53,6 +54,16 @@ public:
 	// ROM header.
 	// NOTE: Fields have been byteswapped in the constructor.
 	N64_RomHeader romHeader;
+
+	/**
+	 * Un-wordswap a 32-bit DWORD from a SWAP2-format ROM image.
+	 * @param x 32-bit DWORD
+	 * @return Un-wordswapped DWORD
+	 */
+	static constexpr inline uint32_t UNSWAP2(uint32_t x)
+	{
+		return (x >> 16) | (x << 16);
+	}
 };
 
 ROMDATA_IMPL(N64)
@@ -60,19 +71,19 @@ ROMDATA_IMPL(N64)
 /** N64Private **/
 
 /* RomDataInfo */
-const char *const N64Private::exts[] = {
+const array<const char*, 3+1> N64Private::exts = {{
 	".z64", ".n64", ".v64",
 
 	nullptr
-};
-const char *const N64Private::mimeTypes[] = {
+}};
+const array<const char*, 1+1> N64Private::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	"application/x-n64-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo N64Private::romDataInfo = {
-	"N64", exts, mimeTypes
+	"N64", exts.data(), mimeTypes.data()
 };
 
 N64Private::N64Private(const IRpFilePtr &file)
@@ -139,9 +150,8 @@ N64::N64(const IRpFilePtr &file)
 		case N64Private::RomType::SWAP2:
 			// swap2 format. (wordswapped)
 			// Convert the header to Z64 first.
-			#define UNSWAP2(x) (uint32_t)(((x) >> 16) | ((x) << 16))
 			for (size_t i = 0; i < ARRAY_SIZE(d->romHeader.u32); i++) {
-				d->romHeader.u32[i] = UNSWAP2(d->romHeader.u32[i]);
+				d->romHeader.u32[i] = N64Private::UNSWAP2(d->romHeader.u32[i]);
 			}
 			break;
 
@@ -171,6 +181,9 @@ N64::N64(const IRpFilePtr &file)
 	d->romHeader.crc[0]     = be32_to_cpu(d->romHeader.crc[0]);
 	d->romHeader.crc[1]     = be32_to_cpu(d->romHeader.crc[1]);
 #endif /* SYS_BYTEORDER != SYS_BIG_ENDIAN */
+
+	// Is PAL?
+	d->isPAL = (d->romHeader.id4[3] == 'P');
 }
 
 /** ROM detection functions. **/
@@ -231,9 +244,9 @@ const char *N64::systemName(unsigned int type) const
 		"N64::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Nintendo 64", "Nintendo 64", "N64", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -252,26 +265,23 @@ int N64::loadFieldData(void)
 	} else if (!d->file || !d->file->isOpen()) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->romType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->romType) < 0) {
 		// Unknown ROM image type.
 		return -EIO;
 	}
-
-	// snprintf() buffer.
-	char buf[32];
 
 	// ROM file header is read and byteswapped in the constructor.
 	// TODO: Indicate the byteswapping format?
 	const N64_RomHeader *const romHeader = &d->romHeader;
 	d->fields.reserve(7);	// Maximum of 7 fields.
 
-	// Title.
+	// Title
 	// TODO: Space elimination.
 	d->fields.addField_string(C_("RomData", "Title"),
 		cp1252_sjis_to_utf8(romHeader->title, sizeof(romHeader->title)),
 		RomFields::STRF_TRIM_END);
 
-	// Game ID.
+	// Game ID
 	// Replace any non-printable characters with underscores.
 	char id4[5];
 	for (int i = 0; i < 4; i++) {
@@ -283,26 +293,26 @@ int N64::loadFieldData(void)
 	d->fields.addField_string(C_("N64", "Game ID"),
 		latin1_to_utf8(id4, 4));
 
-	// Revision.
+	// Revision
 	d->fields.addField_string_numeric(C_("RomData", "Revision"),
 		romHeader->revision, RomFields::Base::Dec, 2);
 
-	// Entry point.
+	// Entry point
 	d->fields.addField_string_numeric(C_("RomData", "Entry Point"),
 		romHeader->entrypoint, RomFields::Base::Hex, 8, RomFields::STRF_MONOSPACE);
 
-	// OS version.
+	// OS version
 	// TODO: ISALPHA(), or ISUPPER()?
 	const char *const os_version_title = C_("RomData", "OS Version");
 	if (romHeader->os_version[0] == 0x00 &&
 	    romHeader->os_version[1] == 0x00 &&
 	    ISALPHA(romHeader->os_version[3]))
 	{
-		snprintf(buf, sizeof(buf), "OS%u.%u%c",
-			romHeader->os_version[2] / 10,
-			romHeader->os_version[2] % 10,
-			romHeader->os_version[3]);
-		d->fields.addField_string(os_version_title, buf);
+		d->fields.addField_string(os_version_title,
+			fmt::format(FSTR("OS{:d}.{:d}{:c}"),
+				romHeader->os_version[2] / 10,
+				romHeader->os_version[2] % 10,
+				romHeader->os_version[3]));
 	} else {
 		// Unrecognized Release field.
 		d->fields.addField_string_hexdump(os_version_title,
@@ -310,7 +320,7 @@ int N64::loadFieldData(void)
 			RomFields::STRF_MONOSPACE);
 	}
 
-	// Clock rate.
+	// Clock rate
 	// NOTE: Lower 0xF is masked.
 	const char *clockrate_title = C_("N64", "Clock Rate");
 	const uint32_t clockrate = (romHeader->clockrate & ~0xFU);
@@ -322,11 +332,11 @@ int N64::loadFieldData(void)
 			LibRpText::formatFrequency(clockrate));
 	}
 
-	// CRCs.
-	snprintf(buf, sizeof(buf), "0x%08X 0x%08X",
-		romHeader->crc[0], romHeader->crc[1]);
+	// CRCs
 	d->fields.addField_string(C_("N64", "CRCs"),
-		buf, RomFields::STRF_MONOSPACE);
+		fmt::format(FSTR("0x{:0>8X} 0x{:0>8X}"),
+			romHeader->crc[0], romHeader->crc[1]),
+		RomFields::STRF_MONOSPACE);
 
 	// Finished reading the field data.
 	return static_cast<int>(d->fields.count());
@@ -340,33 +350,30 @@ int N64::loadFieldData(void)
 int N64::loadMetaData(void)
 {
 	RP_D(N64);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->romType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->romType) < 0) {
 		// Unknown ROM image type.
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
 	// ROM file header is read and byteswapped in the constructor.
 	// TODO: Indicate the byteswapping format?
 	const N64_RomHeader *const romHeader = &d->romHeader;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
-	// Title.
+	// Title
 	// TODO: Space elimination.
-	d->metaData->addMetaData_string(Property::Title,
+	d->metaData.addMetaData_string(Property::Title,
 		cp1252_sjis_to_utf8(romHeader->title, sizeof(romHeader->title)),
 		RomMetaData::STRF_TRIM_END);
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

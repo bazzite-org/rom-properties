@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * Xbox_XBE.cpp: Microsoft Xbox executable reader.                         *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -26,6 +26,7 @@ using namespace LibRpTexture;
 #include "Other/EXE.hpp"
 
 // C++ STL classes
+using std::array;
 using std::ostringstream;
 using std::shared_ptr;
 using std::string;
@@ -40,8 +41,7 @@ namespace LibRomData {
 class Xbox_XBE_Private final : public RomDataPrivate
 {
 public:
-	Xbox_XBE_Private(const IRpFilePtr &file);
-	~Xbox_XBE_Private() final;
+	explicit Xbox_XBE_Private(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -49,8 +49,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -64,7 +64,7 @@ public:
 
 	// RomData subclasses
 	// TODO: Also get the save image? ($$XSIMAGE)
-	EXE *pe_exe;		// PE executable
+	unique_ptr<EXE> pe_exe;		// PE executable
 
 	// Title image.
 	// NOTE: May be a PNG image on some discs.
@@ -111,25 +111,24 @@ ROMDATA_IMPL(Xbox_XBE)
 /** Xbox_XBE_Private **/
 
 /* RomDataInfo */
-const char *const Xbox_XBE_Private::exts[] = {
+const array<const char*, 1+1> Xbox_XBE_Private::exts = {{
 	".xbe",
 
 	nullptr
-};
-const char *const Xbox_XBE_Private::mimeTypes[] = {
+}};
+const array<const char*, 1+1> Xbox_XBE_Private::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-xbox-executable",
 
 	nullptr
-};
+}};
 const RomDataInfo Xbox_XBE_Private::romDataInfo = {
-	"Xbox_XBE", exts, mimeTypes
+	"Xbox_XBE", exts.data(), mimeTypes.data()
 };
 
 Xbox_XBE_Private::Xbox_XBE_Private(const IRpFilePtr &file)
 	: super(file, &romDataInfo)
-	, pe_exe(nullptr)
 {
 	// Clear the XBE structs.
 	memset(&xbeHeader, 0, sizeof(xbeHeader));
@@ -140,11 +139,6 @@ Xbox_XBE_Private::Xbox_XBE_Private(const IRpFilePtr &file)
 	xtImage.isPng = false;
 }
 
-Xbox_XBE_Private::~Xbox_XBE_Private()
-{
-	delete pe_exe;
-}
-
 /**
  * Find an XBE section header.
  * @param name		[in] Section header name.
@@ -153,7 +147,6 @@ Xbox_XBE_Private::~Xbox_XBE_Private()
  */
 int Xbox_XBE_Private::findXbeSectionHeader(const char *name, XBE_Section_Header *pOutHeader)
 {
-	// Load the section headers.
 	if (!file || !file->isOpen()) {
 		// File is not open.
 		return -EBADF;
@@ -164,7 +157,7 @@ int Xbox_XBE_Private::findXbeSectionHeader(const char *name, XBE_Section_Header 
 	// TODO: Find any exceptions?
 	static constexpr size_t XBE_READ_SIZE = 64*1024;
 
-	// Load the section headers.
+	// Load the section headers
 	const uint32_t base_address = le32_to_cpu(xbeHeader.base_address);
 	const uint32_t section_headers_address = le32_to_cpu(xbeHeader.section_headers_address);
 	if (section_headers_address <= base_address) {
@@ -179,15 +172,15 @@ int Xbox_XBE_Private::findXbeSectionHeader(const char *name, XBE_Section_Header 
 		return -EIO;
 	}
 
-	// Read the XBE header.
-	unique_ptr<uint8_t[]> first64KB(new uint8_t[XBE_READ_SIZE]);
-	size_t size = file->seekAndRead(0, first64KB.get(), XBE_READ_SIZE);
+	// Read the XBE header
+	unique_ptr<array<uint8_t, XBE_READ_SIZE> > first64KB(new array<uint8_t, XBE_READ_SIZE>);
+	size_t size = file->seekAndRead(0, first64KB->data(), first64KB->size());
 	if (size != XBE_READ_SIZE) {
 		// Seek and/or read error.
 		return -EIO;
 	}
 
-	// Section count.
+	// Section count
 	unsigned int section_count = le32_to_cpu(xbeHeader.section_count);
 	// If this goes over the 64 KB limit, reduce the section count.
 	if (shdr_address_phys + (section_count * sizeof(XBE_Section_Header)) > XBE_READ_SIZE) {
@@ -195,12 +188,12 @@ int Xbox_XBE_Private::findXbeSectionHeader(const char *name, XBE_Section_Header 
 		section_count = (XBE_READ_SIZE - shdr_address_phys) / sizeof(XBE_Section_Header);
 	}
 
-	// First section header.
+	// First section header
 	const XBE_Section_Header *pHdr = reinterpret_cast<const XBE_Section_Header*>(
-		&first64KB[shdr_address_phys]);
+		&(*first64KB)[shdr_address_phys]);
 	const XBE_Section_Header *const pHdr_end = pHdr + section_count;
 
-	// Find the $$XTIMAGE section.
+	// Find the specified section.
 	// TODO: Cache a "not found" result so we don't have to
 	// re-check the section headers again?
 	for (; pHdr < pHdr_end; pHdr++) {
@@ -222,6 +215,11 @@ int Xbox_XBE_Private::findXbeSectionHeader(const char *name, XBE_Section_Header 
 
 		if (!strcmp(section_name, name)) {
 			// Found it!
+#if SYS_BYTEORDER == SYS_LIL_ENDIAN
+			// No byteswapping needed. Copy the data directly.
+			*pOutHeader = *pHdr;
+#else /* SYS_BYTEORDER == SYS_BIG_ENDIAN */
+			// Byteswap the data.
 			pOutHeader->flags = le32_to_cpu(pHdr->flags);
 			pOutHeader->vaddr = le32_to_cpu(pHdr->vaddr);
 			pOutHeader->vsize = le32_to_cpu(pHdr->vsize);
@@ -232,6 +230,7 @@ int Xbox_XBE_Private::findXbeSectionHeader(const char *name, XBE_Section_Header 
 			pOutHeader->head_shared_page_recount_address	= le32_to_cpu(pHdr->head_shared_page_recount_address);
 			pOutHeader->tail_shared_page_recount_address	= le32_to_cpu(pHdr->tail_shared_page_recount_address);
 			memcpy(pOutHeader->sha1_digest, pHdr->sha1_digest, sizeof(pHdr->sha1_digest));
+#endif /* SYS_BYTEORDER == SYS_LIL_ENDIAN */
 			return 0;
 		}
 	}
@@ -316,7 +315,7 @@ const EXE *Xbox_XBE_Private::initEXE(void)
 {
 	if (pe_exe) {
 		// EXE is already initialized.
-		return pe_exe;
+		return pe_exe.get();
 	}
 
 	if (!file || !file->isOpen()) {
@@ -341,7 +340,7 @@ const EXE *Xbox_XBE_Private::initEXE(void)
 		EXE *const pe_exe_tmp = new EXE(subFile);
 		if (pe_exe_tmp->isOpen()) {
 			// EXE opened.
-			this->pe_exe = pe_exe_tmp;
+			this->pe_exe.reset(pe_exe_tmp);
 		} else {
 			// Failed to open the EXE.
 			delete pe_exe_tmp;
@@ -349,7 +348,7 @@ const EXE *Xbox_XBE_Private::initEXE(void)
 	}
 
 	// EXE loaded.
-	return this->pe_exe;
+	return this->pe_exe.get();
 }
 
 /**
@@ -358,8 +357,8 @@ const EXE *Xbox_XBE_Private::initEXE(void)
  */
 string Xbox_XBE_Private::getPublisher(void) const
 {
-	const uint16_t pub_id = ((unsigned int)xbeCertificate.title_id.a << 8) |
-	                        ((unsigned int)xbeCertificate.title_id.b);
+	const uint16_t pub_id = (static_cast<unsigned int>(xbeCertificate.title_id.a) << 8) |
+	                        (static_cast<unsigned int>(xbeCertificate.title_id.b));
 	const char *const publisher = XboxPublishers::lookup(pub_id);
 	if (publisher) {
 		return publisher;
@@ -370,13 +369,13 @@ string Xbox_XBE_Private::getPublisher(void) const
 	    ISALNUM(xbeCertificate.title_id.b))
 	{
 		// Publisher ID is alphanumeric.
-		return rp_sprintf(C_("RomData", "Unknown (%c%c)"),
+		return fmt::format(FRUN(C_("RomData", "Unknown ({:c}{:c})")),
 			xbeCertificate.title_id.a,
 			xbeCertificate.title_id.b);
 	}
 
 	// Publisher ID is not alphanumeric.
-	return rp_sprintf(C_("RomData", "Unknown (%02X %02X)"),
+	return fmt::format(FRUN(C_("RomData", "Unknown ({:0>2X} {:0>2X})")),
 		static_cast<uint8_t>(xbeCertificate.title_id.a),
 		static_cast<uint8_t>(xbeCertificate.title_id.b));
 }
@@ -438,7 +437,10 @@ Xbox_XBE::Xbox_XBE(const IRpFilePtr &file)
 	if (cert_address > base_address) {
 		size = d->file->seekAndRead(cert_address - base_address,
 			&d->xbeCertificate, sizeof(d->xbeCertificate));
-		if (size != sizeof(d->xbeCertificate)) {
+		if (size == sizeof(d->xbeCertificate)) {
+			// Is PAL?
+			d->isPAL = (le32_to_cpu(d->xbeCertificate.region_code) == XBE_REGION_CODE_RESTOFWORLD);
+		} else {
 			// Unable to load the certificate.
 			// Continue anyway.
 			d->xbeCertificate.size = 0;
@@ -520,9 +522,9 @@ const char *Xbox_XBE::systemName(unsigned int type) const
 		"Xbox_XBE::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Microsoft Xbox", "Xbox", "Xbox", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -613,7 +615,7 @@ uint32_t Xbox_XBE::imgpf(ImageType imageType) const
 			// XPR0 image
 			if (d->xtImage.xpr0->width() <= 64 && d->xtImage.xpr0->height() <= 64) {
 				// 64x64 or smaller.
-				ret = IMGPF_RESCALE_NEAREST;
+				ret = IMGPF_RESCALE_NEAREST | IMGPF_INTERNAL_PNG_FORMAT;
 			}
 		} else {
 			// PNG image
@@ -685,33 +687,36 @@ int Xbox_XBE::loadFieldData(void)
 	}
 
 	// Title ID
-	// FIXME: Verify behavior on big-endian.
-	// TODO: Consolidate implementations into a shared function.
-	string tid_str;
-	char hexbuf[4];
-	if (ISUPPER(xbeCertificate->title_id.a)) {
-		tid_str += (char)xbeCertificate->title_id.a;
-	} else {
-		tid_str += "\\x";
-		snprintf(hexbuf, sizeof(hexbuf), "%02X",
-			(uint8_t)xbeCertificate->title_id.a);
-		tid_str.append(hexbuf, 2);
-	}
-	if (ISUPPER(xbeCertificate->title_id.b)) {
-		tid_str += (char)xbeCertificate->title_id.b;
-	} else {
-		tid_str += "\\x";
-		snprintf(hexbuf, sizeof(hexbuf), "%02X",
-			(uint8_t)xbeCertificate->title_id.b);
-		tid_str.append(hexbuf, 2);
-	}
+	const char *const s_title_id_desc = C_("Xbox_XBE", "Title ID");
+	if (likely(xbeCertificate->title_id.u32 != 0)) {
+		// FIXME: Verify behavior on big-endian.
+		// TODO: Consolidate implementations into a shared function.
+		string tid_str;
+		if (ISUPPER(xbeCertificate->title_id.a)) {
+			tid_str += xbeCertificate->title_id.a;
+		} else {
+			tid_str += fmt::format(FSTR("\\x{:0>2X}"),
+				static_cast<uint8_t>(xbeCertificate->title_id.a));
+		}
+		if (ISUPPER(xbeCertificate->title_id.b)) {
+			tid_str += xbeCertificate->title_id.b;
+		} else {
+			tid_str += fmt::format(FSTR("\\x{:0>2X}"),
+				static_cast<uint8_t>(xbeCertificate->title_id.b));
+		}
 
-	d->fields.addField_string(C_("Xbox_XBE", "Title ID"),
-		rp_sprintf_p(C_("Xbox_XBE", "%1$08X (%2$s-%3$03u)"),
-			le32_to_cpu(xbeCertificate->title_id.u32),
-			tid_str.c_str(),
-			le16_to_cpu(xbeCertificate->title_id.u16)),
-		RomFields::STRF_MONOSPACE);
+		d->fields.addField_string(s_title_id_desc,
+			// tr: Xbox title ID (32-bit hex, then two letters followed by a 3-digit decimal number)
+			fmt::format(FRUN(C_("Xbox_XBE", "{0:0>8X} ({1:s}-{2:0>3d})")),
+				le32_to_cpu(xbeCertificate->title_id.u32),
+				tid_str.c_str(),
+				le16_to_cpu(xbeCertificate->title_id.u16)),
+			RomFields::STRF_MONOSPACE);
+	} else {
+		// Title ID is zero.
+		d->fields.addField_string(s_title_id_desc,
+			fmt::format(FSTR("{:0>8X}"), le32_to_cpu(xbeCertificate->title_id.u32)));
+	}
 
 	// Publisher
 	d->fields.addField_string(C_("RomData", "Publisher"), d->getPublisher());
@@ -774,14 +779,13 @@ int Xbox_XBE::loadFieldData(void)
 
 	// Initialization flags
 	const uint32_t init_flags = le32_to_cpu(xbeHeader->init_flags);
-	static const char *const init_flags_tbl[] = {
+	static const array<const char*, 4> init_flags_tbl = {{
 		NOP_C_("Xbox_XBE|InitFlags", "Mount Utility Drive"),
 		NOP_C_("Xbox_XBE|InitFlags", "Format Utility Drive"),
 		NOP_C_("Xbox_XBE|InitFlags", "Limit RAM to 64 MB"),
 		NOP_C_("Xbox_XBE|InitFlags", "Don't Setup HDD"),
-	};
-	vector<string> *const v_init_flags = RomFields::strArrayToVector_i18n(
-		"Region", init_flags_tbl, ARRAY_SIZE(init_flags_tbl));
+	}};
+	vector<string> *const v_init_flags = RomFields::strArrayToVector_i18n("Region", init_flags_tbl);
 	d->fields.addField_bitfield(C_("Xbox_XBE", "Init Flags"),
 		v_init_flags, 2, init_flags);
 
@@ -793,14 +797,13 @@ int Xbox_XBE::loadFieldData(void)
 		region_code &= ~XBE_REGION_CODE_MANUFACTURING;
 		region_code |= 8;
 	}
-	static const char *const region_code_tbl[] = {
+	static const array<const char*, 4> region_code_tbl = {{
 		NOP_C_("Region", "North America"),
 		NOP_C_("Region", "Japan"),
 		NOP_C_("Region", "Rest of World"),
 		NOP_C_("Region", "Manufacturing"),
-	};
-	vector<string> *const v_region_code = RomFields::strArrayToVector_i18n(
-		"Region", region_code_tbl, ARRAY_SIZE(region_code_tbl));
+	}};
+	vector<string> *const v_region_code = RomFields::strArrayToVector_i18n("Region", region_code_tbl);
 	d->fields.addField_bitfield(C_("RomData", "Region Code"),
 		v_region_code, 3, region_code);
 
@@ -828,7 +831,7 @@ int Xbox_XBE::loadFieldData(void)
 int Xbox_XBE::loadMetaData(void)
 {
 	RP_D(Xbox_XBE);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -839,21 +842,18 @@ int Xbox_XBE::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(2);	// Maximum of 2 metadata properties.
-
 	const XBE_Certificate *const xbeCertificate = &d->xbeCertificate;
+	d->metaData.reserve(2);	// Maximum of 2 metadata properties.
 
 	// Title
-	d->metaData->addMetaData_string(Property::Title,
+	d->metaData.addMetaData_string(Property::Title,
 		utf16le_to_utf8(xbeCertificate->title_name, ARRAY_SIZE_I(xbeCertificate->title_name)));
 
 	// Publisher
-	d->metaData->addMetaData_string(Property::Publisher, d->getPublisher());
+	d->metaData.addMetaData_string(Property::Publisher, d->getPublisher());
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -898,7 +898,7 @@ int Xbox_XBE::loadInternalImage(ImageType imageType, rp_image_const_ptr &pImage)
 		pImage = d->xtImage.png;
 	}
 
-	return ((bool)pImage ? 0 : -EIO);
+	return (pImage) ? 0 : -EIO;
 }
 
-}
+} // namespace LibRomData

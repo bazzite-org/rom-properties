@@ -26,7 +26,6 @@ using namespace LibRpFile;
 
 // C++ STL classes
 using std::string;
-using std::unique_ptr;
 
 /**
  * Factory method for ThumbCreator. (KDE4/KF5 only; dropped in KF6)
@@ -95,7 +94,7 @@ bool RomThumbCreator::create(const QString &path, int width, int height, QImage 
 		}
 
 		// Directory: Call RomDataFactory::create() with the filename.
-		romData = RomDataFactory::create(s_filename.c_str());
+		romData = RomDataFactory::create(s_filename);
 	} else {
 		// File: Open the file and call RomDataFactory::create() with the opened file.
 

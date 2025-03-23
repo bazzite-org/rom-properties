@@ -144,8 +144,9 @@ int recursiveScan(const TCHAR *path, forward_list<pair<tstring, uint8_t> > &rlis
 		// Check the filename to see if we should delete it.
 		if (d_type == DT_REG || d_type == DT_UNKNOWN) {
 			// Thumbs.db files can be deleted.
-			if (!strcasecmp(dirent->d_name, "Thumbs.db"))
+			if (!strcasecmp(dirent->d_name, "Thumbs.db")) {
 				goto isok;
+			}
 
 			// Check the extension.
 			const size_t len = strlen(dirent->d_name);

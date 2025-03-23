@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (GTK+ common)                      *
  * RomDataView.cpp: RomData viewer widget. (ROM operations)                *
  *                                                                         *
- * Copyright (c) 2017-2024 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -85,7 +85,7 @@ rp_rom_data_view_update_field(RpRomDataView *page, int fieldIdx)
 	for (const auto &tab : cxx->tabs) {
 		GtkWidget *const table = tab.table;	// GtkTable (2.x); GtkGrid (3.x)
 
-#if GTK_CHECK_VERSION(4,0,0)
+#if GTK_CHECK_VERSION(4, 0, 0)
 		// Enumerate the child widgets.
 		// NOTE: Widgets are enumerated in forwards order.
 		// TODO: Needs testing!
@@ -99,7 +99,7 @@ rp_rom_data_view_update_field(RpRomDataView *page, int fieldIdx)
 				break;
 			}
 		}
-#else /* !GTK_CHECK_VERSION(4,0,0) */
+#else /* !GTK_CHECK_VERSION(4, 0, 0) */
 		// Get the list of child widgets.
 		// NOTE: Widgets are enumerated in forwards order,
 		// since the list head is the first item.
@@ -170,7 +170,7 @@ rp_rom_data_view_update_field(RpRomDataView *page, int fieldIdx)
 			// over the bitfield description.
 			const auto &bitfieldDesc = field->desc.bitfield;
 
-#if GTK_CHECK_VERSION(4,0,0)
+#if GTK_CHECK_VERSION(4, 0, 0)
 			// Get the first child.
 			// NOTE: Widgets are enumerated in forwards order.
 			// TODO: Needs testing!
@@ -200,7 +200,7 @@ rp_rom_data_view_update_field(RpRomDataView *page, int fieldIdx)
 				gtk_check_button_set_active(GTK_CHECK_BUTTON(checkBox), value);
 				g_object_set_qdata(G_OBJECT(checkBox), RFT_BITFIELD_value_quark, GUINT_TO_POINTER((guint)value));
 			}
-#else /* !GTK_CHECK_VERSION(4,0,0) */
+#else /* !GTK_CHECK_VERSION(4, 0, 0) */
 			// Get the list of child widgets.
 			// NOTE: Widgets are enumerated in reverse order.
 			GList *const widgetList = gtk_container_get_children(GTK_CONTAINER(widget));
@@ -232,7 +232,7 @@ rp_rom_data_view_update_field(RpRomDataView *page, int fieldIdx)
 				g_object_set_qdata(G_OBJECT(checkBox), RFT_BITFIELD_value_quark, GUINT_TO_POINTER((guint)value));
 			}
 			g_list_free(widgetList);
-#endif /* GTK_CHECK_VERSION(4,0,0) */
+#endif /* GTK_CHECK_VERSION(4, 0, 0) */
 
 			// Done updating.
 			page->inhibit_checkbox_no_toggle = false;
@@ -309,7 +309,7 @@ rp_rom_data_view_getSaveFileDialog_callback(GFile *file, save_data_t *save_data)
 					? rp_language_combo_box_get_selected_lc(RP_LANGUAGE_COMBO_BOX(page->cboLanguage))
 					: 0;
 
-				ofs << "== " << rp_sprintf(C_("RomDataView", "File: '%s'"), romData->filename()) << '\n';
+				ofs << "== " << fmt::format(FRUN(C_("RomDataView", "File: '{:s}'")), romData->filename()) << '\n';
 				ROMOutput ro(romData, sel_lc);
 				ofs << ro;
 				ofs.flush();
@@ -351,8 +351,8 @@ rp_rom_data_view_getSaveFileDialog_callback(GFile *file, save_data_t *save_data)
 		// TODO: Don't keep rebuilding this vector...
 		// NOTE: Assuming the RomOps vector order hasn't changed.
 		vector<RomData::RomOp> ops = romData->romOps();
-		assert(id < (int)ops.size());
-		if (id < (int)ops.size()) {
+		assert(id < static_cast<int>(ops.size()));
+		if (id < static_cast<int>(ops.size())) {
 			rp_options_menu_button_update_op(RP_OPTIONS_MENU_BUTTON(page->btnOptions), id, &ops[id]);
 		}
 
@@ -372,11 +372,11 @@ rp_rom_data_view_getSaveFileDialog_callback(GFile *file, save_data_t *save_data)
 		if (!page->messageWidget) {
 			page->messageWidget = rp_message_widget_new();
 			rp_message_widget_set_transition_type(RP_MESSAGE_WIDGET(page->messageWidget), GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP);
-#if GTK_CHECK_VERSION(4,0,0)
+#if GTK_CHECK_VERSION(4, 0, 0)
 			gtk_box_append(GTK_BOX(page), page->messageWidget);
-#else /* !GTK_CHECK_VERSION(4,0,0) */
+#else /* !GTK_CHECK_VERSION(4, 0, 0) */
 			gtk_box_pack_end(GTK_BOX(page), page->messageWidget, false, false, 0);
-#endif /* GTK_CHECK_VERSION(4,0,0) */
+#endif /* GTK_CHECK_VERSION(4, 0, 0) */
 		}
 
 		RpMessageWidget *const messageWidget = RP_MESSAGE_WIDGET(page->messageWidget);
@@ -418,7 +418,7 @@ rp_rom_data_view_doRomOp_stdop(RpRomDataView *page, int id)
 				: 0;
 
 			ostringstream oss;
-			oss << "== " << rp_sprintf(C_("RomDataView", "File: '%s'"), rom_filename) << '\n';
+			oss << "== " << fmt::format(FRUN(C_("RomDataView", "File: '{:s}'")), rom_filename) << '\n';
 			ROMOutput ro(romData, sel_lc);
 			oss << ro;
 			oss.flush();
@@ -519,8 +519,8 @@ btnOptions_triggered_signal_handler(RpOptionsMenuButton *menuButton,
 	// Run a ROM operation.
 	// TODO: Don't keep rebuilding this vector...
 	vector<RomData::RomOp> ops = romData->romOps();
-	assert(id < (int)ops.size());
-	if (id >= (int)ops.size()) {
+	assert(id < static_cast<int>(ops.size()));
+	if (id >= static_cast<int>(ops.size())) {
 		// ID is out of range.
 		return;
 	}
@@ -545,7 +545,7 @@ btnOptions_triggered_signal_handler(RpOptionsMenuButton *menuButton,
 
 		// Initial file and directory, based on the current file.
 		// NOTE: Not checking if it's a file or a directory. Assuming it's a file.
-		const string fullFilename = FileSystem::replace_ext(romData->filename(), op->sfi.ext);
+		string fullFilename = FileSystem::replace_ext(romData->filename(), op->sfi.ext);
 		string init_dir, init_name;
 		if (!fullFilename.empty()) {
 			// Split the directory and basename.
@@ -556,7 +556,7 @@ btnOptions_triggered_signal_handler(RpOptionsMenuButton *menuButton,
 				init_dir.assign(fullFilename, 0, slash_pos);
 			} else {
 				// Not a full path. We can only set the filename.
-				init_name = fullFilename;
+				init_name = std::move(fullFilename);
 			}
 		}
 

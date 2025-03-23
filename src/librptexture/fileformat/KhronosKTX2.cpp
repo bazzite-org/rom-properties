@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librptexture)                     *
  * KhronosKTX2.cpp: Khronos KTX2 image reader.                             *
  *                                                                         *
- * Copyright (c) 2017-2024 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -26,7 +26,6 @@
 #include "libi18n/i18n.h"
 using namespace LibRpFile;
 using LibRpBase::RomFields;
-using LibRpText::rp_sprintf;
 
 // librptexture
 #include "ImageSizeCalc.hpp"
@@ -51,64 +50,81 @@ namespace LibRpTexture {
 
 class KhronosKTX2Private final : public FileFormatPrivate
 {
-	public:
-		KhronosKTX2Private(KhronosKTX2 *q, const IRpFilePtr &file);
-		~KhronosKTX2Private() final = default;
+public:
+	KhronosKTX2Private(KhronosKTX2 *q, const IRpFilePtr &file);
 
-	private:
-		typedef FileFormatPrivate super;
-		RP_DISABLE_COPY(KhronosKTX2Private)
+private:
+	typedef FileFormatPrivate super;
+	RP_DISABLE_COPY(KhronosKTX2Private)
 
-	public:
-		/** TextureInfo **/
-		static const char *const exts[];
-		static const char *const mimeTypes[];
-		static const TextureInfo textureInfo;
+public:
+	/** TextureInfo **/
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
+	static const TextureInfo textureInfo;
 
-	public:
-		// KTX2 header
-		KTX2_Header ktx2Header;
+public:
+	// KTX2 header
+	KTX2_Header ktx2Header;
 
-		// Is HFlip/VFlip needed?
-		// Some textures may be stored upside-down due to
-		// the way GL texture coordinates are interpreted.
-		// Default without KTXorientation is HFlip=false, VFlip=true
-		rp_image::FlipOp flipOp;
+	// Is HFlip/VFlip needed?
+	// Some textures may be stored upside-down due to
+	// the way GL texture coordinates are interpreted.
+	// Default without KTXorientation is HFlip=false, VFlip=true
+	rp_image::FlipOp flipOp;
 
-		// Mipmap offsets
-		rp::uvector<KTX2_Mipmap_Index> mipmap_data;
+	// Mipmap offsets
+	rp::uvector<KTX2_Mipmap_Index> mipmap_data;
 
-		// Decoded mipmaps
-		// Mipmap 0 is the full image.
-		vector<rp_image_ptr> mipmaps;
+	// Decoded mipmaps
+	// Mipmap 0 is the full image.
+	vector<rp_image_ptr> mipmaps;
 
-		// Invalid pixel format message
-		char invalid_pixel_format[24];
+	// Invalid pixel format message
+	mutable string invalid_pixel_format;
 
-		// Key/Value data
-		// NOTE: Stored as vector<vector<string> > instead of
-		// vector<pair<string, string> > for compatibility with
-		// RFT_LISTDATA.
-		RomFields::ListData_t kv_data;
+	// Key/Value data
+	// NOTE: Stored as vector<vector<string> > instead of
+	// vector<pair<string, string> > for compatibility with
+	// RFT_LISTDATA.
+	RomFields::ListData_t kv_data;
 
-		// KTXswizzle, if specified.
-		// Four bytes indicate the values of each channel.
-		// Each byte can be: [rgba01], where rgba corresponds
-		// to each channel, 0 is 0, and 1 is 1.
-		// If byte 0 is a literal \0, no KTXswizzle tag was found.
-		char ktx_swizzle[4];
+	// KTXswizzle, if specified.
+	// Four bytes indicate the values of each channel.
+	// Each byte can be: [rgba01], where rgba corresponds
+	// to each channel, 0 is 0, and 1 is 1.
+	// If byte 0 is a literal \0, no KTXswizzle tag was found.
+	char ktx_swizzle[4];
 
-		/**
-		 * Load the image.
-		 * @param mip Mipmap number. (0 == full image)
-		 * @return Image, or nullptr on error.
-		 */
-		rp_image_const_ptr loadImage(int mip);
+	/**
+	 * Load the image.
+	 * @param mip Mipmap number. (0 == full image)
+	 * @return Image, or nullptr on error.
+	 */
+	rp_image_const_ptr loadImage(int mip);
 
-		/**
-		 * Load key/value data.
-		 */
-		void loadKeyValueData(void);
+	/**
+	 * Load key/value data.
+	 */
+	void loadKeyValueData(void);
+
+	/**
+	 * Read a little-endian 32-bit value from an unaligned memory block.
+	 * @param p Memory block
+	 * @return Little-endian 32-bit value
+	 */
+	static inline uint32_t read_le32(const char *p)
+	{
+#if defined(_M_IX86) || defined(__i386__) || \
+    defined(_M_X64) || defined(_M_AMD64) || \
+    defined(__amd64__) || defined(__x86_64__)
+		// i386/amd64: Unaligned accesses are allowed, and are usually fast.
+		return le32_to_cpu(*(reinterpret_cast<const uint32_t*>(p)));
+#else
+		// Other CPU: Unaligned accesses are either not allowed or are slow.
+		return (p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24));
+#endif
+	}
 };
 
 FILEFORMAT_IMPL(KhronosKTX2)
@@ -116,20 +132,20 @@ FILEFORMAT_IMPL(KhronosKTX2)
 /** KhronosKTX2Private **/
 
 /* TextureInfo */
-const char *const KhronosKTX2Private::exts[] = {
+const array<const char*, 1+1> KhronosKTX2Private::exts = {{
 	// TODO: Include ".ktx" too?
 	".ktx2",
 
 	nullptr
-};
-const char *const KhronosKTX2Private::mimeTypes[] = {
+}};
+const array<const char*, 1+1> KhronosKTX2Private::mimeTypes = {{
 	// Official MIME types.
 	"image/ktx2",
 
 	nullptr
-};
+}};
 const TextureInfo KhronosKTX2Private::textureInfo = {
-	exts, mimeTypes
+	exts.data(), mimeTypes.data()
 };
 
 KhronosKTX2Private::KhronosKTX2Private(KhronosKTX2 *q, const IRpFilePtr &file)
@@ -138,7 +154,6 @@ KhronosKTX2Private::KhronosKTX2Private(KhronosKTX2 *q, const IRpFilePtr &file)
 {
 	// Clear the KTX2 header struct.
 	memset(&ktx2Header, 0, sizeof(ktx2Header));
-	memset(invalid_pixel_format, 0, sizeof(invalid_pixel_format));
 	memset(ktx_swizzle, 0, sizeof(ktx_swizzle));
 }
 
@@ -609,9 +624,9 @@ rp_image_const_ptr KhronosKTX2Private::loadImage(int mip)
 		// Check if a flip is needed.
 		if (flipOp != rp_image::FLIP_NONE) {
 			// TODO: Assert that img dimensions match ktx2Header?
-			const rp_image_ptr flipimg = img->flip(flipOp);
+			rp_image_ptr flipimg = img->flip(flipOp);
 			if (flipimg) {
-				img = flipimg;
+				img = std::move(flipimg);
 			}
 		}
 
@@ -664,7 +679,7 @@ void KhronosKTX2Private::loadKeyValueData(void)
 
 	while (p < p_end-3) {
 		// Check the next key/value size.
-		const uint32_t sz = le32_to_cpu(*((const uint32_t*)p));
+		const uint32_t sz = read_le32(p);
 		if (sz < 2) {
 			// Must be at least 2 bytes for an empty key and its NULL terminator.
 			// TODO: Show an error?
@@ -705,7 +720,7 @@ void KhronosKTX2Private::loadKeyValueData(void)
 		data_row.reserve(2);
 		data_row.emplace_back(p, k_end - p);
 		data_row.emplace_back(k_end + 1, kv_end - k_end - 2);
-		kv_data.emplace_back(std::move(data_row));
+		kv_data.push_back(std::move(data_row));
 
 		// Check if this is KTXorientation.
 		// NOTE: Only the first instance is used.
@@ -924,13 +939,14 @@ const char *KhronosKTX2::pixelFormat(void) const
 	}
 
 	// Invalid pixel format.
-	if (d->invalid_pixel_format[0] == '\0') {
+	// Store an error message instead.
+	if (d->invalid_pixel_format.empty()) {
 		// TODO: Localization?
-		snprintf(const_cast<KhronosKTX2Private*>(d)->invalid_pixel_format,
-			sizeof(d->invalid_pixel_format),
-			"Unknown (%u)", d->ktx2Header.vkFormat);
+		d->invalid_pixel_format = fmt::format(
+			FRUN(C_("RomData", "Unknown ({:d})")),
+			d->ktx2Header.vkFormat);
 	}
-	return d->invalid_pixel_format;
+	return d->invalid_pixel_format.c_str();
 }
 
 #ifdef ENABLE_LIBRPBASE_ROMFIELDS
@@ -969,7 +985,7 @@ int KhronosKTX2::getFields(RomFields *fields) const
 			supercompression_tbl[ktx2Header->supercompressionScheme]);
 	} else {
 		fields->addField_string(C_("KhronosKTX2", "Supercompression"),
-			rp_sprintf(C_("RomData", "Unknown (%u)"),
+			fmt::format(FRUN(C_("RomData", "Unknown ({:d})")),
 				ktx2Header->supercompressionScheme));
 	}
 
@@ -998,15 +1014,14 @@ int KhronosKTX2::getFields(RomFields *fields) const
 	// Key/Value data.
 	d->loadKeyValueData();
 	if (!d->kv_data.empty()) {
-		static const char *const kv_field_names[] = {
+		static const array<const char*, 2> kv_field_names = {{
 			NOP_C_("KhronosKTX2|KeyValue", "Key"),
 			NOP_C_("KhronosKTX2|KeyValue", "Value"),
-		};
+		}};
 
 		// NOTE: Making a copy.
 		RomFields::ListData_t *const p_kv_data = new RomFields::ListData_t(d->kv_data);
-		vector<string> *const v_kv_field_names = RomFields::strArrayToVector_i18n(
-			"KhronosKTX2|KeyValue", kv_field_names, ARRAY_SIZE(kv_field_names));
+		vector<string> *const v_kv_field_names = RomFields::strArrayToVector_i18n("KhronosKTX2|KeyValue", kv_field_names);
 
 		RomFields::AFLD_PARAMS params;
 		params.headers = v_kv_field_names;
@@ -1051,4 +1066,4 @@ rp_image_const_ptr KhronosKTX2::mipmap(int mip) const
 	return const_cast<KhronosKTX2Private*>(d)->loadImage(mip);
 }
 
-}
+} // namespace LibRpTexture

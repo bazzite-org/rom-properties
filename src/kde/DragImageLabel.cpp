@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE4/KF5)                         *
  * DragImageLabel.cpp: Drag & Drop image label.                            *
  *                                                                         *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -26,20 +26,13 @@ DragImageLabel::DragImageLabel(const QString &text, QWidget *parent, Qt::WindowF
 	: super(text, parent, f)
 	, m_minimumImageSize(DIL_MIN_IMAGE_SIZE, DIL_MIN_IMAGE_SIZE)
 	, m_ecksBawks(false)
-	, m_anim(nullptr)
 {}
 
 DragImageLabel::DragImageLabel(QWidget *parent, Qt::WindowFlags f)
 	: super(parent, f)
 	, m_minimumImageSize(DIL_MIN_IMAGE_SIZE, DIL_MIN_IMAGE_SIZE)
 	, m_ecksBawks(false)
-	, m_anim(nullptr)
 {}
-
-DragImageLabel::~DragImageLabel()
-{
-	delete m_anim;
-}
 
 void DragImageLabel::setEcksBawks(bool newEcksBawks)
 {
@@ -50,7 +43,7 @@ void DragImageLabel::setEcksBawks(bool newEcksBawks)
 	if (!actions().isEmpty())
 		return;
 
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 	// Need to initialize Ecks Bawks actions.
 	// NOTE: Only supporting Qt 5 for lambda functions.
 	QAction *const actMenu1 = new QAction(QLatin1String("ermahgerd! an ecks bawks ISO!"), this);
@@ -65,7 +58,7 @@ void DragImageLabel::setEcksBawks(bool newEcksBawks)
 
 	addAction(actMenu1);
 	addAction(actMenu2);
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,0,0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) */
 }
 
 /**
@@ -107,7 +100,7 @@ bool DragImageLabel::setRpImage(const rp_image_const_ptr &img)
 bool DragImageLabel::setIconAnimData(const IconAnimDataConstPtr &iconAnimData)
 {
 	if (!m_anim) {
-		m_anim = new anim_vars();
+		m_anim.reset(new anim_vars());
 	}
 
 	// NOTE: We're not checking if the image pointer matches the
@@ -198,10 +191,11 @@ bool DragImageLabel::updatePixmaps(void)
 		}
 
 		// Set up the IconAnimHelper.
-		m_anim->iconAnimHelper.setIconAnimData(iconAnimData);
-		if (m_anim->iconAnimHelper.isAnimated()) {
+		IconAnimHelper &iconAnimHelper = m_anim->iconAnimHelper;
+		iconAnimHelper.setIconAnimData(iconAnimData);
+		if (iconAnimHelper.isAnimated()) {
 			// Initialize the animation.
-			m_anim->last_frame_number = m_anim->iconAnimHelper.frameNumber();
+			m_anim->last_frame_number = iconAnimHelper.frameNumber();
 			// Create the animation timer.
 			if (!m_anim->tmrIconAnim) {
 				m_anim->tmrIconAnim = new QTimer(this);
@@ -241,7 +235,7 @@ bool DragImageLabel::updatePixmaps(void)
  */
 void DragImageLabel::startAnimTimer(void)
 {
-	if (!m_anim || !m_anim->iconAnimHelper.isAnimated()) {
+	if (!m_anim) {
 		// Not an animated icon.
 		return;
 	}
@@ -249,9 +243,15 @@ void DragImageLabel::startAnimTimer(void)
 	// Sanity check: Timer should have been created already.
 	assert(m_anim->tmrIconAnim != nullptr);
 
+	const IconAnimHelper &iconAnimHelper = m_anim->iconAnimHelper;
+	if (!iconAnimHelper.isAnimated()) {
+		// Not an animated icon.
+		return;
+	}
+
 	// Get the current frame information.
-	m_anim->last_frame_number = m_anim->iconAnimHelper.frameNumber();
-	const int delay = m_anim->iconAnimHelper.frameDelay();
+	m_anim->last_frame_number = iconAnimHelper.frameNumber();
+	const int delay = iconAnimHelper.frameDelay();
 	assert(delay > 0);
 	if (delay <= 0) {
 		// Invalid delay value.
@@ -378,14 +378,18 @@ void DragImageLabel::mouseMoveEvent(QMouseEvent *event)
 		}
 	} else {
 		// Not animated. Use the QLabel pixmap directly.
-#if QT_VERSION >= QT_VERSION_CHECK(5,15,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+#  if defined(QT_DISABLE_DEPRECATED_BEFORE) && QT_DISABLE_DEPRECATED_BEFORE >= 0x050F00
+		drag->setPixmap(this->pixmap());
+#  else /* !QT_DISABLE_DEPRECATED_BEFORE || QT_DISABLE_DEPRECATED_BEFORE < 0x050F00 */
 		drag->setPixmap(this->pixmap(Qt::ReturnByValue));
-#else /* QT_VERSION < QT_VERSION_CHECK(5,15,0) */
+#  endif /* QT_DISABLE_DEPRECATED_BEFORE && QT_DISABLE_DEPRECATED_BEFORE >= 0x050F00 */
+#else /* QT_VERSION < QT_VERSION_CHECK(5, 15, 0) */
 		const QPixmap *const qpxm = this->pixmap();
 		if (qpxm) {
 			drag->setPixmap(*qpxm);
 		}
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,15,0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 15, 0) */
 	}
 
 	drag->exec(Qt::CopyAction);

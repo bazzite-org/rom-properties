@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * RomDataFactory.cpp: RomData factory class.                              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -24,7 +24,7 @@ using namespace LibRpFile;
 
 // librptexture
 #include "librptexture/FileFormatFactory.hpp"
-using LibRpTexture::FileFormatFactory;
+using namespace LibRpTexture;
 
 // C++ STL classes
 using std::array;
@@ -76,6 +76,7 @@ using std::vector;
 #include "Handheld/DMG.hpp"
 #include "Handheld/GameBoyAdvance.hpp"
 #include "Handheld/GameCom.hpp"
+#include "Handheld/J2ME.hpp"
 #include "Handheld/Lynx.hpp"
 #include "Handheld/NGPC.hpp"
 #include "Handheld/Nintendo3DS.hpp"
@@ -201,9 +202,11 @@ pthread_once_t once_mimeTypes = PTHREAD_ONCE_INIT;
  *
  * TODO: Add support for multiple magic numbers per class.
  */
-static const RomDataFns romDataFns_magic[] = {
+static const array<RomDataFns, 39> romDataFns_magic = {{
 	// Consoles
 	GetRomDataFns_addr(Atari7800, ATTR_HAS_METADATA, 4, 'RI78'),	// "ATARI7800"
+	GetRomDataFns_addr(GameCubeBNR, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA, 0, 'BNR1'),
+	GetRomDataFns_addr(GameCubeBNR, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA, 0, 'BNR2'),
 	GetRomDataFns_addr(PlayStationEXE, 0, 0, 'PS-X'),
 	GetRomDataFns_addr(SufamiTurbo, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA, 8, 'FC-A'),	// Less common than "BAND"
 	GetRomDataFns_addr(WiiBNR, ATTR_HAS_METADATA, 64, 'IMET'),	// common
@@ -226,7 +229,6 @@ static const RomDataFns romDataFns_magic[] = {
 	GetRomDataFns_addr(Nintendo3DS_SMDH, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA, 0, 'SMDH'),
 	GetRomDataFns_addr(NintendoDS, ATTR_HAS_THUMBNAIL | ATTR_HAS_DPOVERLAY | ATTR_HAS_METADATA, 0xC0, 0x24FFAE51),
 	GetRomDataFns_addr(NintendoDS, ATTR_HAS_THUMBNAIL | ATTR_HAS_DPOVERLAY | ATTR_HAS_METADATA, 0xC0, 0xC8604FE2),
-	//GetRomDataFns_addr(PSP, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA, 0, '0000'),	// NOTE: No magic number for PSP ISO!
 
 	// Audio
 	GetRomDataFns_addr(BRSTM, ATTR_HAS_METADATA, 0, 'RSTM'),
@@ -254,22 +256,19 @@ static const RomDataFns romDataFns_magic[] = {
 	GetRomDataFns_addr(CBMCart, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA, 0, 'CBM2'),
 	GetRomDataFns_addr(CBMCart, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA, 0, 'VIC2'),
 	GetRomDataFns_addr(CBMCart, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA, 0, 'PLUS'),
-
-	{nullptr, nullptr, nullptr, ATTR_NONE, 0, 0}
-};
+}};
 
 /**
  * RomData subclasses that use a header.
  * Headers with addresses other than 0 should be
  * placed at the end of this array.
  */
-static const RomDataFns romDataFns_header[] = {
+static const array<RomDataFns, 38> romDataFns_header = {{
 	// Consoles
 	GetRomDataFns(ColecoVision, ATTR_HAS_METADATA),
 	GetRomDataFns(Dreamcast, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA | ATTR_SUPPORTS_DEVICES),
 	GetRomDataFns(DreamcastSave, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA),
 	GetRomDataFns(GameCube, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA | ATTR_SUPPORTS_DEVICES),
-	GetRomDataFns(GameCubeBNR, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA),
 	GetRomDataFns(GameCubeSave, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA),
 	GetRomDataFns(Intellivision, ATTR_HAS_METADATA),
 	GetRomDataFns(iQuePlayer, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA),
@@ -298,6 +297,7 @@ static const RomDataFns romDataFns_header[] = {
 
 	// Other
 	GetRomDataFns(Amiibo, ATTR_HAS_THUMBNAIL),
+	GetRomDataFns(J2ME, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA),	// .jar and .jad (TODO: Handle .zip files like .iso?)
 	GetRomDataFns(MachO, ATTR_NONE),
 	GetRomDataFns(NintendoBadge, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA),
 	GetRomDataFns(Wim, ATTR_NONE),
@@ -337,26 +337,26 @@ static const RomDataFns romDataFns_header[] = {
 	// NOTE: Keeping the same address as the previous entry, since ISO only checks the file extension.
 	// NOTE: ATTR_HAS_THUMBNAIL is needed for Xbox 360.
 	GetRomDataFns_addr(ISO, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA | ATTR_SUPPORTS_DEVICES | ATTR_CHECK_ISO, 0x40000, 0x20),
-
-	{nullptr, nullptr, nullptr, ATTR_NONE, 0, 0}
-};
+}};
 
 // RomData subclasses that use a footer.
-static const RomDataFns romDataFns_footer[] = {
+static const array<RomDataFns, 2> romDataFns_footer = {{
 	GetRomDataFns(VirtualBoy, ATTR_HAS_METADATA),
 	GetRomDataFns(WonderSwan, ATTR_HAS_THUMBNAIL | ATTR_HAS_METADATA),
-	{nullptr, nullptr, nullptr, ATTR_NONE, 0, 0}
-};
+}};
 
 // Table of pointers to tables.
 // This reduces duplication by only requiring a single loop
 // in each function.
-static const RomDataFns *const romDataFns_tbl[] = {
-	romDataFns_magic,
-	romDataFns_header,
-	romDataFns_footer,
-	nullptr
+struct RomDataFns_main_tbl_t {
+	const RomDataFns *tbl;
+	size_t size;
 };
+static const array<RomDataFns_main_tbl_t, 3> romDataFns_tbl = {{
+	{romDataFns_magic.data(), romDataFns_magic.size()},
+	{romDataFns_header.data(), romDataFns_header.size()},
+	{romDataFns_footer.data(), romDataFns_footer.size()},
+}};
 
 /** IDiscReader / SparseDiscReader check arrays and functions **/
 
@@ -371,7 +371,7 @@ struct IDiscReaderFns {
 	// Up to 4 magic numbers can be specified for multiple formats.
 	// 0 == end of magic list
 	// NOTE: Must be in Big-Endian format!
-	uint32_t magic[4];
+	array<uint32_t, 4> magic;
 };
 
 /**
@@ -388,21 +388,19 @@ static IDiscReaderPtr IDiscReader_ctor(const IRpFilePtr &file)
 	{discType::isDiscSupported_static, \
 	 IDiscReader_ctor<discType>, \
 	 magic}
-
 #define P99_PROTECT(...) __VA_ARGS__	/* Reference: https://stackoverflow.com/a/5504336 */
-static const IDiscReaderFns iDiscReaderFns[] = {
-	GetIDiscReaderFns(CisoGcnReader,	P99_PROTECT({'CISO'})),
+
+static const array<IDiscReaderFns, 6> iDiscReaderFns = {{
+	GetIDiscReaderFns(CisoGcnReader,	P99_PROTECT({{'CISO'}})),
 	// NOTE: MSVC doesn't like putting #ifdef within the P99_PROTECT macro.
 	// TODO: Disable ZISO and JISO if LZ4 and LZO aren't available?
-	GetIDiscReaderFns(CisoPspReader,	P99_PROTECT({'CISO', 'ZISO', 0x44415800, 'JISO'})),
-	GetIDiscReaderFns(DpfReader,		P99_PROTECT({0x863EFC23, 0x6A2BF9E0})),
-	GetIDiscReaderFns(GczReader,		P99_PROTECT({0xB10BC001})),
-	GetIDiscReaderFns(NASOSReader,		P99_PROTECT({'GCML', 'GCMM', 'WII5', 'WII9'})),
-	//GetIDiscReaderFns(WbfsReader,		P99_PROTECT({'WBFS'})),	// Handled separately
-	GetIDiscReaderFns(WuxReader,		P99_PROTECT({'WUX0'})),	// NOTE: Not checking second magic here.
-
-	{nullptr, nullptr, {0}}
-};
+	GetIDiscReaderFns(CisoPspReader,	P99_PROTECT({{'CISO', 'ZISO', 0x44415800, 'JISO'}})),
+	GetIDiscReaderFns(DpfReader,		P99_PROTECT({{0x863EFC23, 0x6A2BF9E0}})),
+	GetIDiscReaderFns(GczReader,		P99_PROTECT({{0xB10BC001}})),
+	GetIDiscReaderFns(NASOSReader,		P99_PROTECT({{'GCML', 'GCMM', 'WII5', 'WII9'}})),
+	//GetIDiscReaderFns(WbfsReader,		P99_PROTECT({{'WBFS'}})),	// Handled separately
+	GetIDiscReaderFns(WuxReader,		P99_PROTECT({{'WUX0'}})),	// NOTE: Not checking second magic here.
+}};
 
 /**
  * Attempt to open the other file in a Dreamcast .VMI+.VMS pair.
@@ -532,16 +530,15 @@ static IDiscReaderPtr openIDiscReader(const IRpFilePtr &file, uint32_t magic0)
 	// NOTE: This was originally for SparseDiscReader subclasses.
 	// DpfReader does not derive from SparseDiscReader, so it was
 	// changed to IDiscReader subclasses.
-	const IDiscReaderFns *sdfns = iDiscReaderFns;
-	for (; sdfns->newIDiscReader != nullptr; sdfns++) {
+	for (const auto &sdfns : iDiscReaderFns) {
 		// Check all four magic numbers.
-		for (unsigned int i = 0; i < ARRAY_SIZE(sdfns->magic); i++) {
-			if (sdfns->magic[i] == 0) {
+		for (const uint32_t magic : sdfns.magic) {
+			if (magic == 0) {
 				// End of the magic list.
 				break;
-			} else if (sdfns->magic[i] == magic0) {
+			} else if (magic == magic0) {
 				// Found a matching magic.
-				IDiscReaderPtr sd = sdfns->newIDiscReader(file);
+				IDiscReaderPtr sd = sdfns.newIDiscReader(file);
 				if (sd->isOpen()) {
 					// IDiscReader obtained.
 					return sd;
@@ -618,19 +615,16 @@ RomDataPtr checkISO(const IRpFilePtr &file)
 #define GetRomDataFns_ISO(sys) \
 	{sys::isRomSupported_static, \
 	 RomData_ctor<sys>}
-	static const RomDataFns_ISO romDataFns_ISO[] = {
+	static const array<RomDataFns_ISO, 3> romDataFns_ISO = {{
 		GetRomDataFns_ISO(PlayStationDisc),
 		GetRomDataFns_ISO(PSP),
 		GetRomDataFns_ISO(XboxDisc),
+	}};
 
-		{nullptr, nullptr}
-	};
-
-	const RomDataFns_ISO *fns = &romDataFns_ISO[0];
-	for (; fns->isRomSupported != nullptr; fns++) {
-		if (fns->isRomSupported(pvd) >= 0) {
+	for (const auto &fns : romDataFns_ISO) {
+		if (fns.isRomSupported(pvd) >= 0) {
 			// This might be the correct RomData subclass.
-			RomDataPtr romData = fns->newRomData(file);
+			RomDataPtr romData = fns.newRomData(file);
 			if (romData->isValid()) {
 				// Found the correct RomData subclass.
 				return romData;
@@ -735,7 +729,7 @@ RomDataPtr create(const IRpFilePtr &file, unsigned int attrs)
 	{
 		// Dreamcast .VMI+.VMS pair.
 		// Attempt to open the other file in the pair.
-		const RomDataPtr romData = Private::openDreamcastVMSandVMI(file);
+		RomDataPtr romData = Private::openDreamcastVMSandVMI(file);
 		if (romData) {
 			// .VMI+.VMS pair opened.
 			return romData;
@@ -763,23 +757,27 @@ RomDataPtr create(const IRpFilePtr &file, unsigned int attrs)
 
 	// Check RomData subclasses that take a header at 0
 	// and definitely have a 32-bit magic number in the header.
-	const Private::RomDataFns *fns = &Private::romDataFns_magic[0];
-	for (; fns->romDataInfo != nullptr; fns++) {
-		if ((fns->attrs & attrs) != attrs) {
+	for (const auto &fns : Private::romDataFns_magic) {
+		if ((fns.attrs & attrs) != attrs) {
 			// This RomData subclass doesn't have the
 			// required attributes.
 			continue;
 		}
 
+		assert(fns.address % 4 == 0);
+		assert(fns.address + sizeof(uint32_t) <= sizeof(header.u32));
+		if (fns.address + sizeof(uint32_t) > info.header.size) {
+			// The header size is less than the read address of this magic number.
+			continue;
+		}
+
 		// Check the magic number.
 		// TODO: Verify alignment restrictions.
-		assert(fns->address % 4 == 0);
-		assert(fns->address + sizeof(uint32_t) <= sizeof(header.u32));
-		const uint32_t magic = be32_to_cpu(header.u32[fns->address/4]);
-		if (magic == fns->size) {
+		const uint32_t magic = be32_to_cpu(header.u32[fns.address/4]);
+		if (magic == fns.size) {
 			// Found a matching magic number.
-			if (fns->isRomSupported(&info) >= 0) {
-				RomDataPtr romData = fns->newRomData(reader);
+			if (fns.isRomSupported(&info) >= 0) {
+				RomDataPtr romData = fns.newRomData(reader);
 				if (romData->isValid()) {
 					// RomData subclass obtained.
 					return romData;
@@ -800,17 +798,16 @@ RomDataPtr create(const IRpFilePtr &file, unsigned int attrs)
 
 	// Check other RomData subclasses that take a header,
 	// but don't have a simple 32-bit magic number check.
-	fns = &Private::romDataFns_header[0];
 	bool checked_exts = false;
-	for (; fns->romDataInfo != nullptr; fns++) {
-		if ((fns->attrs & attrs) != attrs) {
+	for (const auto &fns : Private::romDataFns_header) {
+		if ((fns.attrs & attrs) != attrs) {
 			// This RomData subclass doesn't have the
 			// required attributes.
 			continue;
 		}
 
-		if (fns->address != info.header.addr ||
-		    fns->size > info.header.size)
+		if (fns.address != info.header.addr ||
+		    fns.size > info.header.size)
 		{
 			// Header address has changed.
 			if (!checked_exts) {
@@ -853,37 +850,37 @@ RomDataPtr create(const IRpFilePtr &file, unsigned int attrs)
 
 			// Read the new header data.
 
-			// NOTE: fns->size == 0 is only correct
+			// NOTE: fns.size == 0 is only correct
 			// for headers located at 0, since we
 			// read the whole 4096+256 bytes for these.
-			assert(fns->size != 0);
-			assert(fns->size <= sizeof(header));
-			if (fns->size == 0 || fns->size > sizeof(header))
+			assert(fns.size != 0);
+			assert(fns.size <= sizeof(header));
+			if (fns.size == 0 || fns.size > sizeof(header))
 				continue;
 
 			// Make sure the file is big enough to
 			// have this header.
-			if ((static_cast<off64_t>(fns->address) + fns->size) > info.szFile)
+			if ((static_cast<off64_t>(fns.address) + fns.size) > info.szFile)
 				continue;
 
 			// Read the header data.
-			info.header.addr = fns->address;
+			info.header.addr = fns.address;
 			int ret = reader->seek(info.header.addr);
 			if (ret != 0)
 				continue;
-			info.header.size = static_cast<uint32_t>(reader->read(header.u8, fns->size));
-			if (info.header.size != fns->size)
+			info.header.size = static_cast<uint32_t>(reader->read(header.u8, fns.size));
+			if (info.header.size != fns.size)
 				continue;
 		}
 
-		if (fns->isRomSupported(&info) >= 0) {
+		if (fns.isRomSupported(&info) >= 0) {
 			RomDataPtr romData;
-			if (fns->attrs & RDA_CHECK_ISO) {
+			if (fns.attrs & RDA_CHECK_ISO) {
 				// Check for a game-specific ISO subclass.
 				romData = Private::checkISO(reader);
 			} else {
 				// Standard RomData subclass.
-				romData = fns->newRomData(reader);
+				romData = fns.newRomData(reader);
 			}
 
 			if (romData && romData->isValid()) {
@@ -901,9 +898,8 @@ RomDataPtr create(const IRpFilePtr &file, unsigned int attrs)
 	}
 
 	bool readFooter = false;
-	fns = &Private::romDataFns_footer[0];
-	for (; fns->romDataInfo != nullptr; fns++) {
-		if ((fns->attrs & attrs) != attrs) {
+	for (const auto &fns : Private::romDataFns_footer) {
+		if ((fns.attrs & attrs) != attrs) {
 			// This RomData subclass doesn't have the
 			// required attributes.
 			continue;
@@ -950,8 +946,8 @@ RomDataPtr create(const IRpFilePtr &file, unsigned int attrs)
 			readFooter = true;
 		}
 
-		if (fns->isRomSupported(&info) >= 0) {
-			RomDataPtr romData = fns->newRomData(reader);
+		if (fns.isRomSupported(&info) >= 0) {
+			RomDataPtr romData = fns.newRomData(reader);
 			if (romData->isValid()) {
 				// RomData subclass obtained.
 				return romData;
@@ -995,31 +991,58 @@ RomDataPtr create(const IRpFilePtr &file, unsigned int attrs)
 template<typename CharType>
 static RomDataPtr T_create(const CharType *filename, unsigned int attrs)
 {
-	RomDataPtr romData;
+#ifdef _WIN32
+	// If this is a drive letter, try handling it as a file first.
+	if (T_IsDriveLetter(filename[0]) && filename[1] == L':' &&
+		(filename[2] == '\0' || (filename[2] == '\\' && filename[3] == '\0')))
+	{
+		// It's a drive letter. (volume root)
+		const CharType drvfilename[4] = {filename[0], ':', '\\', '\0'};
+		IRpFilePtr file = std::make_shared<RpFile>(drvfilename, RpFile::FM_OPEN_READ_GZ);
+		if (file->isOpen()) {
+			RomDataPtr romData = create(file, attrs);
+			if (romData) {
+				return romData;
+			}
+		}
+	}
+#endif /* _WIN32 */
 
 	// Check if this is a file or a directory.
 	// If it's a file, we'll create an RpFile and then
 	// call create(IRpFile*,unsigned int).
 	if (likely(!FileSystem::is_directory(filename))) {
 		// Not a directory.
-		shared_ptr<RpFile> file = std::make_shared<RpFile>(filename, RpFile::FM_OPEN_READ_GZ);
+		IRpFilePtr file = std::make_shared<RpFile>(filename, RpFile::FM_OPEN_READ_GZ);
 		if (file->isOpen()) {
-			romData = create(file, attrs);
-		}
-	} else {
-		// This is a directory. We currently only have one
-		// RomData subclass that takes directories, so we'll
-		// try that out here.
-		// TODO: Separate function?
-		if (WiiUPackage::isDirSupported_static(filename) >= 0) {
-			romData = std::make_shared<WiiUPackage>(filename);
-			if (!romData->isValid()) {
-				romData.reset();
-			}
+			return create(file, attrs);
 		}
 	}
 
-	return romData;
+	// This is a directory.
+	// TODO: Array of function pointers for RomData subclasses
+	// that take directories? We currently only have two...
+	// TODO: Common RomData declarations for directories
+	// instead of the ad-hoc method currently in use.
+
+	// WiiUPackage
+	if (WiiUPackage::isDirSupported_static(filename) >= 0) {
+		RomDataPtr romData = std::make_shared<WiiUPackage>(filename);
+		if (romData->isValid()) {
+			return romData;
+		}
+	}
+
+	// XboxDisc
+	if (XboxDisc::isDirSupported_static(filename) >= 0) {
+		RomDataPtr romData = std::make_shared<XboxDisc>(filename);
+		if (romData->isValid()) {
+			return romData;
+		}
+	}
+
+	// Not a supported directory.
+	return {};
 }
 
 /**
@@ -1084,7 +1107,7 @@ namespace Private {
  * NOTE: The return value is a struct that includes a flag
  * indicating if the file type handler supports thumbnails.
  */
-void init_supportedFileExtensions(void)
+static void init_supportedFileExtensions(void)
 {
 	// In order to handle multiple RomData subclasses
 	// that support the same extensions, we're using
@@ -1096,19 +1119,17 @@ void init_supportedFileExtensions(void)
 	std::unordered_map<string, unsigned int> map_exts;
 
 	static constexpr size_t reserve_size =
-		(ARRAY_SIZE(romDataFns_magic) +
-		 ARRAY_SIZE(romDataFns_header) +
-		 ARRAY_SIZE(romDataFns_footer)) * 2;
+		(romDataFns_magic.size() +
+		 romDataFns_header.size() +
+		 romDataFns_footer.size()) * 2;
 	vec_exts.reserve(reserve_size);
 #ifdef HAVE_UNORDERED_MAP_RESERVE
 	map_exts.reserve(reserve_size);
 #endif /* HAVE_UNORDERED_MAP_RESERVE */
 
-	for (const RomDataFns *const *tblptr = &romDataFns_tbl[0];
-	     *tblptr != nullptr; tblptr++)
-	{
-		const RomDataFns *fns = *tblptr;
-		for (; fns->romDataInfo != nullptr; fns++) {
+	for (const auto &tblptr : Private::romDataFns_tbl) {
+		const RomDataFns *fns = tblptr.tbl;
+		for (size_t i = tblptr.size; i > 0; i--, fns++) {
 			const char *const *sys_exts = fns->romDataInfo()->exts;
 			if (!sys_exts)
 				continue;
@@ -1178,7 +1199,7 @@ namespace Private {
  *
  * Internal function; must be called using pthread_once().
  */
-void init_supportedMimeTypes(void)
+static void init_supportedMimeTypes(void)
 {
 	// TODO: Add generic types, e.g. application/octet-stream?
 
@@ -1189,19 +1210,17 @@ void init_supportedMimeTypes(void)
 	std::unordered_set<string> set_mimeTypes;
 
 	static constexpr size_t reserve_size =
-		(ARRAY_SIZE(romDataFns_magic) +
-		 ARRAY_SIZE(romDataFns_header) +
-		 ARRAY_SIZE(romDataFns_footer)) * 2;
+		(romDataFns_magic.size() +
+		 romDataFns_header.size() +
+		 romDataFns_footer.size()) * 2;
 	vec_mimeTypes.reserve(reserve_size);
 #ifdef HAVE_UNORDERED_SET_RESERVE
 	set_mimeTypes.reserve(reserve_size);
 #endif /* HAVE_UNORDERED_SET_RESERVE */
 
-	for (const RomDataFns *const *tblptr = &romDataFns_tbl[0];
-	     *tblptr != nullptr; tblptr++)
-	{
-		const RomDataFns *fns = *tblptr;
-		for (; fns->romDataInfo != nullptr; fns++) {
+	for (const auto &tblptr : Private::romDataFns_tbl) {
+		const RomDataFns *fns = tblptr.tbl;
+		for (size_t i = tblptr.size; i > 0; i--, fns++) {
 			const char *const *sys_mimeTypes = fns->romDataInfo()->mimeTypes;
 			if (!sys_mimeTypes)
 				continue;
@@ -1210,7 +1229,7 @@ void init_supportedMimeTypes(void)
 				auto iter = set_mimeTypes.find(*sys_mimeTypes);
 				if (iter == set_mimeTypes.end()) {
 					set_mimeTypes.insert(*sys_mimeTypes);
-					vec_mimeTypes.emplace_back(*sys_mimeTypes);
+					vec_mimeTypes.push_back(*sys_mimeTypes);
 				}
 			}
 		}
@@ -1222,7 +1241,7 @@ void init_supportedMimeTypes(void)
 		auto iter = set_mimeTypes.find(mimeType);
 		if (iter == set_mimeTypes.end()) {
 			set_mimeTypes.emplace(mimeType);
-			vec_mimeTypes.emplace_back(mimeType);
+			vec_mimeTypes.push_back(mimeType);
 		}
 	}
 }

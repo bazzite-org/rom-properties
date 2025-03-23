@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (GTK+)                             *
  * ISpriteSheet.cpp: Generic sprite sheets loader.                         *
  *                                                                         *
- * Copyright (c) 2020-2023 by David Korth.                                 *
+ * Copyright (c) 2020-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -138,15 +138,14 @@ HBITMAP ISpriteSheet::getIcon(int col, int row, bool gray, UINT dpi) const
 			return nullptr;
 		}
 
-		shared_ptr<RpFile_windres> f_res = std::make_shared<RpFile_windres>(
-			HINST_THISCOMPONENT, resourceID, MAKEINTRESOURCE(RT_PNG));
-		assert(f_res->isOpen());
-		if (!f_res->isOpen()) {
+		RpFile_windres f_res(HINST_THISCOMPONENT, resourceID, MAKEINTRESOURCE(RT_PNG));
+		assert(f_res.isOpen());
+		if (!f_res.isOpen()) {
 			// Unable to open the resource.
 			return nullptr;
 		}
 
-		imgSpriteSheet = RpPng::load(f_res);
+		imgSpriteSheet = RpPng::load(&f_res);
 		assert((bool)imgSpriteSheet);
 		if (!imgSpriteSheet) {
 			// Unable to load the resource as a PNG image.
@@ -179,10 +178,10 @@ HBITMAP ISpriteSheet::getIcon(int col, int row, bool gray, UINT dpi) const
 
 		// If flipH is specified, flip the image horizontally.
 		if (m_flipH) {
-			const rp_image_ptr flipimg = imgSpriteSheet->flip(rp_image::FLIP_H);
+			rp_image_ptr flipimg = imgSpriteSheet->flip(rp_image::FLIP_H);
 			assert((bool)flipimg);
 			if (flipimg) {
-				imgSpriteSheet = flipimg;
+				imgSpriteSheet = std::move(flipimg);
 			}
 		}
 	}

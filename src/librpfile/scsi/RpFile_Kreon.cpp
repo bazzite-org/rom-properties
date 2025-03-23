@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpfile)                        *
  * RpFile_Kreon.cpp: Standard file object. (Kreon-specific functions)      *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -153,7 +153,7 @@ vector<RpFile::KreonFeature> RpFile::getKreonFeatureList(void)
 	for (const uint16_t feature : feature_buf) {
 		if (feature == 0)
 			break;
-		vec.emplace_back(static_cast<KreonFeature>(be16_to_cpu(feature)));
+		vec.push_back(static_cast<KreonFeature>(be16_to_cpu(feature)));
 	}
 
 	if (vec.size() < 2 ||
@@ -186,8 +186,8 @@ int RpFile::setKreonErrorSkipState(bool skip)
 #ifdef RP_OS_SCSI_SUPPORTED
 	// Kreon "Set Error Skip State" command
 	// Reference: https://github.com/saramibreak/DiscImageCreator/blob/cb9267da4877d32ab68263c25187cbaab3435ad5/DiscImageCreator/execScsiCmdforDVD.cpp#L1341
-	const uint8_t cdb[6] = {0xFF, 0x08, 0x01, 0x15, (uint8_t)skip, 0x00};
-	return d->scsi_send_cdb(cdb, sizeof(cdb), nullptr, 0, RpFilePrivate::ScsiDirection::In);
+	const array<uint8_t, 6> cdb = {{0xFF, 0x08, 0x01, 0x15, static_cast<uint8_t>(skip), 0x00}};
+	return d->scsi_send_cdb(cdb.data(), cdb.size(), nullptr, 0, RpFilePrivate::ScsiDirection::In);
 #else /* !RP_OS_SCSI_SUPPORTED */
 	// No SCSI implementation for this OS.
 	RP_UNUSED(skip);
@@ -212,8 +212,8 @@ int RpFile::setKreonLockState(KreonLockState lockState)
 #ifdef RP_OS_SCSI_SUPPORTED
 	// Kreon "Set Lock State" command
 	// Reference: https://github.com/saramibreak/DiscImageCreator/blob/cb9267da4877d32ab68263c25187cbaab3435ad5/DiscImageCreator/execScsiCmdforDVD.cpp#L1309
-	const uint8_t cdb[6] = {0xFF, 0x08, 0x01, 0x11, static_cast<uint8_t>(lockState), 0x00};
-	int ret = d->scsi_send_cdb(cdb, sizeof(cdb), nullptr, 0, RpFilePrivate::ScsiDirection::In);
+	const array<uint8_t, 6> cdb = {{0xFF, 0x08, 0x01, 0x11, static_cast<uint8_t>(lockState), 0x00}};
+	int ret = d->scsi_send_cdb(cdb.data(), cdb.size(), nullptr, 0, RpFilePrivate::ScsiDirection::In);
 	if (ret == 0) {
 		d->devInfo->isKreonUnlocked = (lockState != KreonLockState::Locked);
 	}

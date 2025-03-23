@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE4/KF5)                         *
  * Ext2AttrView.cpp: Ext2 file system attribute viewer widget.             *
  *                                                                         *
- * Copyright (c) 2022-2024 by David Korth.                                 *
+ * Copyright (c) 2022-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -18,6 +18,7 @@
 
 // C++ STL classes
 using std::array;
+using std::string;
 
 /** Ext2AttrViewPrivate **/
 
@@ -72,18 +73,18 @@ public:
  */
 void Ext2AttrViewPrivate::retranslateUi_nonDesigner(void)
 {
-	// tr: format string for Ext2 attribute checkbox labels (%c == lsattr character)
-	const char *const s_lsattr_fmt = C_("Ext2AttrView", "%c: %s");
+	// tr: format string for Ext2 attribute checkbox labels ({:c} == lsattr character)
+	const char *const s_lsattr_fmt = C_("Ext2AttrView", "{:c}: {:s}");
 
+	string s_label;
 	for (size_t i = 0; i < checkBoxes.size(); i++) {
 		const Ext2AttrCheckboxInfo_t *const p = ext2AttrCheckboxInfo(static_cast<Ext2AttrCheckboxID>(i));
 
 		// Prepend the lsattr character to the checkbox label.
-		char buf[256];
-		snprintf(buf, sizeof(buf), s_lsattr_fmt, p->lsattr_chr,
+		s_label = fmt::format(FRUN(s_lsattr_fmt), p->lsattr_chr,
 			pgettext_expr("Ext2AttrView", p->label));
 
-		checkBoxes[i]->setText(U82Q(buf));
+		checkBoxes[i]->setText(U82Q(s_label));
 		checkBoxes[i]->setToolTip(qpgettext_expr("Ext2AttrView", p->tooltip));
 	}
 }
@@ -110,7 +111,6 @@ void Ext2AttrViewPrivate::updateFlagsString(void)
 		{ 25, 'x' }, { 30, 'F' }, { 28, 'N' }, { 29, 'P' },
 		{ 20, 'V' }, { 10, 'm' }
 	}};
-	// FIXME: checkBoxes.size() can't be used here because it's this->checkBoxes.
 	static_assert(flags_array.size() == EXT2_ATTR_CHECKBOX_MAX, "flags_array[] and checkBoxes[] are out of sync!");
 
 	// NOTE: Need to use `unsigned int` because `size_t` results in an ambiguous overload error.
@@ -128,6 +128,7 @@ void Ext2AttrViewPrivate::updateFlagsString(void)
  */
 void Ext2AttrViewPrivate::updateFlagsCheckboxes(void)
 {
+	// FIXME: checkBoxes.size() can't be used here because it's apparently not constexpr...
 	static_assert(ARRAY_SIZE(checkBoxes) == EXT2_ATTR_CHECKBOX_MAX,
 		"checkBoxes and EXT2_ATTR_CHECKBOX_MAX are out of sync!");
 
@@ -138,7 +139,6 @@ void Ext2AttrViewPrivate::updateFlagsCheckboxes(void)
 		30,  4, 12, 14, 10, 28, 29,  0,
 		 3, 15, 17,  1, 25, 20
 	}};
-	// FIXME: checkBoxes.size() can't be used here because it's this->checkBoxes.
 	static_assert(flag_order.size() == EXT2_ATTR_CHECKBOX_MAX, "flag_order[] and checkBoxes[] are out of sync!");
 
 	for (size_t i = 0; i < checkBoxes.size(); i++) {
@@ -163,7 +163,7 @@ Ext2AttrView::Ext2AttrView(QWidget *parent)
 	for (size_t i = 0; i < d->checkBoxes.size(); i++) {
 		const Ext2AttrCheckboxInfo_t *const p = ext2AttrCheckboxInfo(static_cast<Ext2AttrCheckboxID>(i));
 
-		QCheckBox *const checkBox = new QCheckBox();
+		QCheckBox *const checkBox = new QCheckBox(this);
 		checkBox->setObjectName(U82Q(p->name));
 		d->ui.gridLayout->addWidget(checkBox, row, col);
 

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * PSP.hpp: PlayStation Portable disc image reader.                        *
  *                                                                         *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -29,6 +29,7 @@ using namespace LibRpTexture;
 #include "Other/ELF.hpp"
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::vector;
 
@@ -37,8 +38,7 @@ namespace LibRomData {
 class PSPPrivate final : public LibRpBase::RomDataPrivate
 {
 public:
-	PSPPrivate(const IRpFilePtr &file);
-	~PSPPrivate() final = default;
+	explicit PSPPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -66,14 +66,23 @@ public:
 	// IsoPartition
 	IsoPartitionPtr isoPartition;
 
-	// Icon
+	// Internal images
 	rp_image_ptr img_icon;
+	rp_image_ptr img_banner;
 
 	/**
 	 * Load the icon.
 	 * @return Icon, or nullptr on error.
 	 */
 	rp_image_const_ptr loadIcon(void);
+
+	/**
+	 * Load the banner.
+	 * @return Banner, or nullptr on error.
+	 */
+	rp_image_const_ptr loadBanner(void);
+
+	// TODO: PIC1.PNG? (wallpaper)
 
 	// Boot executable (EBOOT.BIN)
 	RomDataPtr bootExeData;
@@ -86,7 +95,7 @@ public:
 };
 
 ROMDATA_IMPL(PSP)
-ROMDATA_IMPL_IMG_TYPES(PSP)
+ROMDATA_IMPL_IMG(PSP)
 
 /** PSPPrivate **/
 
@@ -164,6 +173,37 @@ rp_image_const_ptr PSPPrivate::loadIcon(void)
 	// TODO: For rpcli, shortcut to extract the PNG directly.
 	this->img_icon = RpPng::load(f_icon);
 	return this->img_icon;
+}
+
+/**
+ * Load the banner.
+ * @return Icon, or nullptr on error.
+ */
+rp_image_const_ptr PSPPrivate::loadBanner(void)
+{
+	if (img_banner) {
+		// Banner has already been loaded.
+		return img_banner;
+	} else if (!this->isValid || !this->isoPartition) {
+		// Can't load the banner.
+		return nullptr;
+	}
+
+	// Banner is located on disc as a regular PNG image.
+	const char *const banner_filename =
+		(unlikely(discType == DiscType::UmdVideo)
+			? "/UMD_VIDEO/PIC0.PNG"
+			: "/PSP_GAME/PIC0.PNG");
+	const IRpFilePtr f_banner(isoPartition->open(banner_filename));
+	if (!f_banner) {
+		// Unable to open the banner file.
+		return nullptr;
+	}
+
+	// Decode the image.
+	// TODO: For rpcli, shortcut to extract the PNG directly.
+	this->img_banner = RpPng::load(f_banner);
+	return this->img_banner;
 }
 
 /**
@@ -249,7 +289,7 @@ PSP::PSP(const IRpFilePtr &file)
 
 	// Verify the system ID.
 	d->discType = static_cast<PSPPrivate::DiscType>(isRomSupported_static(&d->pvd));
-	if ((int)d->discType < 0) {
+	if (static_cast<int>(d->discType) < 0) {
 		// Incorrect system ID.
 		d->file.reset();
 		return;
@@ -299,7 +339,7 @@ int PSP::isRomSupported_static(const DetectInfo *info)
 	RP_UNUSED(info);
 	// NOTE: Cannot check the PVD here, and compressed disc images are
 	// handled by RomDataFactory.
-	return (int)PSPPrivate::DiscType::Unknown;
+	return static_cast<int>(PSPPrivate::DiscType::Unknown);
 }
 
 /**
@@ -315,23 +355,23 @@ int PSP::isRomSupported_static(
 	assert(pvd != nullptr);
 	if (!pvd) {
 		// Bad.
-		return (int)discType;
+		return static_cast<int>(discType);
 	}
 
 	// PlayStation Portable game discs have the system ID "PSP GAME".
 	// UMD video discs have the system ID "UMD VIDEO".
 	int pos = -1;
-	if (!strncmp(pvd->sysID, "PSP GAME ", 9)) {
+	if (!memcmp(pvd->sysID, "PSP GAME ", 9)) {
 		discType = PSPPrivate::DiscType::PspGame;
 		pos = 9;
-	} else if (!strncmp(pvd->sysID, "UMD VIDEO ", 10)) {
+	} else if (!memcmp(pvd->sysID, "UMD VIDEO ", 10)) {
 		discType = PSPPrivate::DiscType::UmdVideo;
 		pos = 10;
 	}
 
 	if (pos < 0) {
 		// Not valid.
-		return (int)PSPPrivate::DiscType::Unknown;
+		return static_cast<int>(PSPPrivate::DiscType::Unknown);
 	}
 
 	// Make sure the rest of the system ID is either spaces or NULLs.
@@ -346,11 +386,11 @@ int PSP::isRomSupported_static(
 
 	if (isOK) {
 		// Valid PVD.
-		return (int)discType;
+		return static_cast<int>(discType);
 	}
 
 	// Not a PlayStation Portable disc.
-	return (int)PSPPrivate::DiscType::Unknown;
+	return static_cast<int>(PSPPrivate::DiscType::Unknown);
 }
 
 /**
@@ -369,11 +409,11 @@ const char *PSP::systemName(unsigned int type) const
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"PSP::systemName() array index optimization needs to be updated.");
 
-	static const char *const sysNames[2][4] = {
-		{"Sony PlayStation Portable", "PlayStation Portable", "PSP", nullptr},
-		{"Universal Media Disc", "Universal Media Disc", "UMD", nullptr},
-	};
-	return sysNames[(unsigned int)(d->discType) & 1][type & SYSNAME_TYPE_MASK];
+	static const array<array<const char*, 4>, 2> sysNames = {{
+		{{"Sony PlayStation Portable", "PlayStation Portable", "PSP", nullptr}},
+		{{"Universal Media Disc", "Universal Media Disc", "UMD", nullptr}},
+	}};
+	return sysNames[static_cast<size_t>(d->discType) & 1U][type & SYSNAME_TYPE_MASK];
 }
 
 /**
@@ -382,27 +422,7 @@ const char *PSP::systemName(unsigned int type) const
  */
 uint32_t PSP::supportedImageTypes_static(void)
 {
-	return IMGBF_INT_ICON;
-}
-
-/**
- * Get a list of all available image sizes for the specified image type.
- * @param imageType Image type.
- * @return Vector of available image sizes, or empty vector if no images are available.
- */
-vector<RomData::ImageSizeDef> PSP::supportedImageSizes(ImageType imageType) const
-{
-	ASSERT_supportedImageSizes(imageType);
-
-	RP_D(const PSP);
-	if (!d->isValid || imageType != IMG_INT_ICON) {
-		// Only IMG_INT_ICON is supported.
-		return {};
-	}
-
-	// TODO: Actually check the icon size.
-	// Assuming 144x80 for now.
-	return {{nullptr, 144, 80, 0}};
+	return IMGBF_INT_ICON | IMGBF_INT_BANNER;
 }
 
 /**
@@ -418,13 +438,45 @@ vector<RomData::ImageSizeDef> PSP::supportedImageSizes_static(ImageType imageTyp
 {
 	ASSERT_supportedImageSizes(imageType);
 
-	if (imageType != IMG_INT_ICON) {
-		// Only icons are supported.
-		return {};
+	switch (imageType) {
+		case IMG_INT_ICON:
+			// NOTE: Icon may be 144x80 or 80x80.
+			return {{nullptr, 144, 80, 0}};
+		case IMG_INT_BANNER:
+			return {{nullptr, 310, 180, 0}};
+		default:
+			break;
 	}
 
-	// NOTE: Assuming the icon is 144x80.
-	return {{nullptr, 144, 80, 0}};
+	// Unsupported image type.
+	return {};
+}
+
+/**
+ * Get image processing flags.
+ *
+ * These specify post-processing operations for images,
+ * e.g. applying transparency masks.
+ *
+ * @param imageType Image type.
+ * @return Bitfield of ImageProcessingBF operations to perform.
+ */
+uint32_t PSP::imgpf(ImageType imageType) const
+{
+	ASSERT_imgpf(imageType);
+
+	uint32_t ret = 0;
+	switch (imageType) {
+		case IMG_INT_ICON:
+		case IMG_INT_BANNER:
+			// Image is internally stored in PNG format.
+			ret = IMGPF_INTERNAL_PNG_FORMAT;
+			break;
+
+		default:
+			break;
+	}
+	return ret;
 }
 
 /**
@@ -441,7 +493,7 @@ int PSP::loadFieldData(void)
 	} else if (!d->file || !d->file->isOpen()) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->discType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->discType) < 0) {
 		// Unknown disc type.
 		return -EIO;
 	}
@@ -500,16 +552,15 @@ int PSP::loadFieldData(void)
 	// TODO: Parse firmware update PARAM.SFO and EBOOT.BIN?
 
 	// ISO object for ISO-9660 PVD
-	ISO *const isoData = new ISO(d->file);
-	if (isoData->isOpen()) {
+	ISO isoData(d->file);
+	if (isoData.isOpen()) {
 		// Add the fields.
-		const RomFields *const isoFields = isoData->fields();
+		const RomFields *const isoFields = isoData.fields();
 		if (isoFields) {
 			d->fields.addFields_romFields(isoFields,
 				RomFields::TabOffset_AddTabs);
 		}
 	}
-	delete isoData;
 
 	// Finished reading the field data.
 	return static_cast<int>(d->fields.count());
@@ -525,14 +576,53 @@ int PSP::loadFieldData(void)
 int PSP::loadInternalImage(ImageType imageType, rp_image_const_ptr &pImage)
 {
 	ASSERT_loadInternalImage(imageType, pImage);
+
 	RP_D(PSP);
-	ROMDATA_loadInternalImage_single(
-		IMG_INT_ICON,	// ourImageType
-		d->file,	// file
-		d->isValid,	// isValid
-		d->discType,	// romType
-		d->img_icon,	// imgCache
-		d->loadIcon);	// func
+	switch (imageType) {
+		case IMG_INT_ICON:
+			if (d->img_icon) {
+				// Icon is loaded.
+				pImage = d->img_icon;
+				return 0;
+			}
+			break;
+		case IMG_INT_BANNER:
+			if (d->img_banner) {
+				// Banner is loaded.
+				pImage = d->img_banner;
+				return 0;
+			}
+			break;
+		default:
+			// Unsupported image type.
+			pImage.reset();
+			return 0;
+	}
+
+	if (!d->file) {
+		// File isn't open.
+		return -EBADF;
+	} else if (!d->isValid) {
+		// Save file isn't valid.
+		return -EIO;
+	}
+
+	// Load the image.
+	switch (imageType) {
+		case IMG_INT_ICON:
+			pImage = d->loadIcon();
+			break;
+		case IMG_INT_BANNER:
+			pImage = d->loadBanner();
+			break;
+		default:
+			// Unsupported.
+			pImage.reset();
+			return -ENOENT;
+	}
+
+	// TODO: -ENOENT if the file doesn't actually have an icon/banner.
+	return ((bool)pImage ? 0 : -EIO);
 }
 
 /**
@@ -543,20 +633,18 @@ int PSP::loadInternalImage(ImageType imageType, rp_image_const_ptr &pImage)
 int PSP::loadMetaData(void)
 {
 	RP_D(PSP);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
-	} else if (!d->isValid || (int)d->discType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->discType) < 0) {
 		// Unknown disc image type.
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(3);	// Maximum of 3 metadata properties.
+	d->metaData.reserve(4);	// Maximum of 4 metadata properties.
 
 	// Add the PVD metadata.
-	ISO::addMetaData_PVD(d->metaData, &d->pvd);
+	ISO::addMetaData_PVD(&d->metaData, &d->pvd);
 
 	// Add the disc ID and/or title from UMD_DATA.BIN.
 	// The PVD title is useless in most cases.
@@ -579,7 +667,7 @@ int PSP::loadMetaData(void)
 		const char *p = static_cast<const char*>(memchr(buf, '|', sizeof(buf)));
 		if (p) {
 			// Game ID field on UMD Video discs is the video title.
-			d->metaData->addMetaData_string(Property::Title,
+			d->metaData.addMetaData_string(Property::Title,
 				latin1_to_utf8(buf, static_cast<int>(p - buf)));
 		}
 	}
@@ -587,7 +675,7 @@ int PSP::loadMetaData(void)
 	// TODO: More PSP-specific metadata?
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

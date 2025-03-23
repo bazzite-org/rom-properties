@@ -17,6 +17,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
@@ -194,11 +195,6 @@ int PEResourceReaderPrivate::loadResDir(uint32_t addr, rsrc_dir_t &dir)
 
 	// Total number of entries.
 	unsigned int entryCount = le16_to_cpu(root.NumberOfNamedEntries) + le16_to_cpu(root.NumberOfIdEntries);
-	assert(entryCount <= 64);
-	if (entryCount > 64) {
-		// Sanity check; constrain to 64 entries.
-		entryCount = 64;
-	}
 	uint32_t szToRead = static_cast<uint32_t>(entryCount * sizeof(IMAGE_RESOURCE_DIRECTORY_ENTRY));
 	unique_ptr<IMAGE_RESOURCE_DIRECTORY_ENTRY[]> irdEntries(new IMAGE_RESOURCE_DIRECTORY_ENTRY[entryCount]);
 	size = q->m_file->read(irdEntries.get(), szToRead);
@@ -233,7 +229,7 @@ int PEResourceReaderPrivate::loadResDir(uint32_t addr, rsrc_dir_t &dir)
 
 	// Shrink the vector in case we skipped some types.
 	dir.resize(entriesRead);
-	return (int)entriesRead;
+	return static_cast<int>(entriesRead);
 }
 
 /**
@@ -352,9 +348,10 @@ const PEResourceReaderPrivate::rsrc_dir_t *PEResourceReaderPrivate::getTypeIdDir
 int PEResourceReaderPrivate::load_VS_VERSION_INFO_header(IRpFile *file, const char16_t *key, uint16_t type, uint16_t *pLen, uint16_t *pValueLen)
 {
 	// Read fields.
-	uint16_t fields[3];	// wLength, wValueLength, wType
-	size_t size = file->read(fields, sizeof(fields));
-	if (size != sizeof(fields)) {
+	array<uint16_t, 3> fields;	// wLength, wValueLength, wType
+	static constexpr size_t sizeof_fields = fields.size() * sizeof(uint16_t);
+	size_t size = file->read(fields.data(), sizeof_fields);
+	if (size != sizeof_fields) {
 		// Read error.
 		return -EIO;
 	}
@@ -370,7 +367,7 @@ int PEResourceReaderPrivate::load_VS_VERSION_INFO_header(IRpFile *file, const ch
 	const unsigned int key_len = static_cast<unsigned int>(u16_strlen(key));
 	// DWORD alignment: Make sure we end on a multiple of 4 bytes.
 	unsigned int keyData_len = (key_len+1) * sizeof(char16_t);
-	keyData_len = ALIGN_BYTES(4, keyData_len + sizeof(fields)) - sizeof(fields);
+	keyData_len = ALIGN_BYTES(4, keyData_len + sizeof_fields) - sizeof_fields;
 	unique_ptr<char16_t[]> keyData(new char16_t[keyData_len/sizeof(char16_t)]);
 	size = file->read(keyData.get(), keyData_len);
 	if (size != keyData_len) {
@@ -414,9 +411,10 @@ int PEResourceReaderPrivate::load_StringTable(IRpFile *file, IResourceReader::St
 
 	// Read fields.
 	const off64_t pos_start = file->tell();
-	uint16_t fields[3];	// wLength, wValueLength, wType
-	size_t size = file->read(fields, sizeof(fields));
-	if (size != sizeof(fields)) {
+	array<uint16_t, 3> fields;	// wLength, wValueLength, wType
+	static constexpr size_t sizeof_fields = fields.size() * sizeof(uint16_t);
+	size_t size = file->read(fields.data(), sizeof_fields);
+	if (size != sizeof_fields) {
 		// Read error.
 		return -EIO;
 	}
@@ -476,7 +474,7 @@ int PEResourceReaderPrivate::load_StringTable(IRpFile *file, IResourceReader::St
 	int tblPos = 0;
 	while (tblPos < strTblData_len) {
 		// wLength, wValueLength, wType
-		memcpy(fields, &strTblData[tblPos], sizeof(fields));
+		memcpy(fields.data(), &strTblData[tblPos], sizeof_fields);
 		if (fields[2] != cpu_to_le16(1)) {
 			// Not a string...
 			return -EIO;
@@ -484,7 +482,7 @@ int PEResourceReaderPrivate::load_StringTable(IRpFile *file, IResourceReader::St
 		// NOTE: wValueLength is number of *words* (aka UTF-16 characters).
 		// Hence, we're multiplying by two to get bytes.
 		const uint16_t wLength = le16_to_cpu(fields[0]);
-		if (wLength < sizeof(fields)) {
+		if (wLength < sizeof_fields) {
 			// Invalid length.
 			return -EIO;
 		}
@@ -494,10 +492,10 @@ int PEResourceReaderPrivate::load_StringTable(IRpFile *file, IResourceReader::St
 			return -EIO;
 		}
 
-		// Key length, in bytes: wLength - wValueLength - sizeof(fields)
+		// Key length, in bytes: wLength - wValueLength - sizeof_fields
 		// Last Unicode character must be NULL.
-		tblPos += sizeof(fields);
-		const int key_len = ((wLength - wValueLength - sizeof(fields)) / sizeof(char16_t)) - 1;
+		tblPos += sizeof_fields;
+		const int key_len = ((wLength - wValueLength - sizeof_fields) / sizeof(char16_t)) - 1;
 		if (key_len <= 0) {
 			// Invalid key length.
 			return -EIO;
@@ -788,9 +786,9 @@ int PEResourceReader::load_VS_VERSION_INFO(int id, int lang, VS_FIXEDFILEINFO *p
 	}
 
 	// Read the version header.
-	static constexpr char16_t vsvi[] = {'V','S','_','V','E','R','S','I','O','N','_','I','N','F','O',0};
+	static constexpr array<char16_t, 16> vsvi = {{'V','S','_','V','E','R','S','I','O','N','_','I','N','F','O',0}};
 	uint16_t len, valueLen;
-	int ret = PEResourceReaderPrivate::load_VS_VERSION_INFO_header(f_ver.get(), vsvi, 0, &len, &valueLen);
+	int ret = PEResourceReaderPrivate::load_VS_VERSION_INFO_header(f_ver.get(), vsvi.data(), 0, &len, &valueLen);
 	if (ret != 0) {
 		// Header is incorrect.
 		return ret;
@@ -840,8 +838,8 @@ int PEResourceReader::load_VS_VERSION_INFO(int id, int lang, VS_FIXEDFILEINFO *p
 	alignFileDWORD(f_ver.get());
 
 	// Read the StringFileInfo section header.
-	static constexpr char16_t vssfi[] = {'S','t','r','i','n','g','F','i','l','e','I','n','f','o',0};
-	ret = PEResourceReaderPrivate::load_VS_VERSION_INFO_header(f_ver.get(), vssfi, 1, &len, &valueLen);
+	static constexpr array<char16_t, 15> vssfi = {{'S','t','r','i','n','g','F','i','l','e','I','n','f','o',0}};
+	ret = PEResourceReaderPrivate::load_VS_VERSION_INFO_header(f_ver.get(), vssfi.data(), 1, &len, &valueLen);
 	if (ret != 0) {
 		// No StringFileInfo section.
 		return 0;

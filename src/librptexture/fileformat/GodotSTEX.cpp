@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librptexture)                     *
  * GodotSTEX.cpp: Godot STEX image reader.                                 *
  *                                                                         *
- * Copyright (c) 2017-2024 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -46,7 +46,6 @@ class GodotSTEXPrivate final : public FileFormatPrivate
 {
 	public:
 		GodotSTEXPrivate(GodotSTEX *q, const IRpFilePtr &file);
-		~GodotSTEXPrivate() final = default;
 
 	private:
 		typedef FileFormatPrivate super;
@@ -54,8 +53,8 @@ class GodotSTEXPrivate final : public FileFormatPrivate
 
 	public:
 		/** TextureInfo **/
-		static const char *const exts[];
-		static const char *const mimeTypes[];
+		static const array<const char*, 2+1> exts;
+		static const array<const char*, 2+1> mimeTypes;
 		static const TextureInfo textureInfo;
 
 	public:
@@ -87,7 +86,7 @@ class GodotSTEXPrivate final : public FileFormatPrivate
 		vector<mipmap_data_t> mipmap_data;
 
 		// Invalid pixel format message
-		char invalid_pixel_format[24];
+		mutable string invalid_pixel_format;
 
 	public:
 		// Image format tables
@@ -118,22 +117,22 @@ FILEFORMAT_IMPL(GodotSTEX)
 /** GodotSTEXPrivate **/
 
 /* TextureInfo */
-const char *const GodotSTEXPrivate::exts[] = {
+const array<const char*, 2+1> GodotSTEXPrivate::exts = {{
 	".stex",
 	".ctex",
 
 	nullptr
-};
-const char *const GodotSTEXPrivate::mimeTypes[] = {
+}};
+const array<const char*, 2+1> GodotSTEXPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"image/x-godot-stex",
 	"image/x-godot-ctex",
 
 	nullptr
-};
+}};
 const TextureInfo GodotSTEXPrivate::textureInfo = {
-	exts, mimeTypes
+	exts.data(), mimeTypes.data()
 };
 
 // Image format table (STEX v3)
@@ -313,7 +312,6 @@ GodotSTEXPrivate::GodotSTEXPrivate(GodotSTEX *q, const IRpFilePtr &file)
 	// Clear the structs and arrays.
 	memset(&stexHeader, 0, sizeof(stexHeader));
 	memset(&embedHeader, 0, sizeof(embedHeader));
-	memset(invalid_pixel_format, 0, sizeof(invalid_pixel_format));
 }
 
 /**
@@ -570,8 +568,8 @@ rp_image_const_ptr GodotSTEXPrivate::loadImage(int mip)
 		// FIXME: Move RpPng to librptexture.
 		// Requires moving IconAnimData and some other stuff...
 		// TODO: Make use of PartitionFile instead of loading it into memory?
-		shared_ptr<MemFile> memFile = std::make_shared<MemFile>(buf.get(), mdata.size);
-		mipmaps[mip] = RpPng::load(memFile);
+		MemFile f_mem(buf.get(), mdata.size);
+		mipmaps[mip] = RpPng::load(&f_mem);
 
 		return mipmaps[mip];
 	}
@@ -1108,13 +1106,13 @@ const char *GodotSTEX::pixelFormat(void) const
 	}
 
 	// Invalid pixel format.
-	if (d->invalid_pixel_format[0] == '\0') {
-		// TODO: Localization?
-		snprintf(const_cast<GodotSTEXPrivate*>(d)->invalid_pixel_format,
-			sizeof(d->invalid_pixel_format),
-			"Unknown (%d)", d->pixelFormat);
+	// Store an error message instead.
+	if (d->invalid_pixel_format.empty()) {
+		d->invalid_pixel_format = fmt::format(
+			FRUN(C_("RomData", "Unknown ({:d})")),
+			static_cast<int>(d->pixelFormat));
 	}
-	return d->invalid_pixel_format;
+	return d->invalid_pixel_format.c_str();
 }
 
 #ifdef ENABLE_LIBRPBASE_ROMFIELDS
@@ -1166,7 +1164,7 @@ int GodotSTEX::getFields(RomFields *fields) const
 			}
 
 			// Flags (Godot 3 only)
-			static const char *const flags_bitfield_names[] = {
+			static const array<const char*, 13> flags_bitfield_names = {{
 				NOP_C_("GodotSTEX|Flags", "Mipmaps"),
 				NOP_C_("GodotSTEX|Flags", "Repeat"),
 				NOP_C_("GodotSTEX|Flags", "Filter"),
@@ -1176,9 +1174,8 @@ int GodotSTEX::getFields(RomFields *fields) const
 				nullptr, nullptr, nullptr, nullptr, nullptr,
 				NOP_C_("GodotSTEX|Flags", "Cubemap"),
 				NOP_C_("GodotSTEX|Flags", "For Streaming"),
-			};
-			vector<string> *const v_flags_bitfield_names = RomFields::strArrayToVector_i18n(
-				"GodotSTEX|Flags", flags_bitfield_names, ARRAY_SIZE(flags_bitfield_names));
+			}};
+			vector<string> *const v_flags_bitfield_names = RomFields::strArrayToVector_i18n("GodotSTEX|Flags", flags_bitfield_names);
 			fields->addField_bitfield(C_("GodotSTEX", "Flags"),
 				v_flags_bitfield_names, 3, d->stexHeader.v3.flags);
 			break;
@@ -1198,7 +1195,7 @@ int GodotSTEX::getFields(RomFields *fields) const
 						data_format_tbl[d->stexHeader.v4.data_format]));
 			} else {
 				fields->addField_string(s_title,
-					rp_sprintf(C_("RomData", "Unknown (%u)"),
+					fmt::format(FRUN(C_("RomData", "Unknown ({:d})")),
 						d->stexHeader.v4.data_format));
 			}
 			break;
@@ -1206,7 +1203,7 @@ int GodotSTEX::getFields(RomFields *fields) const
 	}
 
 	// Format flags (v3) (starting at bit 20)
-	static const char *const format_flags_bitfield_names_v3[] = {
+	static const array<const char*, 7> format_flags_bitfield_names_v3 = {{
 		NOP_C_("GodotSTEX|FormatFlags", "Lossless"),		// 20
 		NOP_C_("GodotSTEX|FormatFlags", "Lossy"),		// 21
 		NOP_C_("GodotSTEX|FormatFlags", "Stream"),		// 22
@@ -1214,9 +1211,9 @@ int GodotSTEX::getFields(RomFields *fields) const
 		NOP_C_("GodotSTEX|FormatFlags", "Detect 3D"),		// 24
 		NOP_C_("GodotSTEX|FormatFlags", "Detect sRGB"),		// 25
 		NOP_C_("GodotSTEX|FormatFlags", "Detect Normal"),	// 26
-	};
+	}};
 	// Format flags (v4) (starting at bit 20)
-	static const char *const format_flags_bitfield_names_v4[] = {
+	static const array<const char*, 8> format_flags_bitfield_names_v4 = {{
 		nullptr,						// 20
 		nullptr,						// 21
 		NOP_C_("GodotSTEX|FormatFlags", "Stream"),		// 22
@@ -1225,7 +1222,7 @@ int GodotSTEX::getFields(RomFields *fields) const
 		nullptr,						// 25
 		NOP_C_("GodotSTEX|FormatFlags", "Detect Normal"),	// 26
 		NOP_C_("GodotSTEX|FormatFlags", "Detect Roughness"),	// 27
-	};
+	}};
 
 	vector<string> *v_format_flags_bitfield_names = nullptr;
 	switch (d->stexVersion) {
@@ -1234,13 +1231,11 @@ int GodotSTEX::getFields(RomFields *fields) const
 			break;
 		case 3:
 			v_format_flags_bitfield_names = RomFields::strArrayToVector_i18n(
-				"GodotSTEX|FormatFlags", format_flags_bitfield_names_v3,
-					ARRAY_SIZE(format_flags_bitfield_names_v3));
+				"GodotSTEX|FormatFlags", format_flags_bitfield_names_v3);
 			break;
 		case 4:
 			v_format_flags_bitfield_names = RomFields::strArrayToVector_i18n(
-				"GodotSTEX|FormatFlags", format_flags_bitfield_names_v4,
-					ARRAY_SIZE(format_flags_bitfield_names_v4));
+				"GodotSTEX|FormatFlags", format_flags_bitfield_names_v4);
 			break;
 	}
 
@@ -1286,4 +1281,4 @@ rp_image_const_ptr GodotSTEX::mipmap(int mip) const
 	return const_cast<GodotSTEXPrivate*>(d)->loadImage(mip);
 }
 
-}
+} // namespace LibRpTexture

@@ -642,9 +642,14 @@ const char *AmiiboData::lookup_char_name(uint32_t char_id) const
 		const CharVariantTableEntry *const pCharVarTblEnd = d->pCharVarTbl + d->charVarTbl_count;
 		auto pCVTEntry = std::lower_bound(d->pCharVarTbl, pCharVarTblEnd, key,
 			[](const CharVariantTableEntry &key1, const CharVariantTableEntry &key2) noexcept -> bool {
+				const uint16_t key1_char_id = le16_to_cpu(key1.char_id);
+
 				// Compare the character ID first.
-				if (le16_to_cpu(key1.char_id) < key2.char_id)
+				if (key1_char_id < key2.char_id) {
 					return true;
+				} else if (key1_char_id > key2.char_id) {
+					return false;
+				}
 
 				// Compare the variant ID.
 				return (key1.var_id < key2.var_id);

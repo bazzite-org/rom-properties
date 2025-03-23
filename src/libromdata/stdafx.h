@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * stdafx.h: Common definitions and includes.                              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -14,16 +14,17 @@
 #ifdef __cplusplus
 /** C++ **/
 
-// C includes. (C++ namespace)
+// C includes (C++ namespace)
 #include <cassert>
 #include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <stdlib.h>
 
-// C++ includes.
+// C++ includes
 #include <algorithm>
 #include <array>
 #include <memory>
@@ -35,13 +36,17 @@
 #include <utility>
 #include <vector>
 
+// libfmt
+#include "rp-libfmt.h"
+
 #else /* !__cplusplus */
 /** C **/
 
-// C includes.
+// C includes
 #include <assert.h>
 #include <errno.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -91,5 +96,4 @@
 
 // librptext C++ headers
 #include "librptext/conversion.hpp"
-#include "librptext/printf.hpp"
 #endif /* !__cplusplus */

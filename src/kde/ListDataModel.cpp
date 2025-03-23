@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE4/KF5)                         *
  * ListDataModel.cpp: QAbstractListModel for RFT_LISTDATA.                 *
  *                                                                         *
- * Copyright (c) 2012-2024 by David Korth.                                 *
+ * Copyright (c) 2012-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -187,7 +187,7 @@ void ListDataModelPrivate::updateIconPixmaps(void)
 			pixmap = pixmap.scaled(iconSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 		}
 
-		icons.emplace_back(std::move(pixmap));
+		icons.push_back(std::move(pixmap));
 	}
 }
 
@@ -232,12 +232,12 @@ vector<QString> ListDataModelPrivate::convertListDataToVector(const RomFields::L
 				QString str = formatDateTime(time_string.time,
 					listDataDesc.col_attrs.dtflags);
 				if (likely(!str.isEmpty())) {
-					data.emplace_back(std::move(str));
+					data.push_back(std::move(str));
 				} else {
-					data.emplace_back(QC_("RomData", "Unknown"));
+					data.push_back(QC_("RomData", "Unknown"));
 				}
 			} else {
-				data.emplace_back(U82Q(u8_str));
+				data.push_back(U82Q(u8_str));
 			}
 
 			// Next column
@@ -407,14 +407,14 @@ QVariant ListDataModel::data(const QModelIndex &index, int role) const
 		case Qt::DecorationRole:
 			if (column != 0 || d->icons.empty())
 				break;
-			if (row <= (int)d->icons.size())
+			if (row <= static_cast<int>(d->icons.size()))
 				return d->icons[row];
 			break;
 
 		case RpImageRole:
 			if (column != 0 || d->icons.empty())
 				break;
-			if (row <= (int)d->icons.size()) {
+			if (row <= static_cast<int>(d->icons.size())) {
 				// NOTE: We can't put an std::shared_ptr<> in QVariant.
 				// Pass a pointer to the std::shared_ptr<> instead.
 				if (d->icons_rp[row]) {
@@ -457,7 +457,7 @@ QVariant ListDataModel::headerData(int section, Qt::Orientation orientation, int
 		case Qt::DisplayRole:
 			// NOTE: d->headers[] might be empty if the RFT_LISTDATA
 			// field doesn't have column names.
-			if (section >= (int)d->headers.size())
+			if (section >= static_cast<int>(d->headers.size()))
 				break;
 			return d->headers[section];
 
@@ -570,7 +570,7 @@ void ListDataModel::setField(const RomFields::Field *pField)
 		d->headers.reserve(columnCount);
 
 		for (const string &u8_str : *(listDataDesc.names)) {
-			d->headers.emplace_back(U82Q(u8_str));
+			d->headers.push_back(U82Q(u8_str));
 		}
 	} else {
 		// No column headers.
@@ -603,7 +603,7 @@ void ListDataModel::setField(const RomFields::Field *pField)
 		// NOTE: Assuming all languages have the same number of rows.
 		rowCount = static_cast<int>(multi->cbegin()->second.size());
 
-		for (auto &pdm : *multi) {
+		for (const auto &pdm : *multi) {
 			assert(static_cast<int>(pdm.second.size()) == rowCount);
 			auto pair = d->map_data.emplace(pdm.first,
 				d->convertListDataToVector(&(pdm.second), pField));

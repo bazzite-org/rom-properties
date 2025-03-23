@@ -22,11 +22,11 @@ SET(${PROJECT_NAME}_SRCS
 	ListDataSortProxyModel.cpp
 	LanguageComboBox.cpp
 	OptionsMenuButton.cpp
-	ProxyForUrl.cpp
 	RomDataFormat.cpp
 	ISpriteSheet.cpp
 	AchSpriteSheet.cpp
 	FlagSpriteSheet.cpp
+
 	config/stub-export.cpp
 	config/ConfigDialog.cpp
 	config/ITab.cpp
@@ -39,7 +39,6 @@ SET(${PROJECT_NAME}_SRCS
 	config/AchievementsTab.cpp
 	config/AchievementsItemDelegate.cpp
 	config/AboutTab.cpp
-	config/UpdateChecker.cpp
 	)
 SET(${PROJECT_NAME}_H
 	plugins/RomPropertiesDialogPlugin.hpp
@@ -59,12 +58,12 @@ SET(${PROJECT_NAME}_H
 	ListDataSortProxyModel.hpp
 	LanguageComboBox.hpp
 	OptionsMenuButton.hpp
-	ProxyForUrl.hpp
 	check-uid.hpp
 	RomDataFormat.hpp
 	ISpriteSheet.hpp
 	AchSpriteSheet.hpp
 	FlagSpriteSheet.hpp
+
 	config/ConfigDialog.hpp
 	config/ITab.hpp
 	config/ImageTypesTab.hpp
@@ -76,7 +75,6 @@ SET(${PROJECT_NAME}_H
 	config/AchievementsTab.hpp
 	config/AchievementsItemDelegate.hpp
 	config/AboutTab.hpp
-	config/UpdateChecker.hpp
 	)
 SET(${PROJECT_NAME}_UIS
 	RomDataView.ui
@@ -157,10 +155,25 @@ IF(ENABLE_ACHIEVEMENTS)
 	SET(${PROJECT_NAME}-notify_H    AchQtDBus.hpp)
 ENDIF(ENABLE_ACHIEVEMENTS)
 
+IF(ENABLE_NETWORKING)
+	# Networking code, e.g. update checker
+	# TODO: -networking_SRCS?
+	SET(${PROJECT_NAME}_SRCS
+		${${PROJECT_NAME}_SRCS}
+		ProxyForUrl.cpp
+		config/UpdateChecker.cpp
+		)
+	SET(${PROJECT_NAME}_H
+		${${PROJECT_NAME}_H}
+		ProxyForUrl.hpp
+		config/UpdateChecker.hpp
+		)
+ENDIF(ENABLE_NETWORKING)
+
 # RpFile_kio requires KDE Frameworks 5.
 # FIXME: Dolphin ends up hanging for some reason...
-#SET(rom-properties-kio_SRCS RpFile_kio.cpp)
-#SET(rom-properties-kio_H RpFile_kio.hpp)
+#SET(${PROJECT_NAME}_SRCS ${${PROJECT_NAME}_SRCS} RpFile_kio.cpp)
+#SET(${PROJECT_NAME}_H ${${PROJECT_NAME}_H} RpFile_kio.hpp)
 
 # Qt options:
 # - Fast QString concatenation. (Qt 4.6+, plus 4.8-specific version)
@@ -182,10 +195,6 @@ ADD_DEFINITIONS(-DQT_USE_FAST_CONCATENATION
 	)
 
 ### FIXME: The following Qt declarations are being picked up by libromdata and rpcli...
-
-# Disable deprecated Qt and KDE functionality in debug builds.
-SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DQT_DISABLE_DEPRECATED_BEFORE=0x050E01 -DQT_DEPRECATED_WARNINGS_SINCE=0x060000")
-SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DKF_DISABLE_DEPRECATED_BEFORE_AND_AT=0x055200 -DKF_DEPRECATED_WARNINGS_SINCE=0x060000")
 
 # Define -DQT_NO_DEBUG in release builds.
 SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -DQT_NO_DEBUG")

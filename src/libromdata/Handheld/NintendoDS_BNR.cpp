@@ -3,7 +3,7 @@
  * NintendoDS_BNR.cpp: Nintendo DS icon/title data reader.                 *
  * Handles BNR files and icon/title sections.                              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -35,7 +35,7 @@ namespace LibRomData {
 class NintendoDS_BNR_Private final : public RomDataPrivate
 {
 public:
-	NintendoDS_BNR_Private(const IRpFilePtr &file);
+	explicit NintendoDS_BNR_Private(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -43,8 +43,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -102,20 +102,20 @@ ROMDATA_IMPL_IMG_SIZES(NintendoDS_BNR)
 
 /* RomDataInfo */
 // NOTE: Using the same image settings as Nintendo3DS.
-const char *const NintendoDS_BNR_Private::exts[] = {
+const array<const char*, 1+1> NintendoDS_BNR_Private::exts = {{
 	".bnr",		// Banner file
 
 	nullptr
-};
-const char *const NintendoDS_BNR_Private::mimeTypes[] = {
+}};
+const array<const char*, 1+1> NintendoDS_BNR_Private::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-nintendo-ds-bnr",
 
 	nullptr
-};
+}};
 const RomDataInfo NintendoDS_BNR_Private::romDataInfo = {
-	"Nintendo3DS", exts, mimeTypes
+	"Nintendo3DS", exts.data(), mimeTypes.data()
 };
 
 NintendoDS_BNR_Private::NintendoDS_BNR_Private(const IRpFilePtr &file)
@@ -187,8 +187,8 @@ rp_image_const_ptr NintendoDS_BNR_Private::loadIcon(void)
 			}
 
 			// Token format: (bits)
-			// - 15:    V flip (1=yes, 0=no) [TODO]
-			// - 14:    H flip (1=yes, 0=no) [TODO]
+			// - 15:    V flip (1=yes, 0=no)
+			// - 14:    H flip (1=yes, 0=no)
 			// - 13-11: Palette index.
 			// - 10-8:  Bitmap index.
 			// - 7-0:   Frame duration. (units of 60 Hz)
@@ -218,12 +218,12 @@ rp_image_const_ptr NintendoDS_BNR_Private::loadIcon(void)
 						// V-flip
 						flipOp = static_cast<rp_image::FlipOp>(flipOp | rp_image::FLIP_V);
 					}
-					const rp_image_ptr flipimg = img->flip(flipOp);
+					rp_image_ptr flipimg = img->flip(flipOp);
 					if (flipimg && flipimg->isValid()) {
-						img = flipimg;
+						img = std::move(flipimg);
 					}
 				}
-				iconAnimData->frames[bmp_idx] = img;
+				iconAnimData->frames[bmp_idx] = std::move(img);
 				arr_bmpUsed[high_token] = bmp_idx;
 				bmp_idx++;
 			}
@@ -253,7 +253,7 @@ NDS_Language_ID NintendoDS_BNR_Private::getLanguageID(void) const
 {
 	// Version number check is required for ZH and KO.
 	const uint16_t version = le16_to_cpu(nds_icon_title.version);
-	NDS_Language_ID langID = (NDS_Language_ID)NintendoLanguage::getNDSLanguage(version);
+	NDS_Language_ID langID = static_cast<NDS_Language_ID>(NintendoLanguage::getNDSLanguage(version));
 
 	// Check that the field is valid.
 	if (nds_icon_title.title[langID][0] == cpu_to_le16('\0')) {
@@ -648,7 +648,7 @@ int NintendoDS_BNR::loadFieldData(void)
 int NintendoDS_BNR::loadMetaData(void)
 {
 	RP_D(NintendoDS_BNR);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -662,10 +662,7 @@ int NintendoDS_BNR::loadMetaData(void)
 
 	// Parse the icon/title data.
 	const NDS_IconTitleData *const nds_icon_title = &d->nds_icon_title;
-
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Full title
 	// TODO: Use the default LC if it's available.
@@ -691,11 +688,11 @@ int NintendoDS_BNR::loadMetaData(void)
 			}
 		}
 
-		d->metaData->addMetaData_string(Property::Title, s_title);
+		d->metaData.addMetaData_string(Property::Title, s_title);
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -750,4 +747,4 @@ IconAnimDataConstPtr NintendoDS_BNR::iconAnimData(void) const
 	return d->iconAnimData;
 }
 
-}
+} // namespace LibRomData

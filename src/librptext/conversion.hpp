@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librptext)                        *
  * conversion.hpp: Text encoding functions                                 *
  *                                                                         *
- * Copyright (c) 2009-2024 by David Korth.                                 *
+ * Copyright (c) 2009-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -17,10 +17,10 @@
 #include "common.h"
 #include "dll-macros.h"	// for RP_LIBROMDATA_PUBLIC
 
-// C includes
-#include <stdarg.h>
-#include <stddef.h>	/* size_t */
-#include <stdint.h>
+// C includes (C++ namespace)
+#include <cstdarg>
+#include <cstddef>	/* size_t */
+#include <cstdint>
 
 // C++ includes
 #include <string>
@@ -62,39 +62,6 @@ size_t u16_strnlen(const char16_t *wcs, size_t maxlen);
 #endif /* RP_WIS16 */
 
 /**
- * char16_t strdup().
- * @param wcs 16-bit string.
- * @return Copy of wcs.
- */
-#ifdef RP_WIS16
-static inline char16_t *u16_strdup(const char16_t *wcs)
-{
-	return reinterpret_cast<char16_t*>(
-		wcsdup(reinterpret_cast<const wchar_t*>(wcs)));
-}
-#else /* !RP_WIS16 */
-RP_LIBROMDATA_PUBLIC
-char16_t *u16_strdup(const char16_t *wcs);
-#endif /* RP_WIS16 */
-
-/**
- * char16_t strcmp().
- * @param wcs1 16-bit string 1.
- * @param wcs2 16-bit string 2.
- * @return strcmp() result.
- */
-#ifdef RP_WIS16
-static inline int u16_strcmp(const char16_t *wcs1, const char16_t *wcs2)
-{
-	return wcscmp(reinterpret_cast<const wchar_t*>(wcs1),
-	              reinterpret_cast<const wchar_t*>(wcs2));
-}
-#else /* !RP_WIS16 */
-RP_LIBROMDATA_PUBLIC
-int u16_strcmp(const char16_t *wcs1, const char16_t *wcs2);
-#endif /* RP_WIS16 */
-
-/**
  * char16_t strncmp().
  * @param wcs1 16-bit string 1.
  * @param wcs2 16-bit string 2.
@@ -112,23 +79,6 @@ static inline int u16_strncmp(const char16_t *wcs1, const char16_t *wcs2, size_t
 ATTR_ACCESS_SIZE(read_only, 1, 3)
 ATTR_ACCESS_SIZE(read_only, 2, 3)
 int u16_strncmp(const char16_t *wcs1, const char16_t *wcs2, size_t n);
-#endif /* RP_WIS16 */
-
-/**
- * char16_t strcasecmp().
- * @param wcs1 16-bit string 1.
- * @param wcs2 16-bit string 2.
- * @return strcasecmp() result.
- */
-#ifdef RP_WIS16
-static inline int u16_strcasecmp(const char16_t *wcs1, const char16_t *wcs2)
-{
-	return wcscasecmp(reinterpret_cast<const wchar_t*>(wcs1),
-	                  reinterpret_cast<const wchar_t*>(wcs2));
-}
-#else /* !RP_WIS16 */
-RP_LIBROMDATA_PUBLIC
-int u16_strcasecmp(const char16_t *wcs1, const char16_t *wcs2);
 #endif /* RP_WIS16 */
 
 /**
@@ -164,22 +114,22 @@ static inline char16_t *u16_memchr(char16_t *wcs, char16_t c, size_t n)
 // NULL characters from strings.
 
 #ifndef CP_ACP
-# define CP_ACP 0
+#  define CP_ACP 0
 #endif
 #ifndef CP_LATIN1
-# define CP_LATIN1 28591
+#  define CP_LATIN1 28591
 #endif
 #ifndef CP_UTF8
-# define CP_UTF8 65001
+#  define CP_UTF8 65001
 #endif
 #ifndef CP_SJIS
-# define CP_SJIS 932
+#  define CP_SJIS 932
 #endif
 #ifndef CP_GB2312
-# define CP_GB2312 936
+#  define CP_GB2312 936
 #endif
 
-// Specialized code pages.
+// Specialized code pages
 #define CP_RP_BASE			0x10000
 #define CP_RP_ATARIST			(CP_RP_BASE | 0)
 #define CP_RP_ATASCII			(CP_RP_BASE | 1)
@@ -191,6 +141,9 @@ typedef enum {
 	// Enable cp1252 fallback if the text fails to
 	// decode using the specified code page.
 	TEXTCONV_FLAG_CP1252_FALLBACK		= (1U << 0),
+
+	// Attempt JIS X 0208 decoding before Shift-JIS.
+	TEXTCONV_FLAG_JIS_X_0208		= (1U << 1),
 } TextConv_Flags_e;
 
 /**
@@ -199,11 +152,11 @@ typedef enum {
  *
  * The specified code page number will be used.
  *
- * @param cp	[in] Code page number.
- * @param str	[in] 8-bit text.
- * @param len	[in] Length of str, in bytes. (-1 for NULL-terminated string)
- * @param flags	[in] Flags. (See TextConv_Flags_e.)
- * @return UTF-8 string.
+ * @param cp	[in] Code page number
+ * @param str	[in] 8-bit text
+ * @param len	[in] Length of str, in bytes (-1 for NULL-terminated string)
+ * @param flags	[in] Flags (See TextConv_Flags_e)
+ * @return UTF-8 string
  */
 RP_LIBROMDATA_PUBLIC
 std::string cpN_to_utf8(unsigned int cp, const char *str, int len, unsigned int flags = 0);
@@ -212,10 +165,10 @@ std::string cpN_to_utf8(unsigned int cp, const char *str, int len, unsigned int 
  * Convert 8-bit text to UTF-8 using an RP-custom code page.
  * Code page number must be CP_RP_*.
  *
- * @param cp	[in] Code page number.
- * @param str	[in] 8-bit text.
- * @param len	[in] Length of str, in bytes. (-1 for NULL-terminated string)
- * @return UTF-8 string.
+ * @param cp	[in] Code page number
+ * @param str	[in] 8-bit text
+ * @param len	[in] Length of str, in bytes (-1 for NULL-terminated string)
+ * @return UTF-8 string
  */
 std::string cpRP_to_utf8(unsigned int cp, const char *str, int len);
 
@@ -225,11 +178,11 @@ std::string cpRP_to_utf8(unsigned int cp, const char *str, int len);
  *
  * The specified code page number will be used.
  *
- * @param cp	[in] Code page number.
- * @param str	[in] 8-bit text.
- * @param len	[in] Length of str, in bytes. (-1 for NULL-terminated string)
- * @param flags	[in] Flags. (See TextConv_Flags_e.)
- * @return UTF-16 string.
+ * @param cp	[in] Code page number
+ * @param str	[in] 8-bit text
+ * @param len	[in] Length of str, in bytes (-1 for NULL-terminated string)
+ * @param flags	[in] Flags (See TextConv_Flags_e)
+ * @return UTF-16 string
  */
 RP_LIBROMDATA_PUBLIC
 std::u16string cpN_to_utf16(unsigned int cp, const char *str, int len, unsigned int flags = 0);
@@ -241,10 +194,10 @@ std::u16string cpN_to_utf16(unsigned int cp, const char *str, int len, unsigned 
  * The specified code page number will be used.
  * Invalid characters will be ignored.
  *
- * @param cp	[in] Code page number.
- * @param str	[in] UTF-8 text.
- * @param len	[in] Length of str, in bytes. (-1 for NULL-terminated string)
- * @return 8-bit text.
+ * @param cp	[in] Code page number
+ * @param str	[in] UTF-8 text
+ * @param len	[in] Length of str, in bytes (-1 for NULL-terminated string)
+ * @return 8-bit text
  */
 RP_LIBROMDATA_PUBLIC
 std::string utf8_to_cpN(unsigned int cp, const char *str, int len);
@@ -403,16 +356,31 @@ static inline std::string cp1252_sjis_to_utf8(const std::string &str)
 		TEXTCONV_FLAG_CP1252_FALLBACK);
 }
 
+/* JIS X 0208 with Shift-JIS (cp932) + cp1252 fallback */
+
 /**
- * Convert cp1252 or Shift-JIS (cp932) text to UTF-16.
+ * Convert JIS X 0208, Shift-JIS (cp932), or cp1252 text to UTF-8.
  * Trailing NULL bytes will be removed.
- * @param str	[in] cp1252 or Shift-JIS (cp932) text.
- * @param len	[in] Length of str, in bytes. (-1 for NULL-terminated string)
- * @return UTF-16 string.
+ * @param str	[in] JIS X 0208, Shift-JIS (cp932), or cp1252 text
+ * @param len	[in] Length of str, in bytes (-1 for NULL-terminated string)
+ * @return UTF-8 string
  */
-static inline std::u16string cp1252_sjis_to_utf16(const char *str, int len)
+static inline std::string cp1252_sjis_jisx0208_to_utf8(const char *str, int len)
 {
-	return cpN_to_utf16(932, str, len, TEXTCONV_FLAG_CP1252_FALLBACK);
+	return cpN_to_utf8(932, str, len,
+		TEXTCONV_FLAG_CP1252_FALLBACK | TEXTCONV_FLAG_JIS_X_0208);
+}
+
+/**
+ * Convert JIS X 0208, Shift-JIS (cp932), or cp1252 text to UTF-8.
+ * Trailing NULL bytes will be removed.
+ * @param str	[in] JIS X 0208, Shift-JIS (cp932), or cp1252 text
+ * @return UTF-8 string
+ */
+static inline std::string cp1252_sjis_jisx0208_to_utf8(const std::string &str)
+{
+	return cpN_to_utf8(932, str.data(), static_cast<int>(str.size()),
+		TEXTCONV_FLAG_CP1252_FALLBACK | TEXTCONV_FLAG_JIS_X_0208);
 }
 
 /* Latin-1 (ISO-8859-1) */
@@ -526,9 +494,9 @@ static inline std::u16string utf8_to_utf16(const std::string &str)
 /**
  * Convert UTF-16LE text to UTF-8.
  * Trailing NULL bytes will be removed.
- * @param wcs	[in] UTF-16LE text.
- * @param len	[in] Length of wcs, in characters. (-1 for NULL-terminated string)
- * @return UTF-8 string.
+ * @param wcs	[in] UTF-16LE text
+ * @param len	[in] Length of wcs, in characters (-1 for NULL-terminated string)
+ * @return UTF-8 string
  */
 RP_LIBROMDATA_PUBLIC
 std::string utf16le_to_utf8(const char16_t *wcs, int len);
@@ -536,9 +504,9 @@ std::string utf16le_to_utf8(const char16_t *wcs, int len);
 /**
  * Convert UTF-16BE text to UTF-8.
  * Trailing NULL bytes will be removed.
- * @param wcs	[in] UTF-16BE text.
- * @param len	[in] Length of wcs, in characters. (-1 for NULL-terminated string)
- * @return UTF-8 string.
+ * @param wcs	[in] UTF-16BE text
+ * @param len	[in] Length of wcs, in characters (-1 for NULL-terminated string)
+ * @return UTF-8 string
  */
 RP_LIBROMDATA_PUBLIC
 std::string utf16be_to_utf8(const char16_t *wcs, int len);
@@ -546,9 +514,9 @@ std::string utf16be_to_utf8(const char16_t *wcs, int len);
 /**
  * Convert UTF-16 text to UTF-8. (host-endian)
  * Trailing NULL bytes will be removed.
- * @param wcs UTF-16 text.
- * @param len Length of wcs, in characters. (-1 for NULL-terminated string)
- * @return UTF-8 string.
+ * @param wcs UTF-16 text
+ * @param len Length of wcs, in characters (-1 for NULL-terminated string)
+ * @return UTF-8 string
  */
 static inline std::string utf16_to_utf8(const char16_t *wcs, int len)
 {

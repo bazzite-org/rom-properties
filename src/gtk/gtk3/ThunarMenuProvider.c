@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (GTK+ 3.x)                         *
  * ThunarMenuProvider.c: ThunarX Menu Provider Definition                  *
  *                                                                         *
- * Copyright (c) 2017-2023 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -31,13 +31,13 @@ struct _RpThunarMenuProvider {
 	GObject __parent__;
 };
 
-#if !GLIB_CHECK_VERSION(2,59,1)
+#if !GLIB_CHECK_VERSION(2, 59, 1)
 #  if defined(__GNUC__) && __GNUC__ >= 8
 /* Disable GCC 8 -Wcast-function-type warnings. (Fixed in glib-2.59.1 upstream.) */
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wcast-function-type"
 #  endif
-#endif /* !GLIB_CHECK_VERSION(2,59,1) */
+#endif /* !GLIB_CHECK_VERSION(2, 59, 1) */
 
 // NOTE: G_DEFINE_TYPE() doesn't work in C++ mode with gcc-6.2
 // due to an implicit int to GTypeFlags conversion.
@@ -46,11 +46,11 @@ G_DEFINE_DYNAMIC_TYPE_EXTENDED(RpThunarMenuProvider, rp_thunar_menu_provider,
 	G_IMPLEMENT_INTERFACE_DYNAMIC(THUNARX_TYPE_MENU_PROVIDER,
 		rp_thunar_menu_provider_page_provider_init));
 
-#if !GLIB_CHECK_VERSION(2,59,1)
+#if !GLIB_CHECK_VERSION(2, 59, 1)
 #  if defined(__GNUC__) && __GNUC__ > 8
 #    pragma GCC diagnostic pop
 #  endif
-#endif /* !GLIB_CHECK_VERSION(2,59,1) */
+#endif /* !GLIB_CHECK_VERSION(2, 59, 1) */
 
 void
 rp_thunar_menu_provider_register_type_ext(ThunarxProviderPlugin *plugin)
@@ -103,13 +103,14 @@ rp_item_convert_to_png_ThreadFunc(GList *files)
 	return NULL;
 }
 
-#if GTK_CHECK_VERSION(3,0,0)
+#if GTK_CHECK_VERSION(3, 0, 0)
+typedef ThunarxMenuItem MenuItem_t;
+#else /* !GTK_CHECK_VERSION(3, 0, 0) */
+typedef GtkAction MenuItem_t;
+#endif /* GTK_CHECK_VERSION(3, 0, 0) */
+
 static void
-rp_item_convert_to_png(ThunarxMenuItem *item, gpointer user_data)
-#else /* !GTK_CHECK_VERSION(3,0,0) */
-static void
-rp_item_convert_to_png(GtkAction *item, gpointer user_data)
-#endif /* GTK_CHECK_VERSION(3,0,0) */
+rp_item_convert_to_png(MenuItem_t *item, gpointer user_data)
 {
 	RP_UNUSED(user_data);
 
@@ -129,8 +130,9 @@ rp_item_convert_to_png(GtkAction *item, gpointer user_data)
 static GList*
 rp_thunar_menu_provider_get_file_menu_items(ThunarxMenuProvider *provider, GtkWidget *window, GList *files)
 {
-	RP_UNUSED(provider);
 	RP_UNUSED(window);
+	assert(RP_IS_THUNAR_MENU_PROVIDER(provider));
+	g_return_val_if_fail(RP_IS_THUNAR_MENU_PROVIDER(provider), NULL);
 
 	// Verify that all specified files are supported.
 	bool is_supported = false;
@@ -172,11 +174,11 @@ rp_thunar_menu_provider_get_file_menu_items(ThunarxMenuProvider *provider, GtkWi
 	// Create the menu item.
 	// NOTE: Starting with Thunar 1.7/1.8 (GTK3), ThunarxMenuItem is used.
 	// Previous versions (GTK2) used GtkAction.
-#if GTK_CHECK_VERSION(3,0,0)
+#if GTK_CHECK_VERSION(3, 0, 0)
 	ThunarxMenuItem *const item = thunarx_menu_item_new(
-#else /* !GTK_CHECK_VERSION(3,0,0) */
+#else /* !GTK_CHECK_VERSION(3, 0, 0) */
 	GtkAction *const item = gtk_action_new(
-#endif /* GTK_CHECK_VERSION(3,0,0) */
+#endif /* GTK_CHECK_VERSION(3, 0, 0) */
 		"rp-convert-to-png",
 		C_("ServiceMenu", "Convert to PNG"),
 		NC_("ServiceMenu",
@@ -185,10 +187,10 @@ rp_thunar_menu_provider_get_file_menu_items(ThunarxMenuProvider *provider, GtkWi
 			file_count),
 		"image-png");
 
-#if GTK_CHECK_VERSION(2,15,1) && !GTK_CHECK_VERSION(3,0,0)
+#if GTK_CHECK_VERSION(2, 15, 1) && !GTK_CHECK_VERSION(3, 0, 0)
 	// Set the GtkAction's icon name.
 	gtk_action_set_icon_name(item, "image-png");
-#endif /* GTK_CHECK_VERSION(2,16,0) && !GTK_CHECK_VERSION(3,0,0) */
+#endif /* GTK_CHECK_VERSION(2, 16, 0) && !GTK_CHECK_VERSION(3, 0, 0) */
 
 	// Save the file list in the menu item.
 	g_object_set_qdata_full(G_OBJECT(item), rp_item_convert_to_png_quark,

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * PlayStationDisc.cpp: PlayStation 1 and 2 disc image reader.             *
  *                                                                         *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -42,8 +42,7 @@ namespace LibRomData {
 class PlayStationDiscPrivate final : public RomDataPrivate
 {
 public:
-	PlayStationDiscPrivate(const IRpFilePtr &file);
-	~PlayStationDiscPrivate() final = default;
+	explicit PlayStationDiscPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -51,8 +50,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 3+1> exts;
+	static const array<const char*, 3+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -117,15 +116,15 @@ ROMDATA_IMPL(PlayStationDisc)
 /** PlayStationDiscPrivate **/
 
 /* RomDataInfo */
-const char *const PlayStationDiscPrivate::exts[] = {
+const array<const char*, 3+1> PlayStationDiscPrivate::exts = {{
 	".iso",		// ISO
 	".bin",		// BIN/CUE
 	".img",		// CCD/IMG
 	// TODO: More?
 
 	nullptr
-};
-const char *const PlayStationDiscPrivate::mimeTypes[] = {
+}};
+const array<const char*, 3+1> PlayStationDiscPrivate::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	"application/x-cd-image",
 	"application/x-iso9660-image",
@@ -135,9 +134,9 @@ const char *const PlayStationDiscPrivate::mimeTypes[] = {
 
 	// TODO: PS1/PS2?
 	nullptr
-};
+}};
 const RomDataInfo PlayStationDiscPrivate::romDataInfo = {
-	"PlayStationDisc", exts, mimeTypes
+	"PlayStationDisc", exts.data(), mimeTypes.data()
 };
 
 PlayStationDiscPrivate::PlayStationDiscPrivate(const IRpFilePtr &file)
@@ -166,7 +165,7 @@ int PlayStationDiscPrivate::parse_system_cnf(void *user, const char *section, co
 	// Save the value for later.
 	string s_name(name);
 	std::transform(s_name.begin(), s_name.end(), s_name.begin(),
-		[](unsigned char c) noexcept -> char { return std::toupper(c); });
+		[](char c) noexcept -> char { return std::toupper(c); });
 
 	PlayStationDiscPrivate *const d = static_cast<PlayStationDiscPrivate*>(user);
 	auto ret = d->system_cnf.emplace(std::move(s_name), value);
@@ -524,13 +523,13 @@ int PlayStationDisc::isRomSupported_static(
 	// NOTE: Some PS2 prototypes have incorrect system IDs. We'll
 	// check for those here, and then verify SYSTEM.CNF later.
 	int pos = -1;
-	if (!strncmp(pvd->sysID, "PLAYSTATION ", 12)) {
+	if (!memcmp(pvd->sysID, "PLAYSTATION ", 12)) {
 		pos = 12;
-	} else if (!strncmp(pvd->sysID, "CD-RTOS CD-BRIDGE ", 18)) {
+	} else if (!memcmp(pvd->sysID, "CD-RTOS CD-BRIDGE ", 18)) {
 		// CD-i system ID
 		// Some PS2 prototypes have this for some reason.
 		pos = 18;
-	} else if (!strncmp(pvd->sysID, "Win32 ", 6)) {
+	} else if (!memcmp(pvd->sysID, "Win32 ", 6)) {
 		// No idea why some PS2 prototypes have this one...
 		pos = 6;
 	}
@@ -579,16 +578,16 @@ const char *PlayStationDisc::systemName(unsigned int type) const
 	switch (d->consoleType) {
 		default:
 		case PlayStationDiscPrivate::ConsoleType::PS1: {
-			static const char *const sysNames_PS1[4] = {
+			static const array<const char*, 4> sysNames_PS1 = {{
 				"Sony PlayStation", "PlayStation", "PS1", nullptr
-			};
+			}};
 			return sysNames_PS1[type & SYSNAME_TYPE_MASK];
 		}
 
 		case PlayStationDiscPrivate::ConsoleType::PS2: {
-			static const char *const sysNames_PS2[4] = {
+			static const array<const char*, 4> sysNames_PS2 = {{
 				"Sony PlayStation 2", "PlayStation 2", "PS2", nullptr
-			};
+			}};
 			return sysNames_PS2[type & SYSNAME_TYPE_MASK];
 		}
 	}
@@ -860,16 +859,15 @@ int PlayStationDisc::loadFieldData(void)
 	}
 
 	// ISO object for ISO-9660 PVD
-	ISO *const isoData = new ISO(d->file);
-	if (isoData->isOpen()) {
+	ISO isoData(d->file);
+	if (isoData.isOpen()) {
 		// Add the fields.
-		const RomFields *const isoFields = isoData->fields();
+		const RomFields *const isoFields = isoData.fields();
 		if (isoFields) {
 			d->fields.addFields_romFields(isoFields,
 				RomFields::TabOffset_AddTabs);
 		}
 	}
-	delete isoData;
 
 	// Finished reading the field data.
 	return static_cast<int>(d->fields.count());
@@ -883,7 +881,7 @@ int PlayStationDisc::loadFieldData(void)
 int PlayStationDisc::loadMetaData(void)
 {
 	RP_D(PlayStationDisc);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->isValid) {
@@ -891,16 +889,14 @@ int PlayStationDisc::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(3);	// Maximum of 3 metadata properties.
+	d->metaData.reserve(3);	// Maximum of 3 metadata properties.
 
 	// Add the PVD metadata.
 	// TODO: PlayStationDisc-specific metadata?
-	ISO::addMetaData_PVD(d->metaData, &d->pvd);
+	ISO::addMetaData_PVD(&d->metaData, &d->pvd);
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -911,20 +907,20 @@ int PlayStationDisc::loadMetaData(void)
  * try to get the size that most closely matches the
  * requested size.
  *
- * @param imageType	[in]     Image type.
- * @param pExtURLs	[out]    Output vector.
+ * @param imageType	[in]     Image type
+ * @param extURLs	[out]    Output vector
  * @param size		[in,opt] Requested image size. This may be a requested
  *                               thumbnail size in pixels, or an ImageSizeType
  *                               enum value.
  * @return 0 on success; negative POSIX error code on error.
  */
-int PlayStationDisc::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
+int PlayStationDisc::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) const
 {
-	ASSERT_extURLs(imageType, pExtURLs);
-	pExtURLs->clear();
+	extURLs.clear();
+	ASSERT_extURLs(imageType);
 
 	RP_D(const PlayStationDisc);
-	if (!d->isValid || (int)d->consoleType < 0) {
+	if (!d->isValid || static_cast<int>(d->consoleType) < 0) {
 		// Disc image isn't valid.
 		return -EIO;
 	}
@@ -941,13 +937,14 @@ int PlayStationDisc::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int 
 	};
 	if (d->consoleType >= PlayStationDiscPrivate::ConsoleType::Max)
 		return -ENOENT;
-	const char *const sys = sys_tbl[(int)d->consoleType];
+	const char *const sys = sys_tbl[static_cast<size_t>(d->consoleType)];
 
 	// Game ID format: SLUS-20718
 	// Boot filename format: SLUS_207.18
 	// Using the first part as the region code.
 	string gameID = d->boot_filename;
-	std::transform(gameID.begin(), gameID.end(), gameID.begin(), ::toupper);
+	std::transform(gameID.begin(), gameID.end(), gameID.begin(),
+		[](char c) noexcept -> char { return std::toupper(c); });
 	string region_code;
 	size_t pos = gameID.find('_');
 	if (pos != string::npos) {
@@ -967,8 +964,6 @@ int PlayStationDisc::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int 
 		gameID.erase(pos, 1);
 	}
 
-	// NOTE: We only have one size for MegaDrive right now.
-	// TODO: Determine the actual image size.
 	RP_UNUSED(size);
 	vector<ImageSizeDef> sizeDefs = supportedImageSizes(imageType);
 	assert(sizeDefs.size() == 1);
@@ -1001,16 +996,16 @@ int PlayStationDisc::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int 
 	}
 
 	// Add the URLs.
-	pExtURLs->resize(1);
-	auto extURL_iter = pExtURLs->begin();
-	extURL_iter->url = d->getURL_RPDB(sys, imageTypeName, region_code.c_str(), gameID.c_str(), ext);
-	extURL_iter->cache_key = d->getCacheKey_RPDB(sys, imageTypeName, region_code.c_str(), gameID.c_str(), ext);
-	extURL_iter->width = sizeDefs[0].width;
-	extURL_iter->height = sizeDefs[0].height;
-	extURL_iter->high_res = (sizeDefs[0].index >= 2);
+	extURLs.resize(1);
+	ExtURL &extURL = extURLs[0];
+	extURL.url = d->getURL_RPDB(sys, imageTypeName, region_code.c_str(), gameID.c_str(), ext);
+	extURL.cache_key = d->getCacheKey_RPDB(sys, imageTypeName, region_code.c_str(), gameID.c_str(), ext);
+	extURL.width = sizeDefs[0].width;
+	extURL.height = sizeDefs[0].height;
+	extURL.high_res = (sizeDefs[0].index >= 2);
 
 	// All URLs added.
 	return 0;
 }
 
-}
+} // namespace LibRomData

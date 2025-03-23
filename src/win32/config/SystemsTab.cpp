@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (Win32)                            *
  * SystemsTab.cpp: Systems tab for rp-config.                              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -146,24 +146,24 @@ void SystemsTabPrivate::loadDefaults(void)
 	if (!hWndPropSheet)
 		return;
 
-	const int idxDMG_default = (int)Config::dmgTitleScreenMode_default(Config::DMG_TitleScreen_Mode::DMG);
-	const int idxSGB_default = (int)Config::dmgTitleScreenMode_default(Config::DMG_TitleScreen_Mode::SGB);
-	const int idxCGB_default = (int)Config::dmgTitleScreenMode_default(Config::DMG_TitleScreen_Mode::CGB);
+	const Config::DMG_TitleScreen_Mode idxDMG_default = Config::dmgTitleScreenMode_default(Config::DMG_TitleScreen_Mode::DMG);
+	const Config::DMG_TitleScreen_Mode idxSGB_default = Config::dmgTitleScreenMode_default(Config::DMG_TitleScreen_Mode::SGB);
+	const Config::DMG_TitleScreen_Mode idxCGB_default = Config::dmgTitleScreenMode_default(Config::DMG_TitleScreen_Mode::CGB);
 	bool isDefChanged = false;
 
 	HWND hwndDmgTs = GetDlgItem(hWndPropSheet, IDC_SYSTEMS_DMGTS_DMG);
-	if (ComboBox_GetCurSel(hwndDmgTs) != idxDMG_default) {
-		ComboBox_SetCurSel(hwndDmgTs, idxDMG_default);
+	if (ComboBox_GetCurSel(hwndDmgTs) != static_cast<int>(idxDMG_default)) {
+		ComboBox_SetCurSel(hwndDmgTs, static_cast<int>(idxDMG_default));
 		isDefChanged = true;
 	}
 	hwndDmgTs = GetDlgItem(hWndPropSheet, IDC_SYSTEMS_DMGTS_SGB);
-	if (ComboBox_GetCurSel(hwndDmgTs) != idxSGB_default) {
-		ComboBox_SetCurSel(hwndDmgTs, idxSGB_default);
+	if (ComboBox_GetCurSel(hwndDmgTs) != static_cast<int>(idxSGB_default)) {
+		ComboBox_SetCurSel(hwndDmgTs, static_cast<int>(idxSGB_default));
 		isDefChanged = true;
 	}
 	hwndDmgTs = GetDlgItem(hWndPropSheet, IDC_SYSTEMS_DMGTS_CGB);
-	if (ComboBox_GetCurSel(hwndDmgTs) != idxCGB_default) {
-		ComboBox_SetCurSel(hwndDmgTs, idxCGB_default);
+	if (ComboBox_GetCurSel(hwndDmgTs) != static_cast<int>(idxCGB_default)) {
+		ComboBox_SetCurSel(hwndDmgTs, static_cast<int>(idxCGB_default));
 		isDefChanged = true;
 	}
 
@@ -201,7 +201,7 @@ void SystemsTabPrivate::save(void)
 
 	const tstring tfilename = U82T_c(filename);
 
-	const TCHAR s_dmg_dmg[][4] = {_T("DMG"), _T("CGB")};
+	static const TCHAR s_dmg_dmg[][4] = {_T("DMG"), _T("CGB")};
 	const int idxDMG = ComboBox_GetCurSel(GetDlgItem(hWndPropSheet, IDC_SYSTEMS_DMGTS_DMG));
 	assert(idxDMG >= 0);
 	assert(idxDMG < ARRAY_SIZE_I(s_dmg_dmg));
@@ -209,7 +209,7 @@ void SystemsTabPrivate::save(void)
 		WritePrivateProfileString(_T("DMGTitleScreenMode"), _T("DMG"), s_dmg_dmg[idxDMG], tfilename.c_str());
 	}
 
-	const TCHAR s_dmg_other[][4] = {_T("DMG"), _T("SGB"), _T("CGB")};
+	static const TCHAR s_dmg_other[][4] = {_T("DMG"), _T("SGB"), _T("CGB")};
 	const int idxSGB = ComboBox_GetCurSel(GetDlgItem(hWndPropSheet, IDC_SYSTEMS_DMGTS_SGB));
 	const int idxCGB = ComboBox_GetCurSel(GetDlgItem(hWndPropSheet, IDC_SYSTEMS_DMGTS_CGB));
 

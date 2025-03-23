@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE4/KF5)                         *
  * AchQtDBus.cpp: QtDBus notifications for achievements.                   *
  *                                                                         *
- * Copyright (c) 2020-2024 by David Korth.                                 *
+ * Copyright (c) 2020-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -16,10 +16,10 @@ using LibRpTexture::argb32_t;
 // QtDBus
 #include "notificationsinterface.h"
 
-#if QT_VERSION < QT_VERSION_CHECK(5,0,0)
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
 // for Qt::escape()
 #  include <QtGui/QTextDocument>
-#endif /* QT_VERSION < QT_VERSION_CHECK(5,0,0) */
+#endif /* QT_VERSION < QT_VERSION_CHECK(5, 0, 0) */
 
 // Achievement spritesheets
 #include "AchSpriteSheet.hpp"
@@ -49,7 +49,7 @@ static inline QDBusArgument &operator<<(QDBusArgument &argument, const NotifyIco
 	return argument;
 }
 
-inline const QDBusArgument &operator>>(const QDBusArgument &argument, NotifyIconStruct &nis)
+static inline const QDBusArgument &operator>>(const QDBusArgument &argument, NotifyIconStruct &nis)
 {
 	argument.beginStructure();
 	argument >> nis.width;
@@ -76,9 +76,9 @@ AchQtDBus AchQtDBus::m_instance;
  * @param id		[in] Achievement ID
  * @return 0 on success; negative POSIX error code on error.
  */
-int RP_C_API AchQtDBus::notifyFunc(intptr_t user_data, Achievements::ID id)
+int RP_C_API AchQtDBus::notifyFunc(void *user_data, Achievements::ID id)
 {
-	AchQtDBus *const q = reinterpret_cast<AchQtDBus*>(user_data);
+	AchQtDBus *const q = static_cast<AchQtDBus*>(user_data);
 	return q->notifyFunc(id);
 }
 
@@ -110,17 +110,17 @@ int AchQtDBus::notifyFunc(Achievements::ID id)
 
 	// Build the text.
 	// TODO: Better formatting?
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 	QString text = QLatin1String("<u>");
 	text += U82Q(pAch->getName(id)).toHtmlEscaped();
 	text += QLatin1String("</u>\n");
 	text += U82Q(pAch->getDescUnlocked(id)).toHtmlEscaped();
-#else /* QT_VERSION < QT_VERSION_CHECK(5,0,0) */
+#else /* QT_VERSION < QT_VERSION_CHECK(5, 0, 0) */
 	QString text = QLatin1String("<u>");
 	text += Qt::escape(U82Q(pAch->getName(id)));
 	text += QLatin1String("</u>\n");
 	text += Qt::escape(U82Q(pAch->getDescUnlocked(id)));
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,0,0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) */
 
 	// Hints, including image data.
 	// FIXME: Icon size. Using 32px for now.
@@ -133,17 +133,19 @@ int AchQtDBus::notifyFunc(Achievements::ID id)
 	if (!icon.isNull()) {
 		if (icon.format() != QImage::Format_ARGB32) {
 			// Need to use ARGB32 format.
-#if QT_VERSION >= QT_VERSION_CHECK(5,13,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 13, 0)
 			icon.convertTo(QImage::Format_ARGB32);
-#else /* QT_VERSION < QT_VERSION_CHECK(5,13,0) */
+#else /* QT_VERSION < QT_VERSION_CHECK(5, 13, 0) */
 			icon = icon.convertToFormat(QImage::Format_ARGB32);
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,13,0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 13, 0) */
 		}
 
 		// NOTE: The R and B channels need to be swapped for XDG notifications.
 		// Swap the R and B channels in place.
-		// TODO: Qt 6.0 will have an in-place rgbSwap() function.
 		// TODO: SSSE3-optimized version?
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+		icon.rgbSwap();
+#else /* QT_VERSION < QT_VERSION_CHECK(6, 0, 0) */
 		argb32_t *bits = reinterpret_cast<argb32_t*>(icon.bits());
 		const int strideDiff = icon.bytesPerLine() - (icon.width() * sizeof(uint32_t));
 		for (unsigned int y = (unsigned int)icon.height(); y > 0; y--) {
@@ -163,19 +165,22 @@ int AchQtDBus::notifyFunc(Achievements::ID id)
 			// Next line.
 			bits += strideDiff;
 		}
+#endif /* QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) */
 
 		// Set up the NotifyIconStruct.
 		NotifyIconStruct nis;
 		nis.width = icon.width();
 		nis.height = icon.height();
-		nis.rowstride = icon.bytesPerLine();
+		nis.rowstride = static_cast<int>(icon.bytesPerLine());
 		nis.has_alpha = true;
 		nis.bits_per_sample = 8;	// 8 bits per *channel*.
 		nis.channels = 4;
-		// TODO: constBits(), sizeInBytes()
-		// NOTE: byteCount() doesn't work with deprecated functions disabled.
-		nis.data = QByteArray::fromRawData((const char*)icon.bits(),
-			icon.bytesPerLine() * icon.height());
+#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
+		const qsizetype sizeInBytes = icon.sizeInBytes();
+#else /* QT_VERSION < QT_VERSION_CHECK(5, 10, 0) */
+		const int sizeInBytes = icon.byteCount();
+#endif
+		nis.data = QByteArray::fromRawData(reinterpret_cast<const char*>(icon.bits()), sizeInBytes);
 
 		// NOTE: The hint name changed in various versions of the specification.
 		// We'll use the oldest version for compatibility purposes.
@@ -216,7 +221,7 @@ AchQtDBus::~AchQtDBus()
 {
 	if (m_hasRegistered) {
 		Achievements *const pAch = Achievements::instance();
-		pAch->clearNotifyFunction(notifyFunc, reinterpret_cast<intptr_t>(this));
+		pAch->clearNotifyFunction(notifyFunc, this);
 	}
 }
 
@@ -238,7 +243,7 @@ AchQtDBus *AchQtDBus::instance(void)
 	// Registering here instead.
 	if (!q->m_hasRegistered) {
 		Achievements *const pAch = Achievements::instance();
-		pAch->setNotifyFunction(notifyFunc, reinterpret_cast<intptr_t>(q));
+		pAch->setNotifyFunction(notifyFunc, q);
 		q->m_hasRegistered = true;
 	}
 

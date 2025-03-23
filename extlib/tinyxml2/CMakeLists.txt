@@ -1,18 +1,11 @@
 # rom-properties: Disable CMake version requirement.
 #cmake_minimum_required(VERSION 3.15)
-project(tinyxml2 VERSION 10.0.0)
+project(tinyxml2 VERSION 11.0.0)
 
 IF(0) # rom-properties: Disable tests.
 include(CTest)
 option(tinyxml2_BUILD_TESTING "Build tests for tinyxml2" "${BUILD_TESTING}")
 ENDIF(0)
-
-# rom-properties:
-# Unix: Add -fpic/-fPIC in order to use this static library in plugins.
-IF(UNIX AND NOT APPLE)
-	SET(CMAKE_C_FLAGS	"${CMAKE_C_FLAGS} -fpic -fPIC")
-	SET(CMAKE_CXX_FLAGS	"${CMAKE_CXX_FLAGS} -fpic -fPIC")
-ENDIF(UNIX AND NOT APPLE)
 
 ##
 ## Honor tinyxml2_SHARED_LIBS to match install interface
@@ -37,11 +30,6 @@ set(CMAKE_DEBUG_POSTFIX "d")
 IF(WIN32 AND BUILD_SHARED_LIBS)
     SET(TINYXML2_RC "tinyxml2.rc")
 ENDIF(WIN32 AND BUILD_SHARED_LIBS)
-IF(NOT (WIN32 OR APPLE) AND NOT BUILD_SHARED_LIBS)
-    # rom-properties: Hide all symbols so they're not exported by libromdata.
-    INCLUDE(CheckHiddenVisibility)
-    CHECK_HIDDEN_VISIBILITY()
-ENDIF(NOT (WIN32 OR APPLE) AND NOT BUILD_SHARED_LIBS)
 add_library(tinyxml2 tinyxml2.cpp tinyxml2.h ${TINYXML2_RC})
 add_library(tinyxml2::tinyxml2 ALIAS tinyxml2)
 
@@ -105,7 +93,11 @@ endif ()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-## Custom locations
+## Custom settings
+# rom-properties: Disabled.
+#option(tinyxml2_INSTALL_PKGCONFIG "Create and install pkgconfig files" ON)
+set(tinyxml2_INSTALL_PKGCONFIG "Create and install pkgconfig files" OFF)
+
 set(tinyxml2_INSTALL_PKGCONFIGDIR "${CMAKE_INSTALL_LIBDIR}/pkgconfig"
     CACHE PATH "Directory for pkgconfig files")
 
@@ -152,6 +144,7 @@ IF(WIN32 AND BUILD_SHARED_LIBS AND INSTALL_DEBUG)
 	UNSET(PDB_FILENAME_R)
 ENDIF(WIN32 AND BUILD_SHARED_LIBS AND INSTALL_DEBUG)
 
+IF(0) # rom-properties
 # Type-specific targets
 
 if (BUILD_SHARED_LIBS)
@@ -160,7 +153,6 @@ else ()
     set(type static)
 endif ()
 
-IF(0) # rom-properties
 install(
     EXPORT tinyxml2-targets
     DESTINATION "${tinyxml2_INSTALL_CMAKEDIR}"
@@ -168,7 +160,6 @@ install(
     FILE tinyxml2-${type}-targets.cmake
     COMPONENT tinyxml2_development
 )
-ENDIF(0) # rom-properties
 
 # Auto-generated version compatibility file
 write_basic_package_version_file(
@@ -176,7 +167,6 @@ write_basic_package_version_file(
     COMPATIBILITY SameMajorVersion
 )
 
-IF(0) # rom-properties
 install(
     FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tinyxml2-config.cmake"
@@ -184,26 +174,24 @@ install(
     DESTINATION "${tinyxml2_INSTALL_CMAKEDIR}"
     COMPONENT tinyxml2_development
 )
-ENDIF(0) # rom-properties
 
 ## Headers
 
-IF(0) # rom-properties
 install(
     FILES tinyxml2.h
     TYPE INCLUDE
     COMPONENT tinyxml2_development
 )
-ENDIF(0) # rom-properties
 
 ## pkg-config
 
-IF(0) # rom-properties
-configure_file(cmake/tinyxml2.pc.in tinyxml2.pc.gen @ONLY)
-file(GENERATE OUTPUT tinyxml2.pc INPUT "${CMAKE_CURRENT_BINARY_DIR}/tinyxml2.pc.gen")
-install(
-    FILES "${CMAKE_CURRENT_BINARY_DIR}/tinyxml2.pc"
-    DESTINATION "${tinyxml2_INSTALL_PKGCONFIGDIR}"
-    COMPONENT tinyxml2_development
-)
+if (tinyxml2_INSTALL_PKGCONFIG)
+    configure_file(cmake/tinyxml2.pc.in tinyxml2.pc.gen @ONLY)
+    file(GENERATE OUTPUT tinyxml2.pc INPUT "${CMAKE_CURRENT_BINARY_DIR}/tinyxml2.pc.gen")
+    install(
+        FILES "${CMAKE_CURRENT_BINARY_DIR}/tinyxml2.pc"
+        DESTINATION "${tinyxml2_INSTALL_PKGCONFIGDIR}"
+        COMPONENT tinyxml2_development
+    )
+endif ()
 ENDIF(0) # rom-properties

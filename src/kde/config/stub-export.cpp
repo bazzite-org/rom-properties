@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE)                              *
  * stub-export.cpp: Exported function for the rp-config stub.              *
  *                                                                         *
- * Copyright (c) 2016-2022 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -33,6 +33,16 @@ using namespace LibRpTexture;
 #  include "../GettextTranslator.hpp"
 #endif
 
+// Qt
+#include "RpQt.hpp"
+
+// KDE
+#include <KAboutData>
+#include <KCrash>
+#include <KPageWidget>
+#include <KPageWidgetModel>
+#include <KPropertiesDialog>
+
 // C++ STL classes
 using std::string;
 
@@ -57,18 +67,18 @@ static QApplication *initQApp(int &argc, char *argv[], const QString &applicatio
 	}
 
 	// Set high-DPI mode on Qt 5. (not needed on Qt 6)
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0) && QT_VERSION < QT_VERSION_CHECK(6,0,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) && QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 	// Enable High DPI.
 	QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, true);
-#if QT_VERSION >= QT_VERSION_CHECK(5,6,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
 	// Enable High DPI pixmaps.
 	QApplication::setAttribute(Qt::AA_EnableHighDpiScaling, true);
 #else
 	// Hardcode the value in case the user upgrades to Qt 5.6 later.
 	// http://doc.qt.io/qt-5/qt.html#ApplicationAttribute-enum
 	QApplication::setAttribute(static_cast<Qt::ApplicationAttribute>(13), true);
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,6,0) */
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,0,0) && QT_VERSION < QT_VERSION_CHECK(6,0,0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 6, 0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) && QT_VERSION < QT_VERSION_CHECK(6, 0, 0) */
 	// Create the QApplication.
 	app = new QApplication(argc, argv);
 
@@ -83,14 +93,14 @@ static QApplication *initQApp(int &argc, char *argv[], const QString &applicatio
 	app->setApplicationName(QLatin1String("rp-config"));
 	app->setOrganizationDomain(QLatin1String("gerbilsoft.com"));
 	app->setOrganizationName(QLatin1String("GerbilSoft"));
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 	app->setApplicationDisplayName(applicationDisplayName);
-#  if QT_VERSION >= QT_VERSION_CHECK(5,7,0)
+#  if QT_VERSION >= QT_VERSION_CHECK(5, 7, 0)
 	app->setDesktopFileName(QLatin1String("com.gerbilsoft.rom-properties.rp-config"));
-#  endif /* QT_VERSION >= QT_VERSION_CHECK(5,7,0) */
-#else /* !QT_VERSION >= QT_VERSION_CHECK(5,0,0) */
+#  endif /* QT_VERSION >= QT_VERSION_CHECK(5, 7, 0) */
+#else /* !QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) */
 	RP_UNUSED(applicationDisplayName);
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,0,0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) */
 
 	const char *const programVersion =
 		AboutTabText::getProgramInfoString(AboutTabText::ProgramInfoStringID::ProgramVersion);
@@ -116,6 +126,44 @@ Q_DECL_EXPORT int RP_C_API rp_show_config_dialog(int argc, char *argv[])
 	const QString applicationDisplayName = QCoreApplication::translate(
 		"ConfigDialog", "ROM Properties Page configuration", nullptr);
 	QApplication *const app = initQApp(argc, argv, applicationDisplayName);
+
+	// Set up KAboutData.
+	const QString displayName = ConfigDialog::tr("ROM Properties Page configuration");
+	const char *const copyrightString =
+		AboutTabText::getProgramInfoString(AboutTabText::ProgramInfoStringID::Copyright);
+	assert(copyrightString != nullptr);
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+	KAboutData aboutData(
+		QLatin1String("rp-config"),	// componentName
+		displayName,			// displayName
+		app->applicationVersion(),	// version
+		displayName,			// shortDescription (TODO: Better value?)
+		KAboutLicense::GPL_V2,		// licenseType
+		QString::fromUtf8(copyrightString),	// copyrightStatement
+		QString(),			// otherText
+		QLatin1String("https://github.com/GerbilSoft/rom-properties"),		// homePageAddress
+		QLatin1String("https://github.com/GerbilSoft/rom-properties/issues")	// bugAddress
+	);
+	KAboutData::setApplicationData(aboutData);
+#else /* QT_VERSION < QT_VERSION_CHECK(5, 0, 0) */
+	KAboutData aboutData(
+		QByteArray("rp-config"),		// appName
+		QByteArray("rom-properties"),		// catalogName
+		KLocalizedString() /*displayName*/,	// programName
+		app->applicationVersion().toUtf8(),	// version
+		KLocalizedString() /*displayName*/,	// shortDescription (TODO: Better value?)
+		KAboutData::License_GPL_V2,		// licenseType
+		KLocalizedString(), /*QString::fromUtf8(copyrightString)*/	// copyrightStatement
+		KLocalizedString(),			// otherText
+		QByteArray("https://github.com/GerbilSoft/rom-properties"),		// homePageAddress
+		QByteArray("https://github.com/GerbilSoft/rom-properties/issues")	// bugAddress
+	);
+	// FIXME: KAboutData::setAboutData() equivalent on KDE4.
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) */
+
+	// Initialize KCrash.
+	// FIXME: It shows bugs.kde.org as the bug reporting address, which isn't wanted...
+	//KCrash::initialize();
 
 	// Create and run the ConfigDialog.
 	// TODO: Get the return value?
@@ -157,87 +205,61 @@ Q_DECL_EXPORT int RP_C_API rp_show_RomDataView_dialog(int argc, char *argv[])
 	AchQtDBus::instance();
 #endif /* ENABLE_ACHIEVEMENTS && HAVE_QtDBus_NOTIFY */
 
-	// Create a QDialog.
-	QDialog *const dialog = new QDialog(nullptr,
-		Qt::Dialog |
-		Qt::CustomizeWindowHint |
-		Qt::WindowTitleHint |
-		Qt::WindowSystemMenuHint |
-		Qt::WindowMinimizeButtonHint |
-		Qt::WindowCloseButtonHint);
-	dialog->setObjectName(QLatin1String("dialog"));
-	dialog->show();
-
-	// TODO: Verify on Qt4.
-#if QT_VERSION < QT_VERSION_CHECK(5,0,0)
-	dialog->setWindowTitle(applicationDisplayName);
-#endif /* QT_VERSION < QT_VERSION_CHECK(5,0,0) */
-	dialog->setWindowFilePath(QString::fromUtf8(uri));
-
-	// Create a QVBoxLayout for the dialog.
-	QVBoxLayout *const vboxDialog = new QVBoxLayout(dialog);
-	vboxDialog->setObjectName(QLatin1String("vboxDialog"));
-
-	// Create a QTabWidget to simulate KDE Dolphin.
-	QTabWidget *const tabWidget = new QTabWidget(dialog);
-	tabWidget->setObjectName(QLatin1String("tabWidget"));
-	vboxDialog->addWidget(tabWidget);
-
-	// Create a button box for the standard buttons. (and RomDataView's "Options" button)
-	QDialogButtonBox *const buttonBox = new QDialogButtonBox(dialog);
-	buttonBox->setObjectName(QLatin1String("buttonBox"));
-	buttonBox->setOrientation(Qt::Horizontal);
-	buttonBox->setStandardButtons(QDialogButtonBox::Apply | QDialogButtonBox::Cancel | QDialogButtonBox::Ok);
-	vboxDialog->addWidget(buttonBox);
-	QObject::connect(buttonBox, SIGNAL(accepted()), dialog, SLOT(accept()));
-	QObject::connect(buttonBox, SIGNAL(rejected()), dialog, SLOT(reject()));
-
 	// Parse the specified URI and localize it.
-	QUrl localUrl(QString::fromUtf8(uri));
+	const QString qs_uri(QString::fromUtf8(uri));
+#if QT_VERSION >= QT_VERSION_CHECK(5, 4, 0)
+	const QUrl localUrl(QUrl::fromUserInput(qs_uri, QDir::current().absolutePath()));
+#else /* QT_VERSION < QT_VERSION_CHECK(5, 4, 0) */
+	// QUrl::fromUserInput()'s workingDirectory parameter was added in Qt 5.4.
+	// For older versions, we'll have to check the CWD ourselves.
+	const QFileInfo fileInfo(QDir::current(), qs_uri);
+	const QUrl localUrl = (fileInfo.exists())
+		? QUrl::fromLocalFile(fileInfo.absoluteFilePath())
+		: QUrl::fromUserInput(qs_uri);
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 4, 0) */
 	if (localUrl.isEmpty()) {
-		fprintf(stderr, "*** " RP_KDE_UPPER " rp_show_RomDataView_dialog(): URI '%s' is invalid.\n", uri);
+		fmt::print(stderr, FSTR("*** " RP_KDE_UPPER " rp_show_RomDataView_dialog(): URI '{:s}' is invalid.\n"), uri);
 		return EXIT_FAILURE;
 	}
-	fprintf(stderr, "*** " RP_KDE_UPPER " rp_show_RomDataView_dialog(): Opening URI: '%s'\n", uri);
+	fmt::print(stderr, FSTR("*** " RP_KDE_UPPER " rp_show_RomDataView_dialog(): Opening URI: '{:s}'\n"), uri);
 
-	// Get the local filename.
-	string s_local_filename;
-	if (localUrl.scheme().isEmpty()) {
-		s_local_filename = localUrl.path().toUtf8().constData();
-	} else if (localUrl.isLocalFile()) {
-		s_local_filename = localUrl.toLocalFile().toUtf8().constData();
-	}
+	// Create a KPropertiesDialog.
+	// FIXME: Remove the default "General" and "Permissions" tabs.
+	// NOTE: Assuming we have a valid URL, KDE will automatically load
+	// the rom-properties KPropertiesDialogPlugins.
+	KPropertiesDialog *const dialog = new KPropertiesDialog(localUrl);
+	dialog->setObjectName(QLatin1String("propertiesDialog"));
+	dialog->show();
 
-	// Open a RomData object.
-	RomDataPtr romData;
-	if (likely(!s_local_filename.empty())) {
-		romData = RomDataFactory::create(s_local_filename.c_str());
-		if (romData) {
-			// Create a RomDataView object.
-			RomDataView *const romDataView = new RomDataView(romData, dialog);
-			romDataView->setObjectName(QLatin1String("romDataView"));
-			tabWidget->addTab(romDataView, QLatin1String("ROM Properties"));
+	// Set the current tab to one of our tabs (whichever shows up first).
+	// FIXME: Removing tabs causes random SIGSEGV...
+	bool hasPlugins = false;
+	KPageWidget *const kpw = findDirectChild<KPageWidget*>(dialog);
+	if (kpw) {
+		KPageWidgetModel *const model = findDirectChild<KPageWidgetModel*>(kpw);
+
+		// Assuming a single "column".
+		assert(model->columnCount() == 1);
+		const int rowCount = model->rowCount();
+		for (int row = 0; row < rowCount; row++) {
+			KPageWidgetItem *const item = model->item(model->index(row, 0));
+			QWidget *const widget = item->widget();
+			const char *const className = widget->metaObject()->className();
+
+			if (!strcmp(className, "RomDataView") ||
+			    !strcmp(className, "XAttrView"))
+			{
+				// Found one of our tabs.
+				hasPlugins = true;
+				kpw->setCurrentPage(item);
+				break;
+			}
 		}
-	}
-	if (!romData) {
-		fputs("*** " RP_KDE_UPPER " rp_show_RomDataView_dialog(): RomData object could not be created for this URI.\n", stderr);
+
+		hasPlugins = (model->rowCount() > 0);
 	}
 
-#if 0
-	// Create an XAttrView object.
-	// FIXME: Need to reference the XAttrView plugin?
-	XAttrView *const xattrView = new XAttrView(localUrl, dialog);
-	if (xattrView->hasAttributes()) {
-		xattrView->setObjectName(QLatin1String("xattrView"));
-		tabWidget->addTab(xattrView, QLatin1String("xattrs"));
-	} else {
-		fputs("*** " RP_KDE_UPPER " rp_show_RomDataView_dialog(): No extended attributes found; not showing xattrs tab.\n", stderr);
-		delete xattrView;
-	}
-#endif
-
-	// Make sure we have at least one tab.
-	if (tabWidget->count() < 1) {
+	if (!hasPlugins) {
 		fputs("*** " RP_KDE_UPPER " rp_show_RomDataView_dialog(): No tabs were created; exiting.\n", stderr);
 		return EXIT_FAILURE;
 	}

@@ -22,6 +22,7 @@ class DosAttrViewPrivate
 public:
 	DosAttrViewPrivate()
 		: attrs(0)
+		, validAttrs(0)
 	{}
 
 private:
@@ -30,32 +31,72 @@ private:
 public:
 	Ui::DosAttrView ui;
 	unsigned int attrs;
+	unsigned int validAttrs;
 
 public:
+	/**
+	 * Update a single checkbox.
+	 * @param attr Attribute to check
+	 * @param checkBox Checkbox widget
+	 */
+	inline void updateCheckbox(unsigned int attr, QCheckBox *checkBox);
+
 	/**
 	 * Update the attributes display.
 	 */
 	void updateAttrsDisplay(void);
+
+public:
+	/**
+	 * Connect a checkbox signal.
+	 * @param checkBox Checkbox
+	 * @param receiver Receiver
+	 */
+	static inline void connectCheckboxSignal(QCheckBox *checkBox, DosAttrView *receiver);
 };
+
+/**
+ * Update a single checkbox.
+ * @param attr Attribute to check
+ * @param checkBox Checkbox widget
+ */
+inline void DosAttrViewPrivate::updateCheckbox(unsigned int attr, QCheckBox *checkBox)
+{
+	const bool val = !!(attrs & attr);
+	const bool enable = !!(validAttrs & attr);
+	checkBox->setChecked(val);
+	checkBox->setEnabled(enable);
+	checkBox->setProperty("DosAttrView.value", val);
+}
 
 /**
  * Update the attributes display.
  */
 void DosAttrViewPrivate::updateAttrsDisplay(void)
 {
-	bool val;
-#define UPDATE_CHECKBOX(attr, obj) \
-	val = !!(attrs & (attr)); \
-	ui.obj->setChecked(val); \
-	ui.obj->setProperty("DosAttrView.value", val)
+	updateCheckbox(FILE_ATTRIBUTE_READONLY, ui.chkReadOnly);
+	updateCheckbox(FILE_ATTRIBUTE_HIDDEN, ui.chkHidden);
+	updateCheckbox(FILE_ATTRIBUTE_ARCHIVE, ui.chkArchive);
+	updateCheckbox(FILE_ATTRIBUTE_SYSTEM, ui.chkSystem);
 
-	UPDATE_CHECKBOX(FILE_ATTRIBUTE_READONLY, chkReadOnly);
-	UPDATE_CHECKBOX(FILE_ATTRIBUTE_HIDDEN, chkHidden);
-	UPDATE_CHECKBOX(FILE_ATTRIBUTE_ARCHIVE, chkArchive);
-	UPDATE_CHECKBOX(FILE_ATTRIBUTE_SYSTEM, chkSystem);
+	updateCheckbox(FILE_ATTRIBUTE_COMPRESSED, ui.chkCompressed);
+	updateCheckbox(FILE_ATTRIBUTE_ENCRYPTED, ui.chkEncrypted);
+}
 
-	UPDATE_CHECKBOX(FILE_ATTRIBUTE_COMPRESSED, chkCompressed);
-	UPDATE_CHECKBOX(FILE_ATTRIBUTE_ENCRYPTED, chkEncrypted);
+/**
+ * Connect a checkbox signal.
+ * @param checkBox Checkbox
+ * @param receiver Receiver
+ */
+inline void DosAttrViewPrivate::connectCheckboxSignal(QCheckBox *checkBox, DosAttrView *receiver)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+	QObject::connect(checkBox, &QCheckBox::clicked,
+	                 receiver, &DosAttrView::checkBox_clicked_slot);
+#else /* QT_VERSION < QT_VERSION_CHECK(5, 0, 0) */
+	QObject::connect(checkBox, SIGNAL(clicked(bool)),
+	                 receiver, SLOT(checkBox_clicked_slot(bool)));
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) */
 }
 
 /** DosAttrView **/
@@ -68,17 +109,13 @@ DosAttrView::DosAttrView(QWidget *parent)
 	d->ui.setupUi(this);
 
 	// Connect checkbox signals.
-#define CONNECT_CHECKBOX_SIGNAL(obj) \
-	connect(d->ui.obj, SIGNAL(clicked(bool)), \
-		this, SLOT(checkBox_clicked_slot(bool)))
+	d->connectCheckboxSignal(d->ui.chkReadOnly, this);
+	d->connectCheckboxSignal(d->ui.chkHidden, this);
+	d->connectCheckboxSignal(d->ui.chkArchive, this);
+	d->connectCheckboxSignal(d->ui.chkSystem, this);
 
-	CONNECT_CHECKBOX_SIGNAL(chkReadOnly);
-	CONNECT_CHECKBOX_SIGNAL(chkHidden);
-	CONNECT_CHECKBOX_SIGNAL(chkArchive);
-	CONNECT_CHECKBOX_SIGNAL(chkSystem);
-
-	CONNECT_CHECKBOX_SIGNAL(chkCompressed);
-	CONNECT_CHECKBOX_SIGNAL(chkEncrypted);
+	d->connectCheckboxSignal(d->ui.chkCompressed, this);
+	d->connectCheckboxSignal(d->ui.chkEncrypted, this);
 }
 
 /**
@@ -112,6 +149,56 @@ void DosAttrView::clearAttrs(void)
 	Q_D(DosAttrView);
 	if (d->attrs != 0) {
 		d->attrs = 0;
+		d->updateAttrsDisplay();
+	}
+}
+
+/**
+ * Get the valid MS-DOS attributes.
+ * @return Valid MS-DOS attributes
+ */
+unsigned int DosAttrView::validAttrs(void) const
+{
+	Q_D(const DosAttrView);
+	return d->validAttrs;
+}
+
+/**
+ * Set the valid MS-DOS attributes.
+ * @param validAttrs Valid MS-DOS attributes
+ */
+void DosAttrView::setValidAttrs(unsigned int validAttrs)
+{
+	Q_D(DosAttrView);
+	if (d->validAttrs != validAttrs) {
+		d->validAttrs = validAttrs;
+		d->updateAttrsDisplay();
+	}
+}
+
+/**
+ * Clear the valid MS-DOS attributes.
+ */
+void DosAttrView::clearValidAttrs(void)
+{
+	Q_D(DosAttrView);
+	if (d->validAttrs != 0) {
+		d->validAttrs = 0;
+		d->updateAttrsDisplay();
+	}
+}
+
+/**
+ * Set the current *and* valid MS-DOS attributes at the same time.
+ * @param attrs MS-DOS attributes
+ * @param validAttrs Valid MS-DOS attributes
+ */
+void DosAttrView::setCurrentAndValidAttrs(unsigned int attrs, unsigned int validAttrs)
+{
+	Q_D(DosAttrView);
+	if (d->attrs != attrs || d->validAttrs != validAttrs) {
+		d->attrs = attrs;
+		d->validAttrs = validAttrs;
 		d->updateAttrsDisplay();
 	}
 }

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (GTK+ common)                      *
  * RomDataView_gtk3.cpp: RomData viewer widget. (GTK4-specific)            *
  *                                                                         *
- * Copyright (c) 2017-2024 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -27,18 +27,6 @@ using std::vector;
 
 // TODO: Ideal icon size? Using 32x32 for now.
 static constexpr int icon_sz = 32;
-
-// Format tables.
-// Pango enum values are known to fit in uint8_t.
-static constexpr array<gfloat, 4> align_tbl_xalign = {{
-	// Order: TXA_D, TXA_L, TXA_C, TXA_R
-	0.0f, 0.0f, 0.5f, 1.0f
-}};
-static constexpr array<uint8_t, 4> align_tbl_halign = {{
-	// Order: TXA_D, TXA_L, TXA_C, TXA_R
-	GTK_ALIGN_START, GTK_ALIGN_START,
-	GTK_ALIGN_CENTER, GTK_ALIGN_END
-}};
 
 // GtkSignalListItemFactory signal handlers
 // Reference: https://blog.gtk.org/2020/09/05/a-primer-on-gtklistview/
@@ -81,6 +69,18 @@ static void
 setup_listitem_cb_text(GtkListItemFactory *factory, GtkListItem *list_item, gpointer user_data)
 {
 	RP_UNUSED(factory);
+
+	// Format tables.
+	// Pango enum values are known to fit in uint8_t.
+	static constexpr array<gfloat, 4> align_tbl_xalign = {{
+		// Order: TXA_D, TXA_L, TXA_C, TXA_R
+		0.0f, 0.0f, 0.5f, 1.0f
+	}};
+	static constexpr array<uint8_t, 4> align_tbl_halign = {{
+		// Order: TXA_D, TXA_L, TXA_C, TXA_R
+		GTK_ALIGN_START, GTK_ALIGN_START,
+		GTK_ALIGN_CENTER, GTK_ALIGN_END
+	}};
 
 	const uint32_t align_data = (GPOINTER_TO_UINT(user_data) & RomFields::TXA_MASK);
 
@@ -279,13 +279,6 @@ rp_rom_data_view_init_listdata(RpRomDataView *page, const RomFields::Field &fiel
 			(listDataDesc.names ? listDataDesc.names->at(i).c_str() : ""), factory);
 		gtk_column_view_append_column(GTK_COLUMN_VIEW(columnView), column);
 
-#if 0
-		// Header/data alignment
-		g_object_set(column,
-			"alignment", align_tbl_xalign[col_attrs.align_headers & RomFields::TXA_MASK],
-			nullptr);
-#endif
-
 		// Column sizing
 		// NOTE: We don't have direct equivalents to QHeaderView::ResizeMode.
 		switch (col_attrs.sizing & RomFields::COLSZ_MASK) {
@@ -424,11 +417,11 @@ rp_rom_data_view_init_listdata(RpRomDataView *page, const RomFields::Field &fiel
 	}
 
 	// Scroll area for the GtkTreeView.
-#if GTK_CHECK_VERSION(4,0,0)
+#if GTK_CHECK_VERSION(4, 0, 0)
 	GtkWidget *const scrolledWindow = gtk_scrolled_window_new();
 	// NOTE: No name for this GtkWidget.
 	gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(scrolledWindow), true);
-#else /* !GTK_CHECK_VERSION(4,0,0) */
+#else /* !GTK_CHECK_VERSION(4, 0, 0) */
 	GtkWidget *const scrolledWindow = gtk_scrolled_window_new(nullptr, nullptr);
 	// NOTE: No name for this GtkWidget.
 	gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scrolledWindow), GTK_SHADOW_IN);
@@ -508,7 +501,7 @@ rp_rom_data_view_update_multi_RFT_LISTDATA_MULTI(RpRomDataView *page, uint32_t u
 			// Need to add all supported languages.
 			// TODO: Do we need to do this for all of them, or just one?
 			for (const auto &pldm : *pListData_multi) {
-				set_lc.emplace(pldm.first);
+				set_lc.insert(pldm.first);
 			}
 		}
 
@@ -553,7 +546,7 @@ rp_rom_data_view_update_multi_RFT_LISTDATA_MULTI(RpRomDataView *page, uint32_t u
 			// As a workaround, remove the GtkColumnView's model, then re-add it.
 			GtkSelectionModel *const selModel = gtk_column_view_get_model(GTK_COLUMN_VIEW(vldm.columnView));
 			g_object_ref(selModel);
-			gtk_column_view_set_model(GTK_COLUMN_VIEW(vldm.columnView), NULL);
+			gtk_column_view_set_model(GTK_COLUMN_VIEW(vldm.columnView), nullptr);
 			gtk_column_view_set_model(GTK_COLUMN_VIEW(vldm.columnView), GTK_SELECTION_MODEL(selModel));
 			g_object_unref(selModel);
 

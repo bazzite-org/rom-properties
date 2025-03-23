@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <stdint.h>
+#include <cstdint>
 #include "dll-macros.h"	// for RP_LIBROMDATA_PUBLIC
 
 // access() macros.
@@ -51,11 +51,31 @@ namespace LibRpFile { namespace FileSystem {
  * NOTE: Only native separators ('\\' on Windows, '/' on everything else)
  * are supported by this function.
  *
- * @param path Path to recursively mkdir. (last component is ignored)
+ * @param path Path to recursively mkdir (last component is ignored)
+ * @param mode File mode (defaults to 0777; ignored on Windows)
  * @return 0 on success; non-zero on error.
  */
 RP_LIBROMDATA_PUBLIC
-int rmkdir(const std::string &path);
+int rmkdir(const std::string &path, int mode = 0777);
+
+#if defined(_WIN32)
+/**
+ * Recursively mkdir() subdirectories.
+ *
+ * The last element in the path will be ignored, so if
+ * the entire pathname is a directory, a trailing slash
+ * must be included.
+ *
+ * NOTE: Only native separators ('\\' on Windows, '/' on everything else)
+ * are supported by this function.
+ *
+ * @param path Path to recursively mkdir (last component is ignored)
+ * @param mode File mode (defaults to 0777; ignored on Windows)
+ * @return 0 on success; non-zero on error.
+ */
+RP_LIBROMDATA_PUBLIC
+int rmkdir(const std::wstring &path, int mode = 0777);
+#endif /* _WIN32 */
 
 /**
  * Does a file exist?
@@ -222,6 +242,17 @@ static inline int delete_file(const std::string &filename)
 RP_LIBROMDATA_PUBLIC
 const char *file_ext(const char *filename);
 
+/**
+ * Get the file extension from a filename or pathname.
+ * NOTE: Returned value points into the specified filename.
+ * @param filename Filename (UTF-8)
+ * @return File extension, including the leading dot; nullptr if no extension.
+ */
+static inline const char *file_ext(const std::string &filename)
+{
+	return file_ext(filename.c_str());
+}
+
 #ifdef _WIN32
 /**
  * Get the file extension from a filename or pathname. (wchar_t version)
@@ -231,6 +262,17 @@ const char *file_ext(const char *filename);
  */
 RP_LIBROMDATA_PUBLIC
 const wchar_t *file_ext(const wchar_t *filename);
+
+/**
+ * Get the file extension from a filename or pathname. (wchar_t version)
+ * NOTE: Returned value points into the specified filename.
+ * @param filename Filename (UTF-16)
+ * @return File extension, including the leading dot; nullptr if no extension.
+ */
+static inline const wchar_t *file_ext(const std::wstring &filename)
+{
+	return file_ext(filename.c_str());
+}
 #endif /* _WIN32 */
 
 /**
@@ -301,6 +343,19 @@ std::wstring resolve_symlink(const wchar_t *filename);
 RP_LIBROMDATA_PUBLIC
 bool is_directory(const char *filename);
 
+/**
+ * Check if the specified file is a directory.
+ *
+ * Symbolic links are resolved as per usual directory traversal.
+ *
+ * @param filename Filename to check (UTF-8)
+ * @return True if the file is a directory; false if not.
+ */
+static inline bool is_directory(const std::string &filename)
+{
+	return is_directory(filename.c_str());
+}
+
 #ifdef _WIN32
 /**
  * Check if the specified file is a directory.
@@ -312,6 +367,19 @@ bool is_directory(const char *filename);
  */
 RP_LIBROMDATA_PUBLIC
 bool is_directory(const wchar_t *filename);
+
+/**
+ * Check if the specified file is a directory.
+ *
+ * Symbolic links are resolved as per usual directory traversal.
+ *
+ * @param filename Filename to check (UTF-16)
+ * @return True if the file is a directory; false if not.
+ */
+static inline bool is_directory(const std::wstring &filename)
+{
+	return is_directory(filename.c_str());
+}
 #endif /* _WIN32 */
 
 /**
@@ -328,6 +396,22 @@ bool is_directory(const wchar_t *filename);
 RP_LIBROMDATA_PUBLIC
 bool isOnBadFS(const char *filename, bool allowNetFS = false);
 
+/**
+ * Is a file located on a "bad" file system?
+ *
+ * We don't want to check files on e.g. procfs,
+ * or on network file systems if the option is disabled.
+ *
+ * @param filename Filename (UTF-8)
+ * @param allowNetFS If true, allow network file systems.
+ *
+ * @return True if this file is on a "bad" file system; false if not.
+ */
+static inline bool isOnBadFS(const std::string &filename, bool allowNetFS = false)
+{
+	return isOnBadFS(filename.c_str(), allowNetFS);
+}
+
 #ifdef _WIN32
 /**
  * Is a file located on a "bad" file system?
@@ -342,6 +426,22 @@ bool isOnBadFS(const char *filename, bool allowNetFS = false);
  */
 RP_LIBROMDATA_PUBLIC
 bool isOnBadFS(const wchar_t *filename, bool allowNetFS = false);
+
+/**
+ * Is a file located on a "bad" file system?
+ *
+ * We don't want to check files on e.g. procfs,
+ * or on network file systems if the option is disabled.
+ *
+ * @param filename Filename (UTF-16)
+ * @param allowNetFS If true, allow network file systems.
+ *
+ * @return True if this file is on a "bad" file system; false if not.
+ */
+static inline bool isOnBadFS(const std::wstring &filename, bool allowNetFS = false)
+{
+	return isOnBadFS(filename.c_str(), allowNetFS);
+}
 #endif /* _WIN32 */
 
 /**

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpsecure)                      *
  * os-secure_linux.c: OS security functions. (Linux)                       *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2024 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -71,6 +71,11 @@ int rp_secure_enable(rp_secure_param_t param)
 		SCMP_SYS(read),
 		SCMP_SYS(rt_sigreturn),
 		SCMP_SYS(write),
+#ifdef ENABLE_NIXOS
+		// NixOS: std::locale ctor ends up calling getdents64().
+		// This doesn't happen on any other Linux system I know of...
+		SCMP_SYS(getdents64),
+#endif /* ENABLE_NIXOS */
 
 		SCMP_SYS(access),
 		SCMP_SYS(faccessat),	// Linux on aarch64 does not have an access() syscall
@@ -79,6 +84,17 @@ int rp_secure_enable(rp_secure_param_t param)
 #elif defined(__NR_faccessat2)
 		__NR_faccessat2		// Required for Gentoo's sandbox (amiiboc)
 #endif /* __SNR_faccessat2 || __NR_faccessat2 */
+
+		// stat()
+		SCMP_SYS(stat), SCMP_SYS(stat64),		// LibUnixCommon::isWritableDirectory()
+		SCMP_SYS(fstat), SCMP_SYS(fstat64), 		// __GI___fxstat() [printf()]
+		SCMP_SYS(fstatat64), SCMP_SYS(newfstatat),	// Ubuntu 19.10 (32-bit)
+
+#if defined(__SNR_statx) || defined(__NR_statx)
+		// statx()
+		SCMP_SYS(getcwd),	// called by glibc's statx()
+		SCMP_SYS(statx),
+#endif /* __SNR_statx || __NR_statx */
 
 		// restart_syscall() is called by glibc to restart
 		// certain syscalls if they're interrupted.

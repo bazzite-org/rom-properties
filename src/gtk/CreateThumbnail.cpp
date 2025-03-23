@@ -2,15 +2,15 @@
  * ROM Properties Page shell extension. (GTK+ common)                      *
  * CreateThumbnail.cpp: Thumbnail creator for wrapper programs.            *
  *                                                                         *
- * Copyright (c) 2017-2024 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
 #include "stdafx.h"
+#include "config.gtk.h"
+
 #include "CreateThumbnail.hpp"
 #include "check-uid.h"
-
-#include "ProxyForUrl.hpp"
 #include "RpGtk.h"
 
 // Other rom-properties libraries
@@ -28,9 +28,12 @@ using namespace LibRomData;
 #include "libromdata/img/TCreateThumbnail.cpp"
 using LibRomData::TCreateThumbnail;
 
+#ifdef ENABLE_NETWORKING
+#  include "ProxyForUrl.hpp"
 // NetworkManager D-Bus interface to determine if the connection is metered.
-#include <glib-object.h>
-#include "NetworkManager.h"
+#  include <glib-object.h>
+#  include "NetworkManager.h"
+#endif /* ENABLE_NETWORKING */
 
 // C++ STL classes
 using std::string;
@@ -120,7 +123,12 @@ public:
 	 */
 	inline string proxyForUrl(const char *url) const final
 	{
+#ifdef ENABLE_NETWORKING
 		return ::proxyForUrl(url);
+#else /* !ENABLE_NETWORKING */
+		RP_UNUSED(url);
+		return {};
+#endif /* ENABLE_NETWORKING */
 	}
 
 	/**
@@ -134,6 +142,7 @@ public:
 	 */
 	bool isMetered(void) final
 	{
+#ifdef ENABLE_NETWORKING
 		// Connect to the service using gdbus-codegen's generated code.
 		Manager *proxy = nullptr;
 		GError *error = nullptr;
@@ -163,6 +172,10 @@ public:
 		const NMMetered metered = static_cast<NMMetered>(manager_get_metered(proxy));
 		g_object_unref(proxy);
 		return (metered == NM_METERED_YES || metered == NM_METERED_GUESS_YES);
+#else /* !ENABLE_NETWORKING */
+		// No-network build
+		return false;
+#endif /* ENABLE_NETWORKING */
 	}
 };
 
@@ -210,7 +223,7 @@ static RomDataPtr openFromFilenameOrURI(const char *source_file, string &s_uri, 
 				// Attempt to open the ROM file.
 				const IRpFilePtr file =
 					std::make_shared<RpFile>(source_filename, RpFile::FM_OPEN_READ_GZ);
-				if (!file) {
+				if (!file->isOpen()) {
 					// Could not open the file.
 					if (p_err) {
 						*p_err = RPCT_ERROR_CANNOT_OPEN_SOURCE_FILE;
@@ -240,7 +253,7 @@ static RomDataPtr openFromFilenameOrURI(const char *source_file, string &s_uri, 
 			if (!enableThumbnailOnNetworkFS) {
 				// Thumbnailing on network file systems is disabled.
 				*p_err = RPCT_ERROR_SOURCE_FILE_BAD_FS;
-				return nullptr;
+				return {};
 			}
 
 			// Open the file using RpFileGio.
@@ -268,7 +281,7 @@ static RomDataPtr openFromFilenameOrURI(const char *source_file, string &s_uri, 
 		if (FileSystem::isOnBadFS(source_file, enableThumbnailOnNetworkFS)) {
 			// It's on a "bad" filesystem.
 			*p_err = RPCT_ERROR_SOURCE_FILE_BAD_FS;
-			return nullptr;
+			return {};
 		}
 
 		// Check if we have an absolute or relative path.
@@ -363,9 +376,9 @@ G_MODULE_EXPORT int RP_C_API rp_create_thumbnail2(
 
 	// Make sure glib is initialized.
 	// NOTE: This is a no-op as of glib-2.35.1.
-#if !GLIB_CHECK_VERSION(2,35,1)
+#if !GLIB_CHECK_VERSION(2, 35, 1)
 	g_type_init();
-#endif
+#endif /* !GLIB_CHECK_VERSION(2, 35, 1) */
 
 	// NOTE: TCreateThumbnail() has wrappers for opening the
 	// ROM file and getting RomData*, but we're doing it here
@@ -405,10 +418,10 @@ G_MODULE_EXPORT int RP_C_API rp_create_thumbnail2(
 	// gdk-pixbuf doesn't support CI8, so we'll assume all
 	// images are ARGB32. (Well, ABGR32, but close enough.)
 	// TODO: Verify channels, etc.?
-	unique_ptr<RpPngWriter> pngWriter(new RpPngWriter(output_file,
+	RpPngWriter pngWriter(output_file,
 		outParams.thumbSize.width, outParams.thumbSize.height,
-		rp_image::Format::ARGB32));
-	if (!pngWriter->isOpen()) {
+		rp_image::Format::ARGB32);
+	if (!pngWriter.isOpen()) {
 		// Could not open the PNG writer.
 		ret = RPCT_ERROR_OUTPUT_FILE_FAILED;
 		goto cleanup;
@@ -427,10 +440,8 @@ G_MODULE_EXPORT int RP_C_API rp_create_thumbnail2(
 
 	if (doXDG) {
 		// Modification time and file size
-		char mtime_str[32];
-		char szFile_str[32];
-		mtime_str[0] = 0;
-		szFile_str[0] = 0;
+		uint64_t mtime = 0;
+		off64_t szFile = -1;
 		GFile *const f_src = g_file_new_for_uri(s_uri.c_str());
 		if (f_src) {
 			GError *error = nullptr;
@@ -439,17 +450,11 @@ G_MODULE_EXPORT int RP_C_API rp_create_thumbnail2(
 				G_FILE_QUERY_INFO_NONE, nullptr, &error);
 			if (!error) {
 				// Get the modification time.
-				const guint64 mtime =
-					g_file_info_get_attribute_uint64(fi_src, G_FILE_ATTRIBUTE_TIME_MODIFIED);
-				if (mtime > 0) {
-					snprintf(mtime_str, sizeof(mtime_str), "%" PRId64, (int64_t)mtime);
-				}
+				// NOTE: This is **uint64**, not int64.
+				mtime = g_file_info_get_attribute_uint64(fi_src, G_FILE_ATTRIBUTE_TIME_MODIFIED);
 
 				// Get the file size.
-				const gint64 szFile = g_file_info_get_size(fi_src);
-				if (szFile > 0) {
-					snprintf(szFile_str, sizeof(szFile_str), "%" PRId64, szFile);
-				}
+				szFile = g_file_info_get_size(fi_src);
 
 				g_object_unref(fi_src);
 			} else {
@@ -459,8 +464,8 @@ G_MODULE_EXPORT int RP_C_API rp_create_thumbnail2(
 		}
 
 		// Modification time
-		if (mtime_str[0] != '\0') {
-			kv.emplace_back("Thumb::MTime", mtime_str);
+		if (mtime > 0) {
+			kv.emplace_back("Thumb::MTime", fmt::to_string(static_cast<int64_t>(mtime)));
 		}
 
 		// MIME type
@@ -470,17 +475,14 @@ G_MODULE_EXPORT int RP_C_API rp_create_thumbnail2(
 		}
 
 		// File size
-		if (szFile_str[0] != '\0') {
-			kv.emplace_back("Thumb::Size", szFile_str);
+		if (szFile > 0) {
+			kv.emplace_back("Thumb::Size", fmt::to_string(szFile));
 		}
 
 		// Original image dimensions
 		if (outParams.fullSize.width > 0 && outParams.fullSize.height > 0) {
-			char imgdim_str[16];
-			snprintf(imgdim_str, sizeof(imgdim_str), "%d", outParams.fullSize.width);
-			kv.emplace_back("Thumb::Image::Width", imgdim_str);
-			snprintf(imgdim_str, sizeof(imgdim_str), "%d", outParams.fullSize.height);
-			kv.emplace_back("Thumb::Image::Height", imgdim_str);
+			kv.emplace_back("Thumb::Image::Width", fmt::to_string(outParams.fullSize.width));
+			kv.emplace_back("Thumb::Image::Height", fmt::to_string(outParams.fullSize.height));
 		}
 
 		// URI
@@ -491,17 +493,17 @@ G_MODULE_EXPORT int RP_C_API rp_create_thumbnail2(
 		// References:
 		// - https://bugs.kde.org/show_bug.cgi?id=393015
 		// - https://specifications.freedesktop.org/thumbnail-spec/thumbnail-spec-latest.html
-		kv.emplace_back("Thumb::URI", s_uri.c_str());
+		kv.emplace_back("Thumb::URI", s_uri);
 	}
 
 	// Write the tEXt chunks.
-	pngWriter->write_tEXt(kv);
+	pngWriter.write_tEXt(kv);
 
 	/** IHDR **/
 
 	// If sBIT wasn't found, all fields will be 0.
 	// RpPngWriter will ignore sBIT in this case.
-	pwRet = pngWriter->write_IHDR(&outParams.sBIT);
+	pwRet = pngWriter.write_IHDR(&outParams.sBIT);
 	if (pwRet != 0) {
 		// Error writing IHDR.
 		// TODO: Unlink the PNG image.
@@ -548,7 +550,7 @@ G_MODULE_EXPORT int RP_C_API rp_create_thumbnail2(
 	// GdkPixbuf use ABGR32.
 	static constexpr bool is_abgr = true;
 #endif
-	pwRet = pngWriter->write_IDAT(row_pointers.get(), is_abgr);
+	pwRet = pngWriter.write_IDAT(row_pointers.get(), is_abgr);
 #ifdef RP_GTK_USE_GDKTEXTURE
 	g_free(texdata);
 #endif /* RP_GTK_USE_GDKTEXTURE */

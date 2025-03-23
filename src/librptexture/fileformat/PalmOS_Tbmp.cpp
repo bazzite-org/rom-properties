@@ -38,7 +38,6 @@ class PalmOS_Tbmp_Private final : public FileFormatPrivate
 {
 public:
 	PalmOS_Tbmp_Private(PalmOS_Tbmp *q, const IRpFilePtr &file, off64_t bitmapTypeAddr = 0);
-	~PalmOS_Tbmp_Private() final = default;
 
 private:
 	typedef FileFormatPrivate super;
@@ -46,8 +45,8 @@ private:
 
 public:
 	/** TextureInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const TextureInfo textureInfo;
 
 public:
@@ -96,21 +95,21 @@ FILEFORMAT_IMPL(PalmOS_Tbmp)
 /** PalmOS_Tbmp_Private **/
 
 /* TextureInfo */
-const char *const PalmOS_Tbmp_Private::exts[] = {
+const array<const char*, 1+1> PalmOS_Tbmp_Private::exts = {{
 	".tbmp",
 
 	nullptr
-};
-const char *const PalmOS_Tbmp_Private::mimeTypes[] = {
+}};
+const array<const char*, 1+1> PalmOS_Tbmp_Private::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	// TODO: Add additional MIME types for XPR1/XPR2. (archive files)
 	"image/x-palm-tbmp",
 
 	nullptr
-};
+}};
 const TextureInfo PalmOS_Tbmp_Private::textureInfo = {
-	exts, mimeTypes
+	exts.data(), mimeTypes.data()
 };
 
 PalmOS_Tbmp_Private::PalmOS_Tbmp_Private(PalmOS_Tbmp *q, const IRpFilePtr &file, off64_t bitmapTypeAddr)
@@ -133,7 +132,7 @@ uint8_t *PalmOS_Tbmp_Private::decompress_scanline(const uint8_t *compr_data, siz
 
 	const int height = be16_to_cpu(bitmapType.height);
 	const unsigned int rowBytes = be16_to_cpu(bitmapType.rowBytes);
-	const size_t icon_data_len = (size_t)rowBytes * (size_t)height;
+	const size_t icon_data_len = static_cast<size_t>(rowBytes) * static_cast<size_t>(height);
 
 	unique_ptr<uint8_t[]> decomp_buf(new uint8_t[icon_data_len]);
 	uint8_t *dest = decomp_buf.get();
@@ -189,7 +188,7 @@ uint8_t *PalmOS_Tbmp_Private::decompress_RLE(const uint8_t *compr_data, size_t c
 
 	const int height = dimensions[1];
 	const unsigned int rowBytes = be16_to_cpu(bitmapType.rowBytes);
-	const size_t icon_data_len = (size_t)rowBytes * (size_t)height;
+	const size_t icon_data_len = static_cast<size_t>(rowBytes) * static_cast<size_t>(height);
 
 	unique_ptr<uint8_t[]> decomp_buf(new uint8_t[icon_data_len]);
 	const uint8_t *const dest_end = &decomp_buf[icon_data_len];
@@ -253,7 +252,7 @@ uint8_t *PalmOS_Tbmp_Private::decompress_PackBits8(const uint8_t *compr_data, si
 
 	const int height = dimensions[1];
 	const unsigned int rowBytes = be16_to_cpu(bitmapType.rowBytes);
-	const size_t icon_data_len = (size_t)rowBytes * (size_t)height;
+	const size_t icon_data_len = static_cast<size_t>(rowBytes) * static_cast<size_t>(height);
 
 	unique_ptr<uint8_t[]> decomp_buf(new uint8_t[icon_data_len]);
 	uint8_t *dest = decomp_buf.get();
@@ -342,7 +341,7 @@ rp_image_const_ptr PalmOS_Tbmp_Private::loadTbmp(void)
 		return {};
 	}
 	const unsigned int rowBytes = be16_to_cpu(bitmapType.rowBytes);
-	size_t icon_data_len = (size_t)rowBytes * (size_t)height;
+	const size_t icon_data_len = static_cast<size_t>(rowBytes) * static_cast<size_t>(height);
 	const uint16_t flags = be16_to_cpu(bitmapType.flags);
 
 	PalmOS_BitmapDirectInfoType_t bitmapDirectInfoType;
@@ -662,38 +661,11 @@ rp_image_const_ptr PalmOS_Tbmp_Private::loadTbmp(void)
  *
  * NOTE: Check isValid() to determine if this is a valid ROM.
  *
- * @param file Open image file.
- */
-PalmOS_Tbmp::PalmOS_Tbmp(const IRpFilePtr &file)
-	: super(new PalmOS_Tbmp_Private(this, file, 0))
-{
-	init();
-}
-
-/**
- * Read a Palm OS Tbmp image file.
- *
- * A ROM image must be opened by the caller. The file handle
- * will be ref()'d and must be kept open in order to load
- * data from the ROM image.
- *
- * To close the file, either delete this object or call close().
- *
- * NOTE: Check isValid() to determine if this is a valid ROM.
- *
- * @param file Open file.
+ * @param file Open Palm OS Tbmp image file
  * @param bitmapTypeAddr Starting address of the BitmapType header in the file.
  */
 PalmOS_Tbmp::PalmOS_Tbmp(const IRpFilePtr &file, off64_t bitmapTypeAddr)
 	: super(new PalmOS_Tbmp_Private(this, file, bitmapTypeAddr))
-{
-	init();
-}
-
-/**
- * Internal initialization function.
- */
-void PalmOS_Tbmp::init(void)
 {
 	RP_D(PalmOS_Tbmp);
 	d->mimeType = "image/x-palm-tbmp";	// unofficial, not on fd.o
@@ -787,7 +759,6 @@ const char *PalmOS_Tbmp::pixelFormat(void) const
 					px_fmt = "RGB565 (little-endian)";
 					break;
 			}
-			px_fmt = "RGB565 (big-endian)";
 			break;
 		}
 	}
@@ -871,4 +842,4 @@ rp_image_const_ptr PalmOS_Tbmp::image(void) const
 	return const_cast<PalmOS_Tbmp_Private*>(d)->loadTbmp();
 }
 
-}
+} // namespace LibRpTexture

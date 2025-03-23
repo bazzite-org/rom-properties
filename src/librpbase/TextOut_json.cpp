@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpbase)                        *
  * TextOut.hpp: Text output for RomData. (JSON output)                     *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * Copyright (c) 2016-2018 by Egor.                                        *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
@@ -54,7 +54,7 @@ private:
 		char s_lc[8];
 		int s_lc_pos = 0;
 		for (; lc != 0; lc <<= 8) {
-			const char chr = (char)(lc >> 24);
+			const char chr = static_cast<char>(lc >> 24);
 			if (chr != 0) {
 				s_lc[s_lc_pos++] = chr;
 			}
@@ -78,8 +78,7 @@ private:
 
 		const bool has_checkboxes = !!(romField.flags & RomFields::RFT_LISTDATA_CHECKBOXES);
 		uint32_t checkboxes = romField.data.list_data.mxd.checkboxes;
-		const auto list_data_cend = list_data->cend();
-		for (auto it = list_data->cbegin(); it != list_data_cend; ++it) {
+		for (const auto &it : *list_data) {
 			Value row_array(kArrayType);
 			if (has_checkboxes) {
 				// TODO: Better JSON schema for RFT_LISTDATA_CHECKBOXES?
@@ -88,18 +87,19 @@ private:
 			}
 
 			unsigned int is_timestamp = romField.desc.list_data.col_attrs.is_timestamp;
-			const auto it_cend = it->cend();
-			for (auto jt = it->cbegin(); jt != it_cend; ++jt, is_timestamp >>= 1) {
-				if (unlikely((is_timestamp & 1) && jt->size() == sizeof(int64_t))) {
+			for (const string &jt : it) {
+				if (unlikely((is_timestamp & 1) && jt.size() == sizeof(int64_t))) {
 					// Timestamp column. Print the timestamp directly, similar to RFT_DATETIME.
 					RomFields::TimeString_t time_string;
-					memcpy(time_string.str, jt->data(), 8);
+					memcpy(time_string.str, jt.data(), 8);
 					row_array.PushBack(time_string.time, allocator);
 				} else {
 					// Not a timestamp column. Use the string as-is.
 					// TODO: Some way to indicate a numeric data column?
-					row_array.PushBack(StringRef(*jt), allocator);
+					row_array.PushBack(StringRef(jt), allocator);
 				}
+
+				is_timestamp >>= 1;
 			}
 
 			data_array.PushBack(row_array, allocator);
@@ -111,9 +111,7 @@ private:
 public:
 	void writeToJSON(Value &fields_array, Allocator &allocator)
 	{
-		const auto fields_cend = fields.cend();
-		for (auto iter = fields.cbegin(); iter != fields_cend; ++iter) {
-			const auto &romField = *iter;
+		for (const RomFields::Field &romField : fields) {
 			assert(romField.isValid());
 			if (!romField.isValid())
 				continue;
@@ -272,7 +270,7 @@ public:
 							continue;
 
 						Value rating_obj(kObjectType);
-						const char *const abbrev = RomFields::ageRatingAbbrev((RomFields::AgeRatingsCountry)j);
+						const char *const abbrev = RomFields::ageRatingAbbrev(static_cast<RomFields::AgeRatingsCountry>(j));
 						if (abbrev) {
 							rating_obj.AddMember("name", StringRef(abbrev), allocator);
 						} else {
@@ -281,7 +279,7 @@ public:
 							rating_obj.AddMember("name", j, allocator);
 						}
 
-						const string s_age_rating = RomFields::ageRatingDecode((RomFields::AgeRatingsCountry)j, rating);
+						const string s_age_rating = RomFields::ageRatingDecode(static_cast<RomFields::AgeRatingsCountry>(j), rating);
 						Value rating_val;
 						rating_val.SetString(s_age_rating, allocator);
 						rating_obj.AddMember("rating", rating_val, allocator);
@@ -354,7 +352,7 @@ JSONROMOutput::JSONROMOutput(const RomData *romdata, uint32_t lc, unsigned int f
 	, crlf_(false) { }
 RP_LIBROMDATA_PUBLIC
 std::ostream& operator<<(std::ostream& os, const JSONROMOutput& fo) {
-	auto romdata = fo.romdata;
+	const auto *const romdata = fo.romdata;
 	assert(romdata && romdata->isValid());
 
 	const char *const systemName = romdata->systemName(RomData::SYSNAME_TYPE_LONG | RomData::SYSNAME_REGION_ROM_LOCAL);
@@ -389,12 +387,12 @@ std::ostream& operator<<(std::ostream& os, const JSONROMOutput& fo) {
 				if (!(imgbf & (1U << i)))
 					continue;
 
-				auto image = romdata->image((RomData::ImageType)i);
+				auto image = romdata->image(static_cast<RomData::ImageType>(i));
 				if (!image || !image->isValid())
 					continue;
 
 				Value imgint_obj(kObjectType);
-				imgint_obj.AddMember("type", StringRef(RomData::getImageTypeName((RomData::ImageType)i)), allocator);
+				imgint_obj.AddMember("type", StringRef(RomData::getImageTypeName(static_cast<RomData::ImageType>(i))), allocator);
 				imgint_obj.AddMember("format", StringRef(rp_image::getFormatName(image->format())), allocator);
 
 				Value size_array(kArrayType);	// size
@@ -402,7 +400,7 @@ std::ostream& operator<<(std::ostream& os, const JSONROMOutput& fo) {
 				size_array.PushBack(image->height(), allocator);
 				imgint_obj.AddMember("size", size_array, allocator);
 
-				const uint32_t ppf = romdata->imgpf((RomData::ImageType)i);
+				const uint32_t ppf = romdata->imgpf(static_cast<RomData::ImageType>(i));
 				if (ppf) {
 					imgint_obj.AddMember("postprocessing", ppf, allocator);
 				}
@@ -414,7 +412,7 @@ std::ostream& operator<<(std::ostream& os, const JSONROMOutput& fo) {
 
 						Value animseq(kArrayType);	// sequence
 						for (int j = 0; j < animdata->seq_count; j++) {
-							animseq.PushBack((unsigned)animdata->seq_index[j], allocator);
+							animseq.PushBack(static_cast<unsigned int>(animdata->seq_index[j]), allocator);
 						}
 						imgint_obj.AddMember("sequence", animseq, allocator);
 
@@ -447,12 +445,12 @@ std::ostream& operator<<(std::ostream& os, const JSONROMOutput& fo) {
 			extURLs.clear();	// NOTE: May not be needed...
 			// TODO: Customize the image size parameter?
 			// TODO: Option to retrieve supported image size?
-			int ret = romdata->extURLs((RomData::ImageType)i, &extURLs, RomData::IMAGE_SIZE_DEFAULT);
+			int ret = romdata->extURLs(static_cast<RomData::ImageType>(i), extURLs, RomData::IMAGE_SIZE_DEFAULT);
 			if (ret != 0 || extURLs.empty())
 				continue;
 
 			Value imgext_obj(kObjectType);
-			imgext_obj.AddMember("type", StringRef(RomData::getImageTypeName((RomData::ImageType)i)), allocator);
+			imgext_obj.AddMember("type", StringRef(RomData::getImageTypeName(static_cast<RomData::ImageType>(i))), allocator);
 
 			Value exturls_obj(kObjectType);
 			for (const auto &extURL : extURLs) {
@@ -489,4 +487,4 @@ std::ostream& operator<<(std::ostream& os, const JSONROMOutput& fo) {
 	return os;
 }
 
-}
+} // namespace LibRpBase

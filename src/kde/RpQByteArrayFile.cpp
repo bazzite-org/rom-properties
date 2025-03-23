@@ -9,7 +9,7 @@
 #include "stdafx.h"
 #include "RpQByteArrayFile.hpp"
 
-// C++ STL classes.
+// C++ STL classes
 using std::string;
 
 // 128 MB *should* be a reasonable maximum...
@@ -20,8 +20,7 @@ static constexpr off64_t QBYTEARRAYFILE_MAX_SIZE = 128U*1024*1024;
  * The resulting IRpFile is writable.
  */
 RpQByteArrayFile::RpQByteArrayFile()
-	: super()
-	, m_pos(0)
+	: m_pos(0)
 {
 	// Reserve at least 16 KB.
 	m_byteArray.reserve(16*1024);
@@ -137,7 +136,7 @@ int RpQByteArrayFile::seek(off64_t pos)
  */
 off64_t RpQByteArrayFile::tell(void)
 {
-	return (off64_t)m_pos;
+	return static_cast<off64_t>(m_pos);
 }
 
 /**

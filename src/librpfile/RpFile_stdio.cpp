@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpfile)                        *
  * RpFile_stdio.cpp: Standard file object. (stdio implementation)          *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -20,9 +20,12 @@
 #include "librpbyteswap/byteswap_rp.h"
 
 // C includes
-#include <fcntl.h>	// AT_EMPTY_PATH
+#include <fcntl.h>	// AT_EMPTY_PATH, FD_CLOEXEC
 #include <sys/stat.h>	// stat(), statx()
 #include <unistd.h>	// ftruncate()
+
+// C++ STL classes
+using std::string;
 
 namespace LibRpFile {
 
@@ -30,10 +33,10 @@ namespace LibRpFile {
 
 RpFilePrivate::RpFilePrivate(RpFile *q, const char *filename, RpFile::FileMode mode)
 	: q_ptr(q), file(INVALID_HANDLE_VALUE)
-	, mode(mode), gzfd(nullptr), gzsz(-1), devInfo(nullptr)
+	, mode(mode), gzfd(nullptr), gzsz(-1)
 {
 	assert(filename != nullptr);
-	this->filename = strdup(filename);
+	this->filename.assign(filename);
 }
 
 RpFilePrivate::~RpFilePrivate()
@@ -44,8 +47,6 @@ RpFilePrivate::~RpFilePrivate()
 	if (file) {
 		fclose(file);
 	}
-	free(filename);
-	delete devInfo;
 }
 
 /**
@@ -57,12 +58,12 @@ inline const char *RpFilePrivate::mode_to_str(RpFile::FileMode mode)
 {
 	switch (mode & RpFile::FM_MODE_MASK) {
 		case RpFile::FM_OPEN_READ:
-			return "rb";
+			return "rb" FOPEN_CLOEXEC_FLAG;
 		case RpFile::FM_OPEN_WRITE:
-			return "rb+";
+			return "rb+" FOPEN_CLOEXEC_FLAG;
 		case RpFile::FM_CREATE|RpFile::FM_READ /*RpFile::FM_CREATE_READ*/ :
 		case RpFile::FM_CREATE_WRITE:
-			return "wb+";
+			return "wb+" FOPEN_CLOEXEC_FLAG;
 		default:
 			// Invalid mode.
 			return nullptr;
@@ -99,7 +100,7 @@ int RpFilePrivate::reOpenFile(void)
 	uint8_t fileType = 0;
 #ifdef HAVE_STATX
 	struct statx sbx;
-	int ret = statx(AT_FDCWD, filename, 0, STATX_TYPE, &sbx);
+	int ret = statx(AT_FDCWD, filename.c_str(), 0, STATX_TYPE, &sbx);
 	if (ret == 0 && (sbx.stx_mask & STATX_TYPE)) {
 		// statx() succeeded.
 		hasFileMode = true;
@@ -107,7 +108,7 @@ int RpFilePrivate::reOpenFile(void)
 	}
 #else /* !HAVE_STATX */
 	struct stat sb;
-	if (!stat(filename, &sb)) {
+	if (!stat(filename.c_str(), &sb)) {
 		// fstat() succeeded.
 		hasFileMode = true;
 		fileType = IFTODT(sb.st_mode);
@@ -181,7 +182,7 @@ int RpFilePrivate::reOpenFile(void)
 #ifndef NO_PATTERNS_FOR_THIS_OS
 		bool isMatch = false;
 		for (const auto &pattern : fileNamePatterns) {
-			if (!strncasecmp(filename, &pattern[1], (uint8_t)pattern[0])) {
+			if (!strncasecmp(filename.c_str(), &pattern[1], static_cast<uint8_t>(pattern[0]))) {
 				// Found a match!
 				isMatch = true;
 				break;
@@ -197,7 +198,7 @@ int RpFilePrivate::reOpenFile(void)
 #endif /* NO_PATTERNS_FOR_THIS_OS */
 	}
 
-	file = fopen(filename, mode_str);
+	file = fopen(filename.c_str(), mode_str);
 
 	// If fopen() failed (and returned nullptr),
 	// return the non-zero error code.
@@ -209,11 +210,15 @@ int RpFilePrivate::reOpenFile(void)
 		return q->m_lastError;
 	}
 
+#if !defined(HAVE_FOPEN_CLOEXEC) && defined(FD_CLOEXEC)
+	set_FD_CLOEXEC_flag(file, true);
+#endif /* !defined(HAVE_FOPEN_CLOEXEC) && defined(FD_CLOEXEC) */
+
 	if (q->isDevice()) {
 		// Allocate devInfo.
 		// NOTE: This is kept around until RpFile is deleted,
 		// even if the device can't be opeend for some reason.
-		devInfo = new DeviceInfo();
+		devInfo.reset(new DeviceInfo());
 
 		// Get the device size from the OS.
 		q->rereadDeviceSizeOS();
@@ -231,30 +236,7 @@ int RpFilePrivate::reOpenFile(void)
  * @param mode File mode
  */
 RpFile::RpFile(const char *filename, FileMode mode)
-	: super()
-	, d_ptr(new RpFilePrivate(this, filename, mode))
-{
-	init();
-}
-
-/**
- * Open a file.
- * NOTE: Files are always opened in binary mode.
- * @param filename Filename
- * @param mode File mode
- */
-RpFile::RpFile(const string &filename, FileMode mode)
-	: super()
-	, d_ptr(new RpFilePrivate(this, filename.c_str(), mode))
-{
-	init();
-}
-
-/**
- * Common initialization function for RpFile's constructors.
- * Filename must be set in d->filename.
- */
-void RpFile::init(void)
+	: d_ptr(new RpFilePrivate(this, filename, mode))
 {
 	RP_D(RpFile);
 
@@ -280,29 +262,27 @@ void RpFile::init(void)
 	if (tryGzip) { do {
 		uint16_t gzmagic;
 		size_t size = fread(&gzmagic, 1, sizeof(gzmagic), d->file);
-		if (size != sizeof(gzmagic) || gzmagic != be16_to_cpu(0x1F8B))
+		if (size != sizeof(gzmagic) || gzmagic != be16_to_cpu(0x1F8B)) {
 			break;
+		}
 
 		// This is a gzipped file.
 		// Get the uncompressed size at the end of the file.
-		fseeko(d->file, 0, SEEK_END);
-		off64_t real_sz = ftello(d->file);
-		if (real_sz <= 10+8)
+		if (fseeko(d->file, -4, SEEK_END) != 0) {
 			break;
-
-		if (fseeko(d->file, real_sz-4, SEEK_SET) != 0)
-			break;
+		}
 
 		uint32_t uncomp_sz;
 		size = fread(&uncomp_sz, 1, sizeof(uncomp_sz), d->file);
 		uncomp_sz = le32_to_cpu(uncomp_sz);
-		if (size != sizeof(uncomp_sz) /*|| uncomp_sz < real_sz-(10+8)*/)
+		if (size != sizeof(uncomp_sz) /*|| uncomp_sz < real_sz-(10+8)*/) {
 			break;
+		}
 
 		// NOTE: Uncompressed size might be smaller than the real filesize
 		// in cases where gzip doesn't help much.
 		// TODO: Add better verification heuristics?
-		d->gzsz = (off64_t)uncomp_sz;
+		d->gzsz = static_cast<off64_t>(uncomp_sz);
 
 		// Make sure the CRC32 table is initialized.
 		get_crc_table();
@@ -330,6 +310,16 @@ void RpFile::init(void)
 		::fflush(d->file);
 	}
 }
+
+/**
+ * Open a file.
+ * NOTE: Files are always opened in binary mode.
+ * @param filename Filename
+ * @param mode File mode
+ */
+RpFile::RpFile(const string &filename, FileMode mode)
+	: RpFile(filename.c_str(), mode)
+{}
 
 RpFile::~RpFile()
 {
@@ -395,7 +385,7 @@ size_t RpFile::read(void *ptr, size_t size)
 	if (d->gzfd != nullptr) {
 		int iret = gzread(d->gzfd, ptr, size);
 		if (iret >= 0) {
-			ret = (size_t)iret;
+			ret = static_cast<size_t>(iret);
 		} else {
 			// An error occurred.
 			ret = 0;
@@ -498,7 +488,7 @@ off64_t RpFile::tell(void)
 	}
 
 	if (d->gzfd != nullptr) {
-		return (off64_t)gztell(d->gzfd);
+		return static_cast<off64_t>(gztell(d->gzfd));
 	}
 	return ftello(d->file);
 }
@@ -617,7 +607,7 @@ off64_t RpFile::size(void)
 const char *RpFile::filename(void) const
 {
 	RP_D(const RpFile);
-	return (d->filename != nullptr && d->filename[0] != '\0') ? d->filename : nullptr;
+	return (likely(!d->filename.empty())) ? d->filename.c_str() : nullptr;
 }
 
 /** Extra functions **/
@@ -639,15 +629,21 @@ int RpFile::makeWritable(void)
 	RP_D(RpFile);
 	off64_t prev_pos = ftello(d->file);
 	fclose(d->file);
-	d->file = fopen(d->filename, "rb+");
+	d->file = fopen(d->filename.c_str(), "rb+" FOPEN_CLOEXEC_FLAG);
 	if (d->file) {
 		// File is now writable.
+#if !defined(HAVE_FOPEN_CLOEXEC) && defined(FD_CLOEXEC)
+		d->set_FD_CLOEXEC_flag(d->file, true);
+#endif /* !defined(HAVE_FOPEN_CLOEXEC) && defined(FD_CLOEXEC) */
 		m_isWritable = true;
 	} else {
 		// Failed to open the file as writable.
 		// Try reopening as read-only.
-		d->file = fopen(d->filename, "rb");
+		d->file = fopen(d->filename.c_str(), "rb" FOPEN_CLOEXEC_FLAG);
 		if (d->file) {
+#if !defined(HAVE_FOPEN_CLOEXEC) && defined(FD_CLOEXEC)
+			d->set_FD_CLOEXEC_flag(d->file, true);
+#endif /* !defined(HAVE_FOPEN_CLOEXEC) && defined(FD_CLOEXEC) */
 			fseeko(d->file, prev_pos, SEEK_SET);
 		}
 		return -ENOTSUP;
@@ -655,8 +651,34 @@ int RpFile::makeWritable(void)
 
 	// Restore the seek position.
 	fseeko(d->file, prev_pos, SEEK_SET);
-	d->mode = (RpFile::FileMode)(d->mode | FM_WRITE);
+	d->mode = static_cast<RpFile::FileMode>(d->mode | FM_WRITE);
 	return 0;
 }
 
+#if !defined(_WIN32) && !defined(HAVE_FOPEN_CLOEXEC) && defined(FD_CLOEXEC)
+/**
+ * Set FD_CLOEXEC on the specified file.
+ * @param file File
+ * @param value True to set FD_CLOEXEC; false to clear it.
+ * @return 0 on success; non-zero on error.
+ */
+int RpFilePrivate::set_FD_CLOEXEC_flag(FILE *file, bool value)
+{
+	const int fd = fileno(file);
+
+	int oldflags = fcntl(fd, F_GETFD, 0);
+	if (oldflags < 0) {
+		return oldflags;
+	}
+
+	if (value) {
+		oldflags |= FD_CLOEXEC;
+	} else {
+		oldflags &= ~FD_CLOEXEC;
+	}
+
+	return fcntl(fd, F_SETFD, oldflags);
 }
+#endif /* !defined(_WIN32) && !defined(HAVE_FOPEN_CLOEXEC) && defined(FD_CLOEXEC) */
+
+} // namespace LibRpFile

@@ -6,7 +6,7 @@
  * arbitrary GtkWidgets. As such, the properties returned will be more       *
  * limited than in previous versions.                                        *
  *                                                                           *
- * Copyright (c) 2017-2023 by David Korth.                                   *
+ * Copyright (c) 2017-2025 by David Korth.                                   *
  * SPDX-License-Identifier: GPL-2.0-or-later                                 *
  *****************************************************************************/
 
@@ -158,9 +158,7 @@ rp_nautilus_properties_model_init_age_ratings(RpNautilusPropertiesModel *self, c
 static void
 rp_nautilus_properties_model_init_dimensions(RpNautilusPropertiesModel *self, const RomFields::Field &field)
 {
-	gchar *const str = rom_data_format_dimensions(field.data.dimensions);
-	append_item(self, field.name, str);
-	g_free(str);
+	append_item(self, field.name, rom_data_format_dimensions(field.data.dimensions).c_str());
 }
 
 /**
@@ -218,9 +216,9 @@ rp_nautilus_properties_model_load_from_romData(RpNautilusPropertiesModel *self,
 	// Add a "File Type" field with the system name and file type.
 	// Other UI frontends have dedicated widgets for this.
 	// NOTE: Using " | " separator; other UI frontends use "\n". (rpcli uses a single space)
-	const string sysInfo = rp_sprintf_p(
-		// tr: %1$s == system name, %2$s == file type
-		C_("RomDataView", "%1$s | %2$s"), systemName, fileType);
+	const string sysInfo = fmt::format(
+		// tr: {0:s} == system name, {1:s} == file type
+		FRUN(C_("RomDataView", "{0:s} | {1:s}")), systemName, fileType);
 	append_item(self, C_("RomDataView", "File Type"), sysInfo.c_str());
 
 	// Process RomData fields.
@@ -236,12 +234,11 @@ rp_nautilus_properties_model_load_from_romData(RpNautilusPropertiesModel *self,
 
 	const uint32_t def_lc = pFields->defaultLanguageCode();
 
-	const auto pFields_cend = pFields->cend();
-	for (auto iter = pFields->cbegin(); iter != pFields_cend; ++iter) {
-		const RomFields::Field &field = *iter;
+	for (const RomFields::Field &field : *pFields) {
 		assert(field.isValid());
-		if (!field.isValid())
+		if (!field.isValid()) {
 			continue;
+		}
 
 		switch (field.type) {
 			case RomFields::RFT_INVALID:
@@ -260,7 +257,7 @@ rp_nautilus_properties_model_load_from_romData(RpNautilusPropertiesModel *self,
 				rp_nautilus_properties_model_init_bitfield(self, field);
 				break;
 			case RomFields::RFT_LISTDATA:
-				// Can't easily do RFT_LISTDATA here.
+				// TODO: Allow single-column RFT_LISTDATA?
 				break;
 			case RomFields::RFT_DATETIME:
 				rp_nautilus_properties_model_init_datetime(self, field);
@@ -272,7 +269,6 @@ rp_nautilus_properties_model_load_from_romData(RpNautilusPropertiesModel *self,
 				rp_nautilus_properties_model_init_dimensions(self, field);
 				break;
 			case RomFields::RFT_STRING_MULTI:
-				// TODO: Multi-language handling?
 				rp_nautilus_properties_model_init_string_multi(self, field, def_lc);
 				break;
 		}

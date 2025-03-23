@@ -1,6 +1,89 @@
 # Changes
 
-## v2.4 (released 2024/03/??)
+## v2.5 (released 2025/??/??)
+
+* New parsers:
+  * J2ME: Parser for Java 2 Micro Edition .jar packages. This supports
+    J2ME .jar packages and .jad metadata files only. Other .jar files
+    will be ignored. Android packages (.apk) are also not currently
+    supported.
+  * Qoi: Quite OK Image Format parser. Uses qoi.h from upstream.
+  * rpcli: Text output for "warning" messages is now colorized if
+    printing to a terminal.
+
+* New parser features:
+  * WiiUPackage: Add support for extracted Wii U packages.
+    * Fixes #430: Add support for extracted WiiU games
+      * Requested by @Masamune3210.
+  * XboxDisc: Extracted disc file systems are now supported.
+    * Handled similarly to WiiUPackage.
+    * Fixes #436: Add folder icon support for OG Xbox games
+      * Requested by @Masamune3210.
+
+* Bug fixes:
+  * Amiibo: Fix an error that can cause the wrong Character Variant to be
+    displayed for certain amiibo.
+  * Windows: Fix seemingly random crashes and glitches (mostly on Windows 10)
+    that may occur when viewing the ROM Properties tab for a file type that
+    shows ListViews, e.g. EXE and DLL files.
+    * Fixes #432: [Bug Report] EXE/DLL files causes a crash
+      * Reported by @xxmichibxx.
+  * EXE: Handle PE executables with OptionalHeader.Magic=0 as PE32.
+    This fixes detection of some Win32s DLLs.
+    * Fixes #437: Old PE files from Win32s aren't recognized due to bad OptionalHeader magic
+      * Reported by @DankRank.
+    * Also fix a bad bounds check that broke the Exports table on these DLLs.
+      * Pull request: #438
+        * Submitted by @DankRank.
+  * Windows: Properly rescale the icon and banner sizes.
+    * PSP Minis would show a giant banner that messes up the tab display.
+    * Fixes #433: [Bug Report] The ROM type is not displayed correctly for some PSP Mini ROMs
+      * Reported by @xxmichibxx.
+      * Affects: v1.5 - v2.4.1
+  * PowerVR3: Fix detection of swapped-endian textures.
+    * Most textures are little-endian, so this mainly affects big-endian
+      systems like PowerPC.
+    * Affects: v2.4 - v2.4.1
+  * KDE rp-config: ImageTypesTab: Fix tab ordering for the Credits label.
+  * WiiUData: Fix some sorting issues that may have resulted in incorrect
+    publisher or application type information for some games.
+    * This also resulted in libstdc++ assertions in debug builds.
+  * EXE: Add machine types for CHPEv1 i386 and CHPEv2 ARM64X.
+    * Fixes #439: Missing ARM64 machine type IMAGE_FILE_MACHINE_CHPE_X86
+      * Reported by @pivotman319-owo.
+  * Xbox360_XEX: Fix Australian (ACB) age ratings in some XBLA titles.
+  * Xbox360_STFS: Fix reading XEXes that overlap a hash block boundary.
+    * NOTE: The entire XEX is now read into memory, which may cause slowdown.
+      This will be improved later.
+  * Windows: Fix handling of CD-ROM drives.
+    * This broke when support for Wii U Packages was added, since devices are
+      also considered root directories, so the directory check was done instead
+      of the device check.
+    * Affects: v2.4 - v2.4.1
+  * Dreamcast: Fix typo that broke GDI parsing.
+    * Affects: V2.4 - v2.4.1
+  * GTK UI frontends: Ensure the description label is also bold+red if the
+    field is a "warning" field.
+
+* Other changes:
+  * CMake: Added an ENABLE_NETWORKING option to control whether or not
+    network functionality, e.g. downloading boxart and checking for updates,
+    is enabled. Defaults to ON, but can be disabled for high-security
+    environments.
+  * libfmt is now used for string formatting in most parts of rom-properties.
+    libfmt has faster string parsing than printf() and stringstream, and has
+    guaranteed type-safe format handling using C++ templates, whereas printf
+    can get tripped up because it uses C-style varargs.
+
+## v2.4.1 (released 2024/11/12)
+
+* Bug fixes:
+  * Windows: Fix an issue with directory thumbnailing that broke Windows'
+    built-in directory thumbnailer if the directory isn't supported.
+    * Fixes #427: No Thumbnails after install
+      * Reported by @Conan179.
+
+## v2.4 (released 2024/11/10)
 
 * New features:
   * IFUNC resolvers have been rewritten to use our own CPUID code again,
@@ -38,6 +121,13 @@
     * Nintendo Wii save files
     * Windows/DOS executables
   * DMG: Detect Analogue Pocket ROM images.
+  * Dreamcast: CDI format disc images are now supported.
+    * Fixes #107: Dreamcast: CDI support.
+  * MegaDrive: Add a title encoding heuristic for JIS X 0208.
+  * PowerVR3: Preliminary support for PowerVR v2.0 files.
+    * Only uncompressed v2.0 textures are supported right now.
+    * Not all formats are implemented yet.
+  * PSP: PIC0.PNG is now presented as the "Banner" image.
 
 * Bug fixes:
   * On Linux, rp-config now correctly detects KDE Plasma 6 and uses the
@@ -86,6 +176,15 @@
   * GameCubeSave: Adjust icon delays.
     * Reported by @Louis322.
   * WiiTicket: Recognize CA04-XS09 from early Wii U titles.
+  * Windows: Reverted an rpcli manifest change from v2.1 that broke
+    compatibility with Windows XP.
+  * Added some workarounds for NixOS. Specify -DENABLE_NIXOS=ON when building
+    for NixOS to enable the workarounds.
+    * Fixes #406: Building on NixOS returns "invalid system call"
+      * Reported by @Whovian9369.
+  * Add qtpaths6 location on Arch Linux.
+    * PR #424: Fix qtpaths6 on Arch
+      * Submitted by @Kesefon.
 
 ## v2.3 (released 2024/03/03)
 
@@ -114,6 +213,8 @@
       will also be considered GPLv3.
     * Dark Mode is also partially supported in the properties pages when using
       tools such as StartAllBack, though it has some issues right now.
+      * Fixes #399: ROM Properties page displays incorrectly with StartAllBack installed
+        * Reported by @kristibektashi.
   * Sparse disc images, e.g. CISO and GCZ, are now handled by the RomDataFactory
     class instead of requiring each RomData subclass to handle it. This means
     that all supported sparse disc images can be used for any console.

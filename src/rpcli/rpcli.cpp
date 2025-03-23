@@ -3,7 +3,7 @@
  * rpcli.cpp: Command-line interface for properties.                       *
  *                                                                         *
  * Copyright (c) 2016-2018 by Egor.                                        *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -16,6 +16,9 @@
 // OS-specific security options.
 #include "rpcli_secure.h"
 
+// VT handling
+#include "vt.hpp"
+
 // librpbyteswap
 #include "librpbyteswap/byteswap_rp.h"
 
@@ -27,10 +30,6 @@
 #include "librpbase/img/IconAnimData.hpp"
 #include "librpbase/TextOut.hpp"
 using namespace LibRpBase;
-
-// librptext
-#include "librptext/printf.hpp"
-using namespace LibRpText;
 
 // librpfile
 #include "librpfile/config.librpfile.h"
@@ -51,6 +50,11 @@ using namespace LibRomData;
 #endif /* _WIN32 */
 using namespace LibRpTexture;
 
+#ifdef ENABLE_SIXEL
+// Sixel
+#include "rp_sixel.hpp"
+#endif /* ENABLE_SIXEL */
+
 #ifdef ENABLE_DECRYPTION
 #  include "verifykeys.hpp"
 #endif /* ENABLE_DECRYPTION */
@@ -60,6 +64,9 @@ using namespace LibRpTexture;
 #ifdef _WIN32
 #  include "libwin32common/userdirs.hpp"
 #  define OS_NAMESPACE LibWin32Common
+#  ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+#    define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x4
+#  endif /* ENABLE_VIRTUAL_TERMINAL_PROCESSING */
 #else
 #  include "libunixcommon/userdirs.hpp"
 #  define OS_NAMESPACE LibUnixCommon
@@ -67,10 +74,13 @@ using namespace LibRpTexture;
 #include "tcharx.h"
 
 // C++ STL classes
+#include <sstream>
+using std::array;
 using std::cout;
 using std::cerr;
 using std::locale;
 using std::ofstream;
+using std::ostringstream;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -156,21 +166,21 @@ static void ExtractImages(const RomData *romData, const vector<ExtractParam> &ex
 				found = true;
 				if (likely(!isMipmap)) {
 					cerr << "-- " <<
-						// tr: %1$s == image type name, %2$s == output filename
-						rp_sprintf_p(C_("rpcli", "Extracting %1$s into '%2$s'"),
+						// tr: {0:s} == image type name, {1:s} == output filename
+						fmt::format(FRUN(C_("rpcli", "Extracting {0:s} into '{1:s}'")),
 							RomData::getImageTypeName(imageType),
 							T2U8c(p.filename)) << '\n';
 				} else {
 					cerr << "-- " <<
-						// tr: %s == output filename
-						rp_sprintf_p(C_("rpcli", "Extracting mipmap level %1$d into '%2$s'"),
+						// tr: {0:d} == mipmap level, {1:s} == output filename
+						fmt::format(FRUN(C_("rpcli", "Extracting mipmap level {0:d} into '{1:s}'")),
 							p.mipmapLevel, T2U8c(p.filename)) << '\n';
 				}
 				cerr.flush();
 				int errcode = RpPng::save(p.filename, image);
 				if (errcode != 0) {
-					// tr: %1$s == filename, %2%s == error message
-					cerr << rp_sprintf_p(C_("rpcli", "Couldn't create file '%1$s': %2$s"),
+					// tr: {0:s} == filename, {1:s} == error message
+					cerr << fmt::format(FRUN(C_("rpcli", "Couldn't create file '{0:s}': {1:s}")),
 						T2U8c(p.filename), strerror(-errcode)) << '\n';
 				} else {
 					cerr << "   " << C_("rpcli", "Done") << '\n';
@@ -182,7 +192,7 @@ static void ExtractImages(const RomData *romData, const vector<ExtractParam> &ex
 			auto iconAnimData = romData->iconAnimData();
 			if (iconAnimData && iconAnimData->count != 0 && iconAnimData->seq_count != 0) {
 				found = true;
-				cerr << "-- " << rp_sprintf(C_("rpcli", "Extracting animated icon into '%s'"), T2U8c(p.filename)) << '\n';
+				cerr << "-- " << fmt::format(FRUN(C_("rpcli", "Extracting animated icon into '{:s}'")), T2U8c(p.filename)) << '\n';
 				cerr.flush();
 				int errcode = RpPng::save(p.filename, iconAnimData);
 				if (errcode == -ENOTSUP) {
@@ -193,7 +203,7 @@ static void ExtractImages(const RomData *romData, const vector<ExtractParam> &ex
 				}
 				if (errcode != 0) {
 					cerr << "   " <<
-						rp_sprintf_p(C_("rpcli", "Couldn't create file '%1$s': %2$s"),
+						fmt::format(FRUN(C_("rpcli", "Couldn't create file '{0:s}': {1:s}")),
 							T2U8c(p.filename), strerror(-errcode)) << '\n';
 				} else {
 					cerr << "   " << C_("rpcli", "Done") << '\n';
@@ -208,12 +218,12 @@ static void ExtractImages(const RomData *romData, const vector<ExtractParam> &ex
 				cerr << "-- " << C_("rpcli", "Animated icon not found") << '\n';
 			} else if (p.mipmapLevel >= 0) {
 				cerr << "-- " <<
-					rp_sprintf(C_("rpcli", "Mipmap level %d not found"), p.mipmapLevel) << '\n';
+					fmt::format(FRUN(C_("rpcli", "Mipmap level {:d} not found")), p.mipmapLevel) << '\n';
 			} else {
 				const RomData::ImageType imageType =
 					static_cast<RomData::ImageType>(p.imageType);
 				cerr << "-- " <<
-					rp_sprintf(C_("rpcli", "Image '%s' not found"),
+					fmt::format(FRUN(C_("rpcli", "Image '{:s}' not found")),
 						RomData::getImageTypeName(imageType)) << '\n';
 			}
 			cerr.flush();
@@ -239,7 +249,7 @@ static void DoFile(const TCHAR *filename, bool json, const vector<ExtractParam> 
 
 		// FIXME: Make T2U8c() unnecessary here.
 		fputs("== ", stderr);
-		fprintf(stderr, C_("rpcli", "Reading file '%s'..."), T2U8c(filename));
+		fmt::print(stderr, FRUN(C_("rpcli", "Reading file '{:s}'...")), T2U8c(filename));
 		fputc('\n', stderr);
 		fflush(stderr);
 
@@ -247,11 +257,11 @@ static void DoFile(const TCHAR *filename, bool json, const vector<ExtractParam> 
 		if (!file->isOpen()) {
 			// TODO: Return an error code?
 			fputs("-- ", stderr);
-			fprintf(stderr, C_("rpcli", "Couldn't open file: %s"), strerror(file->lastError()));
+			fmt::print(stderr, FRUN(C_("rpcli", "Couldn't open file: {:s}")), strerror(file->lastError()));
 			fputc('\n', stderr);
 			fflush(stderr);
 			if (json) {
-				printf("{\"error\":\"couldn't open file\",\"code\":%d}\n", file->lastError());
+				fmt::print(FSTR("{{\"error\":\"couldn't open file\",\"code\":{:d}}}\n"), file->lastError());
 				fflush(stdout);
 			}
 			return;
@@ -263,7 +273,7 @@ static void DoFile(const TCHAR *filename, bool json, const vector<ExtractParam> 
 
 		// FIXME: Make T2U8c() unnecessary here.
 		fputs("== ", stderr);
-		fprintf(stderr, C_("rpcli", "Reading directory '%s'..."), T2U8c(filename));
+		fmt::print(stderr, FRUN(C_("rpcli", "Reading directory '{:s}'...")), T2U8c(filename));
 		fputc('\n', stderr);
 		fflush(stderr);
 
@@ -279,7 +289,22 @@ static void DoFile(const TCHAR *filename, bool json, const vector<ExtractParam> 
 
 			cout << JSONROMOutput(romData.get(), lc, flags) << '\n';
 		} else {
-			cout << ROMOutput(romData.get(), lc, flags) << '\n';
+#ifdef _WIN32
+			if (is_stdout_console && !does_console_support_ansi) {
+				ostringstream oss;
+				oss << ROMOutput(romData.get(), lc, flags) << '\n';
+				cout_win32_ansi_color(cout, oss.str().c_str());
+			} else
+#endif /* _WIN32 */
+			{
+#ifdef ENABLE_SIXEL
+				// If this is a tty, print the icon/banner using libsixel.
+				if (is_stdout_console) {
+					print_sixel_icon_banner(romData);
+				}
+#endif /* ENABLE_SIXEL */
+				cout << ROMOutput(romData.get(), lc, flags) << '\n';
+			}
 		}
 		cout.flush();
 		ExtractImages(romData.get(), extract);
@@ -309,10 +334,10 @@ static void PrintSystemRegion(void)
 		for (unsigned int i = 4; i > 0; i--, lc >>= 8) {
 			if ((lc & 0xFF) == 0)
 				continue;
-			buf += (char)(lc & 0xFF);
+			buf += static_cast<char>(lc & 0xFF);
 		}
 	}
-	printf(C_("rpcli", "System language code: %s"),
+	fmt::print(FRUN(C_("rpcli", "System language code: {:s}")),
 		(!buf.empty() ? buf.c_str() : C_("rpcli", "0 (this is a bug!)")));
 	putchar('\n');
 
@@ -322,10 +347,10 @@ static void PrintSystemRegion(void)
 		for (unsigned int i = 4; i > 0; i--, cc >>= 8) {
 			if ((cc & 0xFF) == 0)
 				continue;
-			buf += (char)(cc & 0xFF);
+			buf += static_cast<char>(cc & 0xFF);
 		}
 	}
-	printf(C_("rpcli", "System country code: %s"),
+	fmt::print(FRUN(C_("rpcli", "System country code: {:s}")),
 		(!buf.empty() ? buf.c_str() : C_("rpcli", "0 (this is a bug!)")));
 	putchar('\n');
 
@@ -340,17 +365,18 @@ static void PrintSystemRegion(void)
 static void PrintPathnames(void)
 {
 	// TODO: Localize these strings?
-	printf("User's home directory:   %s\n"
-	       "User's cache directory:  %s\n"
-	       "User's config directory: %s\n"
-	       "\n"
-	       "RP cache directory:      %s\n"
-	       "RP config directory:     %s\n",
-		OS_NAMESPACE::getHomeDirectory().c_str(),
-		OS_NAMESPACE::getCacheDirectory().c_str(),
-		OS_NAMESPACE::getConfigDirectory().c_str(),
-		FileSystem::getCacheDirectory().c_str(),
-		FileSystem::getConfigDirectory().c_str());
+	fmt::print(FSTR(
+		"User's home directory:   {:s}\n"
+		"User's cache directory:  {:s}\n"
+		"User's config directory: {:s}\n"
+		"\n"
+		"RP cache directory:      {:s}\n"
+		"RP config directory:     {:s}\n"),
+		OS_NAMESPACE::getHomeDirectory(),
+		OS_NAMESPACE::getCacheDirectory(),
+		OS_NAMESPACE::getConfigDirectory(),
+		FileSystem::getCacheDirectory(),
+		FileSystem::getConfigDirectory());
 
 	// Extra line. (TODO: Only if multiple commands are specified.)
 	putchar('\n');
@@ -367,7 +393,7 @@ static void DoScsiInquiry(const TCHAR *filename, bool json)
 {
 	// FIXME: Make T2U8c() unnecessary here.
 	fputs("== ", stderr);
-	fprintf(stderr, C_("rpcli", "Opening device file '%s'..."), T2U8c(filename));
+	fmt::print(stderr, FRUN(C_("rpcli", "Opening device file '{:s}'...")), T2U8c(filename));
 	fputc('\n', stderr);
 	fflush(stderr);
 
@@ -375,12 +401,12 @@ static void DoScsiInquiry(const TCHAR *filename, bool json)
 	if (!file->isOpen()) {
 		// TODO: Return an error code?
 		fputs("-- ", stderr);
-		fprintf(stderr, C_("rpcli", "Couldn't open file: %s"), strerror(file->lastError()));
+		fmt::print(stderr, FRUN(C_("rpcli", "Couldn't open file: {:s}")), strerror(file->lastError()));
 		fputc('\n', stderr);
 		fflush(stderr);
 
 		if (json) {
-			printf("{\"error\":\"couldn't open file\",\"code\":%d}\n", file->lastError());
+			fmt::print("{{\"error\":\"couldn't open file\",\"code\":{:d}}}\n", file->lastError());
 			fflush(stdout);
 		}
 		return;
@@ -426,7 +452,7 @@ static void DoAtaIdentifyDevice(const TCHAR *filename, bool json, bool packet)
 {
 	// FIXME: Make T2U8c() unnecessary here.
 	fputs("== ", stderr);
-	fprintf(stderr, C_("rpcli", "Opening device file '%s'..."), T2U8c(filename));
+	fmt::print(stderr, FRUN(C_("rpcli", "Opening device file '{:s}'...")), T2U8c(filename));
 	fputc('\n', stderr);
 	fflush(stderr);
 
@@ -434,12 +460,12 @@ static void DoAtaIdentifyDevice(const TCHAR *filename, bool json, bool packet)
 	if (!file->isOpen()) {
 		// TODO: Return an error code?
 		fputs("-- ", stderr);
-		fprintf(stderr, C_("rpcli", "Couldn't open file: %s"), strerror(file->lastError()));
+		fmt::print(stderr, FRUN(C_("rpcli", "Couldn't open file: {:s}")), strerror(file->lastError()));
 		fputc('\n', stderr);
 		fflush(stderr);
 
 		if (json) {
-			printf("{\"error\":\"couldn't open file\",\"code\":%d}\n", file->lastError());
+			fmt::print("{{\"error\":\"couldn't open file\",\"code\":{:d}}}\n", file->lastError());
 			fflush(stdout);
 		}
 		return;
@@ -494,9 +520,11 @@ static void ShowUsage(void)
 	};
 
 	// Normal commands
-	static constexpr cmd_t cmds[] = {
 #ifdef ENABLE_DECRYPTION
+	static const array<cmd_t, 9> cmds = {{
 		{"  -k:  ", NOP_C_("rpcli", "Verify encryption keys in keys.conf.")},
+#else /* !ENABLE_DECRYPTION */
+	static const array<cmd_t, 8> cmds = {{
 #endif /* ENABLE_DECRYPTION */
 		{"  -c:  ", NOP_C_("rpcli", "Print system region information.")},
 		{"  -p:  ", NOP_C_("rpcli", "Print system path information.")},
@@ -506,9 +534,9 @@ static void ShowUsage(void)
 		{"  -xN: ", NOP_C_("rpcli", "Extract image N to outfile in PNG format.")},
 		{"  -mN: ", NOP_C_("rpcli", "Extract mipmap level N to outfile in PNG format.")},
 		{"  -a:  ", NOP_C_("rpcli", "Extract the animated icon to outfile in APNG format.")},
-	};
+	}};
 
-	for (auto &p : cmds) {
+	for (const auto &p : cmds) {
 		fputs(p.opt, stderr);
 		fputs(pgettext_expr("rpcli", p.desc), stderr);
 		fputc('\n', stderr);
@@ -517,15 +545,15 @@ static void ShowUsage(void)
 
 #ifdef RP_OS_SCSI_SUPPORTED
 	// Commands for devices
-	static constexpr cmd_t cmds_dev[] = {
+	static const array<cmd_t, 3> cmds_dev = {{
 		{"  -is: ", NOP_C_("rpcli", "Run a SCSI INQUIRY command.")},
 		{"  -ia: ", NOP_C_("rpcli", "Run an ATA IDENTIFY DEVICE command.")},
 		{"  -ip: ", NOP_C_("rpcli", "Run an ATA IDENTIFY PACKET DEVICE command.")},
-	};
+	}};
 
 	fputs(C_("rpcli", "Special options for devices:"), stderr);
 	fputc('\n', stderr);
-	for (auto &p : cmds_dev) {
+	for (const auto &p : cmds_dev) {
 		fputs(p.opt, stderr);
 		fputs(pgettext_expr("rpcli", p.desc), stderr);
 		fputc('\n', stderr);
@@ -627,6 +655,12 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 	bool json = false;
 	vector<ExtractParam> extract;
 
+	// TODO: Add a command line option to override color output.
+	init_vt();
+	if (is_stdout_console) {
+		flags |= OF_Text_UseAnsiColor;
+	}
+
 	for (int i = 1; i < argc; i++) { // figure out the json mode in advance
 		if (argv[i][0] == _T('-')) {
 			if (argv[i][1] == _T('j')) {
@@ -705,11 +739,11 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 				int pos;
 				for (pos = 0; pos < 4 && s_lang[pos] != _T('\0'); pos++) {
 					new_lc <<= 8;
-					new_lc |= (uint8_t)s_lang[pos];
+					new_lc |= static_cast<uint8_t>(s_lang[pos]);
 				}
 				if (pos == 4 && s_lang[pos] != _T('\0')) {
 					// Invalid language code.
-					fprintf(stderr, C_("rpcli", "Warning: ignoring invalid language code '%s'"), T2U8c(s_lang));
+					fmt::print(stderr, FRUN(C_("rpcli", "Warning: ignoring invalid language code '{:s}'")), T2U8c(s_lang));
 					fputc('\n', stderr);
 					fflush(stderr);
 					break;
@@ -733,7 +767,7 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 				// TODO: Switch from _ttol() to _tcstol() and implement better error checking?
 				const long num = _ttol(argv[i] + 2);
 				if (num < RomData::IMG_INT_MIN || num > RomData::IMG_INT_MAX) {
-					fprintf(stderr, C_("rpcli", "Warning: skipping unknown image type %ld"), num);
+					fmt::print(stderr, FRUN(C_("rpcli", "Warning: skipping unknown image type {:d}")), num);
 					fputc('\n', stderr);
 					fflush(stderr);
 					i++; continue;
@@ -745,7 +779,7 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 				// TODO: Switch from _ttol() to _tcstol() and implement better error checking?
 				const long num = _ttol(argv[i] + 2);
 				if (num < -1 || num > 1024) {
-					fprintf(stderr, C_("rpcli", "Warning: skipping invalid mipmap level %ld"), num);
+					fmt::print(stderr, FRUN(C_("rpcli", "Warning: skipping invalid mipmap level {:d}")), num);
 					fputc('\n', stderr);
 					fflush(stderr);
 					i++; continue;
@@ -781,7 +815,7 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 							fputc('\n', stderr);
 						} else {
 							// FIXME: Unicode character on Windows.
-							fprintf(stderr, C_("rpcli", "Warning: skipping unknown inquiry request '%c'"), argv[i][2]);
+							fmt::print(stderr, FRUN(C_("rpcli", "Warning: skipping unknown inquiry request '{:c}'")), (char)argv[i][2]);
 							fputc('\n', stderr);
 						}
 						fflush(stderr);
@@ -791,7 +825,7 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 #endif /* RP_OS_SCSI_SUPPORTED */
 			default:
 				// FIXME: Unicode character on Windows.
-				fprintf(stderr, C_("rpcli", "Warning: skipping unknown switch '%c'"), argv[i][1]);
+				fmt::print(stderr, FRUN(C_("rpcli", "Warning: skipping unknown switch '{:c}'")), (char)argv[i][1]);
 				fputc('\n', stderr);
 				fflush(stderr);
 				break;

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (GTK+ common)                      *
  * stdafx.h: Common definitions and includes.                              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -31,8 +31,8 @@
 #include <cinttypes>
 #include <climits>
 #include <cmath>
-#include <stdint.h>
-#include <stdlib.h>
+#include <cstdint>
+#include <cstdlib>
 
 // C++ includes
 #include <algorithm>
@@ -45,6 +45,9 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+// libfmt
+#include "rp-libfmt.h"
 
 #else /* !__cplusplus */
 /** C **/
@@ -79,12 +82,12 @@
 
 // GLib on non-Windows platforms (prior to 2.53.1) defines G_MODULE_EXPORT to a no-op.
 // This doesn't work when we use symbol visibility settings.
-#if !GLIB_CHECK_VERSION(2,53,1) && !defined(_WIN32) && (defined(__GNUC__) && __GNUC__ >= 4)
+#if !GLIB_CHECK_VERSION(2, 53, 1) && !defined(_WIN32) && (defined(__GNUC__) && __GNUC__ >= 4)
 #  ifdef G_MODULE_EXPORT
 #    undef G_MODULE_EXPORT
 #  endif
 #  define G_MODULE_EXPORT __attribute__((visibility("default")))
-#endif /* !GLIB_CHECK_VERSION(2,53,1) && !_WIN32 && __GNUC__ >= 4 */
+#endif /* !GLIB_CHECK_VERSION(2, 53, 1) && !_WIN32 && __GNUC__ >= 4 */
 
 // libi18n
 #include "libi18n/i18n.h"
@@ -113,7 +116,6 @@
 
 // librptext C++ headers
 #include "librptext/conversion.hpp"
-#include "librptext/printf.hpp"
 #endif /* !__cplusplus */
 
 // GTK+ UI frontend headers
@@ -123,12 +125,12 @@
 #    include <cairo.h>
 #    include <cairo-gobject.h>
 #  else /* !RP_GTK_USE_CAIRO */
-#    if GTK_CHECK_VERSION(4,11,3)
+#    if GTK_CHECK_VERSION(4, 11, 3)
 // TODO: Find a suitable replacement for GdkPixbuf.
 #      include <gdk/deprecated/gdkpixbuf.h>
-#    else /* !GTK_CHECK_VERSION(4,11,3) */
+#    else /* !GTK_CHECK_VERSION(4, 11, 3) */
 #      include <gdk/gdkpixbuf.h>
-#    endif /* GTK_CHECK_VERSION(4,11,3) */
+#    endif /* GTK_CHECK_VERSION(4, 11, 3) */
 #  endif /* RP_GTK_USE_CAIRO */
 #endif /* !RP_IS_GLIB_ONLY */
 

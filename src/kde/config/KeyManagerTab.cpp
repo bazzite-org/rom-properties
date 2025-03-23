@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE)                              *
  * KeyManagerTab.cpp: Key Manager tab for rp-config.                       *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -22,11 +22,11 @@ using LibRomData::KeyStoreUI;
 using std::string;
 
 // KDE4/KF5 includes.
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 #  define HAVE_KMESSAGEWIDGET 1
 #  define HAVE_KMESSAGEWIDGET_SETICON 1
 #  include <KMessageWidget>
-#else /* !QT_VERSION >= QT_VERSION_CHECK(5,0,0) */
+#else /* !QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) */
 #  include <kdeversion.h>
 #  if (KDE_VERSION_MAJOR > 4) || (KDE_VERSION_MAJOR == 4 && KDE_VERSION_MINOR >= 7)
 #    define HAVE_KMESSAGEWIDGET 1
@@ -35,7 +35,7 @@ using std::string;
 #      define HAVE_KMESSAGEWIDGET_SETICON 1
 #    endif
 #  endif
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,0,0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) */
 
 #include "ui_KeyManagerTab.h"
 class KeyManagerTabPrivate
@@ -79,7 +79,7 @@ public:
 	 * @param iret ImportReturn
 	 */
 	void showKeyImportReturnStatus(const QString &filename,
-		const QString &keyType, const KeyStoreUI::ImportReturn &iret);
+		const QString &keyType, KeyStoreUI::ImportReturn iret);
 };
 
 /** KeyManagerTabPrivate **/
@@ -124,11 +124,10 @@ void KeyManagerTabPrivate::resizeColumnsToContents(void)
 void KeyManagerTabPrivate::showKeyImportReturnStatus(
 	const QString &filename,
 	const QString &keyType,
-	const KeyStoreUI::ImportReturn &iret)
+	KeyStoreUI::ImportReturn iret)
 {
 	KMessageWidget::MessageType type = KMessageWidget::Information;
 	QStyle::StandardPixmap icon = QStyle::SP_MessageBoxInformation;
-	const QLocale sysLocale = QLocale::system();
 	bool showKeyStats = false;
 	string msg;
 	msg.reserve(1024);
@@ -138,7 +137,6 @@ void KeyManagerTabPrivate::showKeyImportReturnStatus(
 
 	// TODO: Localize POSIX error messages?
 	// TODO: Thread-safe strerror()?
-
 	switch (iret.status) {
 		case KeyStoreUI::ImportStatus::InvalidParams:
 		default:
@@ -159,15 +157,15 @@ void KeyManagerTabPrivate::showKeyImportReturnStatus(
 
 		case KeyStoreUI::ImportStatus::OpenError:
 			if (iret.error_code != 0) {
-				// tr: %1$s == filename, %2$s == error message
-				msg = rp_sprintf_p(C_("KeyManagerTab",
-					"An error occurred while opening '%1$s': %2$s"),
+				// tr: {0:s} == filename, {1:s} == error message
+				msg = fmt::format(FRUN(C_("KeyManagerTab",
+					"An error occurred while opening '{0:s}': {1:s}")),
 					fileNoPath.toUtf8().constData(),
 					strerror(iret.error_code));
 			} else {
-				// tr: %s == filename
-				msg = rp_sprintf_p(C_("KeyManagerTab",
-					"An error occurred while opening '%s'."),
+				// tr: {:s} == filename
+				msg = fmt::format(FRUN(C_("KeyManagerTab",
+					"An error occurred while opening '{:s}'.")),
 					fileNoPath.toUtf8().constData());
 			}
 			type = KMessageWidget::Error;
@@ -177,15 +175,15 @@ void KeyManagerTabPrivate::showKeyImportReturnStatus(
 		case KeyStoreUI::ImportStatus::ReadError:
 			// TODO: Error code for short reads.
 			if (iret.error_code != 0) {
-				// tr: %1$s == filename, %2$s == error message
-				msg = rp_sprintf_p(C_("KeyManagerTab",
-					"An error occurred while reading '%1$s': %2$s"),
+				// tr: {0:s} == filename, {1:s} == error message
+				msg = fmt::format(FRUN(C_("KeyManagerTab",
+					"An error occurred while reading '{0:s}': {1:s}")),
 					fileNoPath.toUtf8().constData(),
 					strerror(iret.error_code));
 			} else {
-				// tr: %s == filename
-				msg = rp_sprintf_p(C_("KeyManagerTab",
-					"An error occurred while reading '%s'."),
+				// tr: {:s} == filename
+				msg = fmt::format(FRUN(C_("KeyManagerTab",
+					"An error occurred while reading '{:s}'.")),
 					fileNoPath.toUtf8().constData());
 			}
 			type = KMessageWidget::Error;
@@ -193,9 +191,9 @@ void KeyManagerTabPrivate::showKeyImportReturnStatus(
 			break;
 
 		case KeyStoreUI::ImportStatus::InvalidFile:
-			// tr: %1$s == filename, %2$s == type of file
-			msg = rp_sprintf_p(C_("KeyManagerTab",
-				"The file '%1$s' is not a valid %2$s file."),
+			// tr: {0:s} == filename, {1:s} == type of file
+			msg = fmt::format(FRUN(C_("KeyManagerTab",
+				"The file '{0:s}' is not a valid {1:s} file.")),
 				fileNoPath.toUtf8().constData(),
 				keyType.toUtf8().constData());
 			type = KMessageWidget::Warning;
@@ -203,9 +201,9 @@ void KeyManagerTabPrivate::showKeyImportReturnStatus(
 			break;
 
 		case KeyStoreUI::ImportStatus::NoKeysImported:
-			// tr: %s == filename
-			msg = rp_sprintf(C_("KeyManagerTab",
-				"No keys were imported from '%s'."),
+			// tr: {:s} == filename
+			msg = fmt::format(FRUN(C_("KeyManagerTab",
+				"No keys were imported from '{:s}'.")),
 				fileNoPath.toUtf8().constData());
 			type = KMessageWidget::Information;
 			icon = QStyle::SP_MessageBoxInformation;
@@ -214,13 +212,12 @@ void KeyManagerTabPrivate::showKeyImportReturnStatus(
 
 		case KeyStoreUI::ImportStatus::KeysImported: {
 			const unsigned int keyCount = iret.keysImportedVerify + iret.keysImportedNoVerify;
-			// tr: %1$s == number of keys (formatted), %2$u == filename
-			msg = rp_sprintf_p(NC_("KeyManagerTab",
-				"%1$s key was imported from '%2$s'.",
-				"%1$s keys were imported from '%2$s'.",
-				keyCount),
-				sysLocale.toString(keyCount).toUtf8().constData(),
-				fileNoPath.toUtf8().constData());
+			// tr: {0:Ld} == number of keys, {1:s} == filename
+			msg = fmt::format(FRUN(NC_("KeyManagerTab",
+				"{0:Ld} key was imported from '{1:s}'.",
+				"{0:Ld} keys were imported from '{1:s}'.",
+				keyCount)),
+				keyCount, fileNoPath.toUtf8().constData());
 			type = KMessageWidget::Positive;
 			icon = QStyle::SP_DialogOkButton;
 			showKeyStats = true;
@@ -234,57 +231,57 @@ void KeyManagerTabPrivate::showKeyImportReturnStatus(
 	if (showKeyStats) {
 		if (iret.keysExist > 0) {
 			msg += nl_bullet;
-			// tr: %s == number of keys (formatted)
-			msg += rp_sprintf(NC_("KeyManagerTab",
-				"%s key already exists in the Key Manager.",
-				"%s keys already exist in the Key Manager.",
-				iret.keysExist),
-				sysLocale.toString(iret.keysExist).toUtf8().constData());
+			// tr: {:Ld} == number of keys
+			msg += fmt::format(FRUN(NC_("KeyManagerTab",
+				"{:Ld} key already exists in the Key Manager.",
+				"{:Ld} keys already exist in the Key Manager.",
+				iret.keysExist)),
+				iret.keysExist);
 		}
 		if (iret.keysInvalid > 0) {
 			msg += nl_bullet;
-			// tr: %s == number of keys (formatted)
-			msg += rp_sprintf(NC_("KeyManagerTab",
-				"%s key was not imported because it is incorrect.",
-				"%s keys were not imported because they are incorrect.",
-				iret.keysInvalid),
-				sysLocale.toString(iret.keysInvalid).toUtf8().constData());
+			// tr: {:Ld} == number of keys
+			msg += fmt::format(FRUN(NC_("KeyManagerTab",
+				"{:Ld} key was not imported because it is incorrect.",
+				"{:Ld} keys were not imported because they are incorrect.",
+				iret.keysInvalid)),
+				iret.keysInvalid);
 		}
 		if (iret.keysNotUsed > 0) {
 			msg += nl_bullet;
-			// tr: %s == number of keys (formatted)
-			msg += rp_sprintf(NC_("KeyManagerTab",
-				"%s key was not imported because it isn't used by rom-properties.",
-				"%s keys were not imported because they aren't used by rom-properties.",
-				iret.keysNotUsed),
-				sysLocale.toString(iret.keysNotUsed).toUtf8().constData());
+			// tr: {:Ld} == number of keys
+			msg += fmt::format(FRUN(NC_("KeyManagerTab",
+				"{:Ld} key was not imported because it isn't used by rom-properties.",
+				"{:Ld} keys were not imported because they aren't used by rom-properties.",
+				iret.keysNotUsed)),
+				iret.keysNotUsed);
 		}
 		if (iret.keysCantDecrypt > 0) {
 			msg += nl_bullet;
-			// tr: %s == number of keys (formatted)
-			msg += rp_sprintf(NC_("KeyManagerTab",
-				"%s key was not imported because it is encrypted and the master key isn't available.",
-				"%s keys were not imported because they are encrypted and the master key isn't available.",
-				iret.keysCantDecrypt),
-				sysLocale.toString(iret.keysCantDecrypt).toUtf8().constData());
+			// tr: {:Ld} == number of keys
+			msg += fmt::format(FRUN(NC_("KeyManagerTab",
+				"{:Ld} key was not imported because it is encrypted and the master key isn't available.",
+				"{:Ld} keys were not imported because they are encrypted and the master key isn't available.",
+				iret.keysCantDecrypt)),
+				iret.keysCantDecrypt);
 		}
 		if (iret.keysImportedVerify > 0) {
 			msg += nl_bullet;
-			// tr: %s == number of keys (formatted)
-			msg += rp_sprintf(NC_("KeyManagerTab",
-				"%s key has been imported and verified as correct.",
-				"%s keys have been imported and verified as correct.",
-				iret.keysImportedVerify),
-				sysLocale.toString(iret.keysImportedVerify).toUtf8().constData());
+			// tr: {:Ld} == number of keys
+			msg += fmt::format(FRUN(NC_("KeyManagerTab",
+				"{:Ld} key has been imported and verified as correct.",
+				"{:Ld} keys have been imported and verified as correct.",
+				iret.keysImportedVerify)),
+				iret.keysImportedVerify);
 		}
 		if (iret.keysImportedNoVerify > 0) {
 			msg += nl_bullet;
-			// tr: %s == number of keys (formatted)
-			msg += rp_sprintf(NC_("KeyManagerTab",
-				"%s key has been imported without verification.",
-				"%s keys have been imported without verification.",
-				iret.keysImportedNoVerify),
-				sysLocale.toString(iret.keysImportedNoVerify).toUtf8().constData());
+			// tr: {:Ld} == number of keys
+			msg += fmt::format(FRUN(NC_("KeyManagerTab",
+				"{:Ld} key has been imported without verification.",
+				"{:Ld} keys have been imported without verification.",
+				iret.keysImportedNoVerify)),
+				iret.keysImportedNoVerify);
 		}
 	}
 

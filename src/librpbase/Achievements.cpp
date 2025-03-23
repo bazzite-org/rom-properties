@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpbase)                        *
  * Achievements.cpp: Achievements class.                                   *
  *                                                                         *
- * Copyright (c) 2020-2024 by David Korth.                                 *
+ * Copyright (c) 2020-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -57,9 +57,9 @@ public:
 	static Achievements instance;
 
 public:
-	// Notification function.
+	// Notification function
 	Achievements::NotifyFunc notifyFunc;
-	intptr_t user_data;
+	void *user_data;
 
 public:
 	// Achievement types
@@ -101,23 +101,16 @@ public:
 		time_t timestamp;		// Time this achievement was last updated.
 	};
 
-	// Achievement map.
+	// Achievement map
 	// TODO: Map vs. unordered_map for performance?
 	unordered_map<Achievements::ID, AchData_t, EnumClassHash> mapAchData;
 	bool loaded;	// Have achievements been loaded from disk?
 
-	// Achievements filename and magic number.
-#if defined(NDEBUG) || defined(FORCE_OBFUSCATE)
-	// Release version is obfuscated.
-	#define ACH_BIN_MAGIC    "RPACH10R"
-	#define ACH_BIN_FILENAME "ach.bin"
-#else /* !NDEBUG && !FORCE_OBFUSCATE */
-	// Debug version is not obfuscated.
-	#define ACH_BIN_MAGIC    "RPACH10D"
-	#define ACH_BIN_FILENAME "achd.bin"
-#endif /* NDEBUG || FORCE_OBFUSCATE*/
+	// Achievements filename and magic number
+	static const char ACH_BIN_MAGIC[];
+	static const char ACH_BIN_FILENAME[];
 
-	// Serialized achievement header.
+	// Serialized achievement header
 	// All fields are in little-endian.
 	struct AchBinHeader {
 		char magic[8];		// [0x000] "RPACH10R" or "RPACH10D"
@@ -229,14 +222,25 @@ const array<AchievementsPrivate::AchInfo_t, 5> AchievementsPrivate::achInfo = {{
 	},
 }};
 
-// Singleton instance.
+// Achievements filename and magic number
+#if defined(NDEBUG) || defined(FORCE_OBFUSCATE)
+// Release version is obfuscated.
+const char AchievementsPrivate::ACH_BIN_MAGIC[] = "RPACH10R";
+const char AchievementsPrivate::ACH_BIN_FILENAME[] = "ach.bin";
+#else /* !NDEBUG && !FORCE_OBFUSCATE */
+// Debug version is not obfuscated.
+const char AchievementsPrivate::ACH_BIN_MAGIC[] = "RPACH10D";
+const char AchievementsPrivate::ACH_BIN_FILENAME[] = "achd.bin";
+#endif /* NDEBUG || FORCE_OBFUSCATE*/
+
+// Singleton instance
 // Using a static non-pointer variable in order to
 // handle proper destruction when the DLL is unloaded.
 Achievements AchievementsPrivate::instance;
 
 AchievementsPrivate::AchievementsPrivate()
 	: notifyFunc(nullptr)
-	, user_data(0)
+	, user_data(nullptr)
 	, loaded(false)
 { }
 
@@ -734,10 +738,10 @@ Achievements *Achievements::instance(void)
 /**
  * Set the notification function.
  * This is used for the UI frontends.
- * @param func Notification function.
- * @param user_data User data.
+ * @param func Notification function
+ * @param user_data User data
  */
-void Achievements::setNotifyFunction(NotifyFunc func, intptr_t user_data)
+void Achievements::setNotifyFunction(NotifyFunc func, void *user_data)
 {
 	RP_D(Achievements);
 	if (d) {
@@ -752,15 +756,15 @@ void Achievements::setNotifyFunction(NotifyFunc func, intptr_t user_data)
  * If both func and user_data match the existing values,
  * then both are cleared.
  *
- * @param func Notification function.
- * @param user_data User data.
+ * @param func Notification function
+ * @param user_data User data
  */
-void Achievements::clearNotifyFunction(NotifyFunc func, intptr_t user_data)
+void Achievements::clearNotifyFunction(NotifyFunc func, void *user_data)
 {
 	RP_D(Achievements);
 	if (d && d->notifyFunc == func && d->user_data == user_data) {
 		d->notifyFunc = nullptr;
-		d->user_data = 0;
+		d->user_data = nullptr;
 	}
 }
 

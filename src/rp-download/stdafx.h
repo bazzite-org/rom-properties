@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (rp-download)                      *
  * stdafx.h: Common definitions and includes for COM.                      *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -20,23 +20,24 @@
 #ifdef __cplusplus
 /** C++ **/
 
-// C includes.
-#include <stdint.h>
-#include <stdlib.h>
-
-// C includes. (C++ namespace)
+// C includes (C++ namespace)
 #include <cassert>
 #include <cerrno>
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
-// C++ includes.
+// C++ includes
 #include <algorithm>
 #include <string>
+
+// libfmt
+#include "rp-libfmt.h"
 
 #else /* !__cplusplus */
 /** C **/
 
-// C includes.
+// C includes
 #include <assert.h>
 #include <errno.h>
 #include <stdint.h>

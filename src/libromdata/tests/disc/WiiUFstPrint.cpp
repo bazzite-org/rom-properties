@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata/tests)                 *
  * WiiUFstPrint.cpp: Wii U FST printer                                     *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -16,12 +16,10 @@ using LibRomData::WiiUFst;
 // i18n
 #include "libi18n/i18n.h"
 
-// C includes
-#include <stdlib.h>
-
 // C includes (C++ namespace)
 #include <cerrno>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 // C++ includes
@@ -30,12 +28,14 @@ using LibRomData::WiiUFst;
 #include <memory>
 #include <sstream>
 #include <string>
-using std::array;
 using std::locale;
 using std::ostream;
 using std::ostringstream;
 using std::string;
 using std::unique_ptr;
+
+// libfmt
+#include "rp-libfmt.h"
 
 // librpsecure
 #include "librpsecure/os-secure.h"
@@ -68,7 +68,7 @@ int RP_C_API main(int argc, char *argv[])
 	rp_i18n_init();
 
 	if (argc < 2 || argc > 3) {
-		fprintf(stderr, C_("WiiUFstPrint", "Syntax: %s fst.bin"), argv[0]);
+		fmt::print(stderr, FRUN(C_("WiiUFstPrint", "Syntax: {:s} fst.bin")), argv[0]);
 		fputc('\n', stderr);
 		return EXIT_FAILURE;
 	}
@@ -76,8 +76,8 @@ int RP_C_API main(int argc, char *argv[])
 	// Open and read the FST file.
 	FILE *f = fopen(argv[1], "rb");
 	if (!f) {
-		// tr: %1$s == filename, %2$s == error message
-		fprintf_p(stderr, C_("GcnFstPrint", "Error opening '%1$s': '%2$s'"), argv[1], strerror(errno));
+		// tr: {0:s} == filename, {1:s} == error message
+		fmt::print(stderr, FRUN(C_("GcnFstPrint", "Error opening '{0:s}': '{1:s}'")), argv[1], strerror(errno));
 		fputc('\n', stderr);
 		return EXIT_FAILURE;
 	}
@@ -99,32 +99,19 @@ int RP_C_API main(int argc, char *argv[])
 	size_t rd_size = fread(fstData.get(), 1, fileSize, f);
 	fclose(f);
 	if (rd_size != fileSize) {
-		// tr: %1$u == number of bytes read, %2$u == number of bytes expected to read
-		fprintf_p(stderr, C_("GcnFstPrint", "ERROR: Read %1$u bytes, expected %2$u bytes."),
-			(unsigned int)rd_size, (unsigned int)fileSize);
-		putchar('\n');
+		// tr: {0:Ld} == number of bytes read, {1:Ld} == number of bytes expected to read
+		fmt::print(stderr, FRUN(C_("GcnFstPrint", "ERROR: Read {0:Ld} bytes, expected {1:Ld} bytes.")),
+			rd_size, fileSize);
+		fputc('\n', stderr);
 		return EXIT_FAILURE;
-	}
-
-	// Check for NKit FST recovery data.
-	// These FSTs have an extra header at the top, indicating what
-	// disc the FST belongs to.
-	unsigned int fst_start_offset = 0;
-	static constexpr array<uint8_t, 10> root_dir_data = {{1,0,0,0,0,0,0,0,0,0}};
-	if (fileSize >= 0x60) {
-		if (!memcmp(&fstData[0x50], root_dir_data.data(), root_dir_data.size())) {
-			// Found an NKit FST.
-			fst_start_offset = 0x50;
-		}
 	}
 
 	// Parse the FST.
 	// TODO: Validate the FST and return an error if it doesn't
 	// "look" like an FST?
-	unique_ptr<IFst> fst(new WiiUFst(&fstData[fst_start_offset],
-		static_cast<uint32_t>(fileSize - fst_start_offset)));
+	unique_ptr<IFst> fst(new WiiUFst(fstData.get(), static_cast<uint32_t>(fileSize)));
 	if (!fst->isOpen()) {
-		fprintf(stderr, C_("WiiUFstPrint", "*** ERROR: Could not parse '%s' as WiiUFst."), argv[1]);
+		fmt::print(stderr, FRUN(C_("WiiUFstPrint", "*** ERROR: Could not parse '{:s}' as WiiUFst.")), argv[1]);
 		fputc('\n', stderr);
 		return EXIT_FAILURE;
 	}

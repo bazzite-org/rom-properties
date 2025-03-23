@@ -14,13 +14,11 @@ apt-get -y install \
 	libtinyxml2-dev \
 	gettext \
 	libseccomp-dev \
+	libfmt-dev \
 	\
 	libzstd-dev \
 	liblz4-dev \
 	liblzo2-dev \
-	\
-	libqt4-dev \
-	kdelibs5-dev \
 	\
 	qtbase5-dev \
 	qttools5-dev-tools \
@@ -28,11 +26,12 @@ apt-get -y install \
 	libkf5kio-dev \
 	libkf5widgetsaddons-dev \
 	libkf5filemetadata-dev \
+	libkf5crash-dev \
 	\
 	libglib2.0-dev \
 	libgtk2.0-dev \
 	libgdk-pixbuf2.0-dev \
-	libthunarx-2-dev \
+	libthunarx-3-dev \
 	libcanberra-dev \
 	libgsound-dev \
 	libgtk-3-dev \

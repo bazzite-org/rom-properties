@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * Amiibo.cpp: Nintendo amiibo NFC dump reader.                            *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -26,7 +26,7 @@ namespace LibRomData {
 class AmiiboPrivate final : public RomDataPrivate
 {
 public:
-	AmiiboPrivate(const IRpFilePtr &file);
+	explicit AmiiboPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -34,8 +34,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 3+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -58,7 +58,7 @@ ROMDATA_IMPL_IMG(Amiibo)
 /** AmiiboPrivate **/
 
 /* RomDataInfo */
-const char *const AmiiboPrivate::exts[] = {
+const array<const char*, 3+1> AmiiboPrivate::exts = {{
 	// NOTE: These extensions may cause conflicts on
 	// Windows if fallback handling isn't working.
 	".bin",	// too generic
@@ -69,16 +69,16 @@ const char *const AmiiboPrivate::exts[] = {
 	".nfc", ".nfp",
 
 	nullptr
-};
-const char *const AmiiboPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> AmiiboPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-nintendo-amiibo",
 
 	nullptr
-};
+}};
 const RomDataInfo AmiiboPrivate::romDataInfo = {
-	"Amiibo", exts, mimeTypes
+	"Amiibo", exts.data(), mimeTypes.data()
 };
 
 AmiiboPrivate::AmiiboPrivate(const IRpFilePtr &file)
@@ -277,12 +277,9 @@ const char *Amiibo::systemName(unsigned int type) const
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"Amiibo::systemName() array index optimization needs to be updated.");
 
-	static const char *const sysNames[4] = {
-		"Nintendo Figurine Platform",
-		"Nintendo Figurine Platform",
-		"NFP",
-		nullptr
-	};
+	static const array<const char*, 4> sysNames = {{
+		"Nintendo Figurine Platform", "Nintendo Figurine Platform", "NFP", nullptr
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -385,9 +382,9 @@ int Amiibo::loadFieldData(void)
 	const uint32_t amiibo_id = be32_to_cpu(d->nfpData.amiibo_id.u32);
 
 	// tr: amiibo ID. Represents the character and amiibo series.
-	// TODO: Link to https://amiibo.life/nfc/%08X-%08X
+	// TODO: Link to https://amiibo.life/nfc/{:0>8X}-{:0>8X}
 	d->fields.addField_string(C_("Amiibo", "amiibo ID"),
-		rp_sprintf("%08X-%08X", char_id, amiibo_id),
+		fmt::format(FSTR("{:0>8X}-{:0>8X}"), char_id, amiibo_id),
 		RomFields::STRF_MONOSPACE);
 
 	// tr: amiibo type.
@@ -408,7 +405,7 @@ int Amiibo::loadFieldData(void)
 	} else {
 		// Invalid amiibo type.
 		d->fields.addField_string(amiibo_type_title,
-			rp_sprintf(C_("RomData", "Unknown (0x%02X)"), (char_id & 0xFF)));
+			fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), (char_id & 0xFF)));
 	}
 
 	// Get the AmiiboData instance.
@@ -446,8 +443,8 @@ int Amiibo::loadFieldData(void)
 	}
 
 	// tr: Credits for amiibo image downloads.
-	const string credits = rp_sprintf(
-		C_("Amiibo", "amiibo images provided by %s,\nthe Unofficial amiibo Database."),
+	const string credits = fmt::format(
+		FRUN(C_("Amiibo", "amiibo images provided by {:s},\nthe Unofficial amiibo Database.")),
 		"<a href=\"https://amiibo.life/\">amiibo.life</a>");
 	d->fields.addField_string(C_("Amiibo", "Credits"), credits, RomFields::STRF_CREDITS);
 
@@ -463,17 +460,17 @@ int Amiibo::loadFieldData(void)
  * try to get the size that most closely matches the
  * requested size.
  *
- * @param imageType	[in]     Image type.
- * @param pExtURLs	[out]    Output vector.
+ * @param imageType	[in]     Image type
+ * @param extURLs	[out]    Output vector
  * @param size		[in,opt] Requested image size. This may be a requested
  *                               thumbnail size in pixels, or an ImageSizeType
  *                               enum value.
  * @return 0 on success; negative POSIX error code on error.
  */
-int Amiibo::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
+int Amiibo::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) const
 {
-	ASSERT_extURLs(imageType, pExtURLs);
-	pExtURLs->clear();
+	extURLs.clear();
+	ASSERT_extURLs(imageType);
 
 	// Only one size is available.
 	RP_UNUSED(size);
@@ -493,21 +490,20 @@ int Amiibo::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) con
 	}
 
 	// Only one URL.
-	pExtURLs->resize(1);
-	auto &extURL = pExtURLs->at(0);
+	extURLs.resize(1);
+	ExtURL &extURL = extURLs[0];
 
-	// Amiibo ID.
-	char amiibo_id[20];
-	snprintf(amiibo_id, sizeof(amiibo_id), "%08X-%08X",
+	// Amiibo ID
+	const string amiibo_id = fmt::format(FSTR("{:0>8X}-{:0>8X}"),
 		be32_to_cpu(d->nfpData.char_id), be32_to_cpu(d->nfpData.amiibo_id.u32));
 
-	// Cache key. (amiibo ID)
+	// Cache key (amiibo ID)
 	extURL.cache_key.reserve(32);
 	extURL.cache_key = "amiibo/";
 	extURL.cache_key += amiibo_id;
 	extURL.cache_key += ".png";
 
-	// URL.
+	// URL
 	// Format: https://amiibo.life/nfc/[Page21]-[Page22]/image
 	extURL.url.reserve(48);
 	extURL.url = "https://amiibo.life/nfc/";
@@ -523,4 +519,4 @@ int Amiibo::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) con
 	return 0;
 }
 
-}
+} // namespace LibRomData

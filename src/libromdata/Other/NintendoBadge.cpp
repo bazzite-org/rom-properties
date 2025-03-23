@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * NintendoBadge.hpp: Nintendo Badge Arcade image reader.                  *
  *                                                                         *
- * Copyright (c) 2017-2024 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -21,6 +21,7 @@ using namespace LibRpText;
 using namespace LibRpTexture;
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::vector;
 
@@ -29,8 +30,7 @@ namespace LibRomData {
 class NintendoBadgePrivate final : public RomDataPrivate
 {
 public:
-	NintendoBadgePrivate(const IRpFilePtr &file);
-	~NintendoBadgePrivate() final = default;
+	explicit NintendoBadgePrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -38,8 +38,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 2+1> exts;
+	static const array<const char*, 2+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -109,7 +109,7 @@ ROMDATA_IMPL_IMG_TYPES(NintendoBadge)
 /** NintendoBadgePrivate **/
 
 /* RomDataInfo */
-const char *const NintendoBadgePrivate::exts[] = {
+const array<const char*, 2+1> NintendoBadgePrivate::exts = {{
 	// NOTE: These extensions may cause conflicts on
 	// Windows if fallback handling isn't working.
 
@@ -117,8 +117,8 @@ const char *const NintendoBadgePrivate::exts[] = {
 	".cab",	// CABS file (NOTE: Conflicts with Microsoft CAB) [TODO: Unregister?]
 
 	nullptr
-};
-const char *const NintendoBadgePrivate::mimeTypes[] = {
+}};
+const array<const char*, 2+1> NintendoBadgePrivate::mimeTypes = {{
 	// NOTE: Ordering matches BadgeType.
 
 	// Unofficial MIME types.
@@ -127,9 +127,9 @@ const char *const NintendoBadgePrivate::mimeTypes[] = {
 	"application/x-nintendo-badge-set",
 
 	nullptr
-};
+}};
 const RomDataInfo NintendoBadgePrivate::romDataInfo = {
-	"NintendoBadge", exts, mimeTypes
+	"NintendoBadge", exts.data(), mimeTypes.data()
 };
 
 NintendoBadgePrivate::NintendoBadgePrivate(const IRpFilePtr &file)
@@ -156,8 +156,8 @@ NintendoBadgePrivate::NintendoBadgePrivate(const IRpFilePtr &file)
  */
 rp_image_const_ptr NintendoBadgePrivate::loadImage(int idx)
 {
-	assert(idx >= 0 || idx < (int)img_badges.size());
-	if (idx < 0 || idx >= (int)img_badges.size()) {
+	assert(idx >= 0 || static_cast<size_t>(idx) < img_badges.size());
+	if (idx < 0 || static_cast<size_t>(idx) >= img_badges.size()) {
 		// Invalid image index.
 		return nullptr;
 	}
@@ -198,7 +198,7 @@ rp_image_const_ptr NintendoBadgePrivate::loadImage(int idx)
 
 			// The 64x64 badge is located before the 32x32 badge
 			// in the file, but we have the smaller one listed first.
-			if ((idx & 1) == (int)BadgeIndex_PRBS::Small) {
+			if ((idx & 1) == static_cast<int>(BadgeIndex_PRBS::Small)) {
 				// 32x32 badge. (0xA00+0x200)
 				badge_rgb_sz = badge32_rgb_sz;
 				badge_a4_sz = badge32_a4_sz;
@@ -278,9 +278,9 @@ rp_image_const_ptr NintendoBadgePrivate::loadImage(int idx)
 
 		if (badgeType == BadgeType::CABS) {
 			// Need to crop the 64x64 image to 48x48.
-			const rp_image_ptr img48 = img->resized(48, 48);
+			rp_image_ptr img48 = img->resized(48, 48);
 			if (img48) {
-				img = img48;
+				img = std::move(img48);
 			}
 		}
 	} else {
@@ -499,7 +499,7 @@ NintendoBadge::NintendoBadge(const IRpFilePtr &file)
 		0		// szFile (not needed for NintendoBadge)
 	};
 	d->badgeType = static_cast<NintendoBadgePrivate::BadgeType>(isRomSupported_static(&info));
-	d->isValid = ((int)d->badgeType >= 0);
+	d->isValid = (static_cast<int>(d->badgeType) >= 0);
 	d->megaBadge = false;	// check later
 
 	if (!d->isValid) {
@@ -525,8 +525,8 @@ NintendoBadge::NintendoBadge(const IRpFilePtr &file)
 	}
 
 	// Set the MIME type.
-	if ((int)d->badgeType < ARRAY_SIZE_I(d->mimeTypes)-1) {
-		d->mimeType = d->mimeTypes[(int)d->badgeType];
+	if (static_cast<int>(d->badgeType) < ARRAY_SIZE_I(d->mimeTypes)-1) {
+		d->mimeType = d->mimeTypes[static_cast<int>(d->badgeType)];
 	}
 }
 
@@ -584,9 +584,9 @@ const char *NintendoBadge::systemName(unsigned int type) const
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"NintendoBadge::systemName() array index optimization needs to be updated.");
 
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Nintendo Badge Arcade", "Badge Arcade", "Badge", nullptr,
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -622,8 +622,8 @@ vector<RomData::ImageSizeDef> NintendoBadge::supportedImageSizes(ImageType image
 			if (imageType == IMG_INT_ICON || !d->megaBadge) {
 				// Not a mega badge.
 				return {
-					{nullptr, BADGE_SIZE_SMALL_W, BADGE_SIZE_SMALL_H, (int)NintendoBadgePrivate::BadgeIndex_PRBS::Small},
-					{nullptr, BADGE_SIZE_LARGE_W, BADGE_SIZE_LARGE_H, (int)NintendoBadgePrivate::BadgeIndex_PRBS::Large},
+					{nullptr, BADGE_SIZE_SMALL_W, BADGE_SIZE_SMALL_H, static_cast<int>(NintendoBadgePrivate::BadgeIndex_PRBS::Small)},
+					{nullptr, BADGE_SIZE_LARGE_W, BADGE_SIZE_LARGE_H, static_cast<int>(NintendoBadgePrivate::BadgeIndex_PRBS::Large)},
 				};
 			}
 
@@ -633,10 +633,10 @@ vector<RomData::ImageSizeDef> NintendoBadge::supportedImageSizes(ImageType image
 			const unsigned int mb_height = d->badgeHeader.prbs.mb_height;
 
 			return {
-				{nullptr, BADGE_SIZE_SMALL_W, BADGE_SIZE_SMALL_H, (int)NintendoBadgePrivate::BadgeIndex_PRBS::Small},
-				{nullptr, BADGE_SIZE_LARGE_W, BADGE_SIZE_LARGE_H, (int)NintendoBadgePrivate::BadgeIndex_PRBS::Large},
-				{nullptr, (uint16_t)(BADGE_SIZE_SMALL_W*mb_width), (uint16_t)(BADGE_SIZE_SMALL_H*mb_height), (int)NintendoBadgePrivate::BadgeIndex_PRBS::MegaSmall},
-				{nullptr, (uint16_t)(BADGE_SIZE_LARGE_W*mb_width), (uint16_t)(BADGE_SIZE_LARGE_H*mb_height), (int)NintendoBadgePrivate::BadgeIndex_PRBS::MegaLarge},
+				{nullptr, BADGE_SIZE_SMALL_W, BADGE_SIZE_SMALL_H, static_cast<int>(NintendoBadgePrivate::BadgeIndex_PRBS::Small)},
+				{nullptr, BADGE_SIZE_LARGE_W, BADGE_SIZE_LARGE_H, static_cast<int>(NintendoBadgePrivate::BadgeIndex_PRBS::Large)},
+				{nullptr, static_cast<uint16_t>(BADGE_SIZE_SMALL_W * mb_width), static_cast<uint16_t>(BADGE_SIZE_SMALL_H * mb_height), static_cast<int>(NintendoBadgePrivate::BadgeIndex_PRBS::MegaSmall)},
+				{nullptr, static_cast<uint16_t>(BADGE_SIZE_LARGE_W * mb_width), static_cast<uint16_t>(BADGE_SIZE_LARGE_H * mb_height), static_cast<int>(NintendoBadgePrivate::BadgeIndex_PRBS::MegaLarge)},
 			};
 		}
 
@@ -696,7 +696,7 @@ int NintendoBadge::loadFieldData(void)
 		// No file.
 		// A closed file is OK, since we already loaded the header.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->badgeType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->badgeType) < 0) {
 		// Unknown badge type.
 		return -EIO;
 	}
@@ -752,7 +752,7 @@ int NintendoBadge::loadFieldData(void)
 			} else {
 				// Title ID is present.
 				d->fields.addField_string(launch_title_id_title,
-					rp_sprintf("%08X-%08X",
+					fmt::format(FSTR("{:0>8X}-{:0>8X}"),
 						le32_to_cpu(prbs->title_id.hi),
 						le32_to_cpu(prbs->title_id.lo)));
 
@@ -767,16 +767,16 @@ int NintendoBadge::loadFieldData(void)
 					const bool isN3DS = !!(le32_to_cpu(prbs->title_id.lo) & 0x20000000);
 					if (isN3DS) {
 						if (region) {
-							// tr: %1$s == Title name, %2$s == Region
-							str = rp_sprintf_p(C_("NintendoBadge", "%1$s (New3DS) (%2$s)"), title, region);
+							// tr: {0:s} == Title name, {1:s} == Region
+							str = fmt::format(FRUN(C_("NintendoBadge", "{0:s} (New3DS) ({1:s})")), title, region);
 						} else {
 							// tr: Title name
-							str = rp_sprintf(C_("NintendoBadge", "%s (New3DS)"), title);
+							str = fmt::format(FRUN(C_("NintendoBadge", "{:s} (New3DS)")), title);
 						}
 					} else {
 						if (region) {
-							// tr: %1$s == Title name, %2$s == Region
-							str = rp_sprintf_p(C_("NintendoBadge", "%1$s (%2$s)"), title, region);
+							// tr: {0:s} == Title name, {1:s} == Region
+							str = fmt::format(FRUN(C_("NintendoBadge", "{0:s} ({1:s})")), title, region);
 						} else {
 							str = title;
 						}
@@ -819,21 +819,19 @@ int NintendoBadge::loadFieldData(void)
 int NintendoBadge::loadMetaData(void)
 {
 	RP_D(NintendoBadge);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
 		// No file.
 		// A closed file is OK, since we already loaded the header.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->badgeType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->badgeType) < 0) {
 		// Unknown badge type.
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Title
 	const N3DS_Language_ID langID = d->getLanguageID();
@@ -845,21 +843,21 @@ int NintendoBadge::loadMetaData(void)
 
 		case NintendoBadgePrivate::BadgeType::PRBS: {
 			const Badge_PRBS_Header *const prbs = &d->badgeHeader.prbs;
-			d->metaData->addMetaData_string(Property::Title,
+			d->metaData.addMetaData_string(Property::Title,
 				utf16le_to_utf8(prbs->names[langID], sizeof(prbs->names[langID])));
 			break;
 		}
 
 		case NintendoBadgePrivate::BadgeType::CABS: {
 			const Badge_CABS_Header *const cabs = &d->badgeHeader.cabs;
-			d->metaData->addMetaData_string(Property::Title,
+			d->metaData.addMetaData_string(Property::Title,
 				utf16le_to_utf8(cabs->names[langID], sizeof(cabs->names[langID])));
 			break;
 		}
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -924,8 +922,8 @@ int NintendoBadge::loadInternalImage(ImageType imageType, rp_image_const_ptr &pI
 	}
 
 	// Load the image.
-	pImage = d->loadImage((int)idx);
-	return ((bool)pImage ? 0 : -EIO);
+	pImage = d->loadImage(static_cast<int>(idx));
+	return (pImage) ? 0 : -EIO;
 }
 
-}
+} // namespace LibRomData

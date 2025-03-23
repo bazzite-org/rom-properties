@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * EXE.cpp: DOS/Windows executable reader.                                 *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -35,7 +35,7 @@ ROMDATA_IMPL(EXE)
 /** EXEPrivate **/
 
 /* RomDataInfo */
-const char *const EXEPrivate::exts[] = {
+const array<const char*, (8*2)+1> EXEPrivate::exts = {{
 	// References:
 	// - https://en.wikipedia.org/wiki/Portable_Executable
 
@@ -54,8 +54,8 @@ const char *const EXEPrivate::exts[] = {
 	".vxd", ".386",
 
 	nullptr
-};
-const char *const EXEPrivate::mimeTypes[] = {
+}};
+const array<const char*, 5+1> EXEPrivate::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	"application/x-ms-dos-executable",
 	"application/x-ms-ne-executable",
@@ -70,9 +70,9 @@ const char *const EXEPrivate::mimeTypes[] = {
 	"application/vnd.microsoft.portable-executable",
 
 	nullptr
-};
+}};
 const RomDataInfo EXEPrivate::romDataInfo = {
-	"EXE", exts, mimeTypes
+	"EXE", exts.data(), mimeTypes.data()
 };
 
 // NE target OSes.
@@ -114,7 +114,7 @@ void EXEPrivate::addFields_VS_VERSION_INFO(const VS_FIXEDFILEINFO *pVsFfi, const
 
 	// File version
 	fields.addField_string(C_("EXE", "File Version"),
-		rp_sprintf("%u.%u.%u.%u",
+		fmt::format(FSTR("{:d}.{:d}.{:d}.{:d}"),
 			pVsFfi->dwFileVersionMS >> 16,
 			pVsFfi->dwFileVersionMS & 0xFFFF,
 			pVsFfi->dwFileVersionLS >> 16,
@@ -122,23 +122,22 @@ void EXEPrivate::addFields_VS_VERSION_INFO(const VS_FIXEDFILEINFO *pVsFfi, const
 
 	// Product version
 	fields.addField_string(C_("EXE", "Product Version"),
-		rp_sprintf("%u.%u.%u.%u",
+		fmt::format(FSTR("{:d}.{:d}.{:d}.{:d}"),
 			pVsFfi->dwProductVersionMS >> 16,
 			pVsFfi->dwProductVersionMS & 0xFFFF,
 			pVsFfi->dwProductVersionLS >> 16,
 			pVsFfi->dwProductVersionLS & 0xFFFF));
 
 	// File flags
-	static const char *const FileFlags_names[] = {
+	static const array<const char*, 6> FileFlags_names = {{
 		NOP_C_("EXE|FileFlags", "Debug"),
 		NOP_C_("EXE|FileFlags", "Prerelease"),
 		NOP_C_("EXE|FileFlags", "Patched"),
 		NOP_C_("EXE|FileFlags", "Private Build"),
 		NOP_C_("EXE|FileFlags", "Info Inferred"),
 		NOP_C_("EXE|FileFlags", "Special Build"),
-	};
-	vector<string> *const v_FileFlags_names = RomFields::strArrayToVector_i18n(
-		"EXE|FileFlags", FileFlags_names, ARRAY_SIZE(FileFlags_names));
+	}};
+	vector<string> *const v_FileFlags_names = RomFields::strArrayToVector_i18n("EXE|FileFlags", FileFlags_names);
 	fields.addField_bitfield(C_("EXE", "File Flags"),
 		v_FileFlags_names, 3, pVsFfi->dwFileFlags & pVsFfi->dwFileFlagsMask);
 
@@ -187,7 +186,7 @@ void EXEPrivate::addFields_VS_VERSION_INFO(const VS_FIXEDFILEINFO *pVsFfi, const
 		fields.addField_string(fileOS_title, s_fileOS);
 	} else {
 		fields.addField_string(fileOS_title,
-			rp_sprintf(C_("RomData", "Unknown (0x%08X)"), dwFileOS));
+			fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>8X})")), dwFileOS));
 	}
 
 	// File type
@@ -220,7 +219,7 @@ void EXEPrivate::addFields_VS_VERSION_INFO(const VS_FIXEDFILEINFO *pVsFfi, const
 			fields.addField_string(fileType_title, C_("RomData", "Unknown"));
 		} else {
 			fields.addField_string(fileType_title,
-				rp_sprintf(C_("RomData", "Unknown (0x%08X)"), pVsFfi->dwFileType));
+				fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>8X})")), pVsFfi->dwFileType));
 		}
 	}
 
@@ -293,7 +292,7 @@ void EXEPrivate::addFields_VS_VERSION_INFO(const VS_FIXEDFILEINFO *pVsFfi, const
 				pgettext_expr("EXE|FileSubType", fileSubtype));
 		} else {
 			fields.addField_string(fileSubType_title,
-				rp_sprintf(C_("RomData", "Unknown (0x%02X)"), pVsFfi->dwFileSubtype));
+				fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), pVsFfi->dwFileSubtype));
 		}
 	}
 
@@ -320,22 +319,21 @@ void EXEPrivate::addFields_VS_VERSION_INFO(const VS_FIXEDFILEINFO *pVsFfi, const
 	// random due to unordered_map<>.
 	// TODO: Show certain entries as their own fields?
 	const auto &st = pVsSfi->begin()->second;
-	auto vv_data = new RomFields::ListData_t(st.size());
+	auto *const vv_data = new RomFields::ListData_t(st.size());
 	for (size_t i = 0; i < st.size(); i++) {
 		const auto &st_row = st.at(i);
 		auto &data_row = vv_data->at(i);
 		data_row.reserve(2);
-		data_row.emplace_back(st_row.first);
-		data_row.emplace_back(st_row.second);
+		data_row.push_back(st_row.first);
+		data_row.push_back(st_row.second);
 	}
 
 	// Fields
-	static const char *const field_names[] = {
+	static const array<const char*, 2> field_names = {{
 		NOP_C_("EXE|StringFileInfo", "Key"),
 		NOP_C_("EXE|StringFileInfo", "Value"),
-	};
-	vector<string> *const v_field_names = RomFields::strArrayToVector_i18n(
-		"EXE|StringFileInfo", field_names, ARRAY_SIZE(field_names));
+	}};
+	vector<string> *const v_field_names = RomFields::strArrayToVector_i18n("EXE|StringFileInfo", field_names);
 
 	// Add the StringFileInfo.
 	RomFields::AFLD_PARAMS params;
@@ -412,9 +410,9 @@ void EXEPrivate::addFields_MZ(void)
 
 	// Initial CS:IP/SS:SP
 	fields.addField_string(C_("EXE", "Initial CS:IP"),
-		rp_sprintf("%04X:%04X", le16_to_cpu(mz.e_cs), le16_to_cpu(mz.e_ip)), RomFields::STRF_MONOSPACE);
+		fmt::format(FSTR("{:0>4X}:{:0>4X}"), le16_to_cpu(mz.e_cs), le16_to_cpu(mz.e_ip)), RomFields::STRF_MONOSPACE);
 	fields.addField_string(C_("EXE", "Initial SS:SP"),
-		rp_sprintf("%04X:%04X", le16_to_cpu(mz.e_ss), le16_to_cpu(mz.e_sp)), RomFields::STRF_MONOSPACE);
+		fmt::format(FSTR("{:0>4X}:{:0>4X}"), le16_to_cpu(mz.e_ss), le16_to_cpu(mz.e_sp)), RomFields::STRF_MONOSPACE);
 
 	/* Linkers will happily put 0:0 in SS:SP if the stack is not defined.
 	 * In this case, at least DOS 5 and later will do the following hacks:
@@ -460,7 +458,7 @@ void EXEPrivate::addFields_LE(void)
 		fields.addField_string(cpu_title, cpu);
 	} else {
 		fields.addField_string(cpu_title,
-			rp_sprintf(C_("RomData", "Unknown (0x%04X)"), cpu_type));
+			fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>4X})")), cpu_type));
 	}
 
 	// Target OS
@@ -471,7 +469,7 @@ void EXEPrivate::addFields_LE(void)
 		fields.addField_string(targetOS_title, NE_TargetOSes[targOS]);
 	} else {
 		fields.addField_string(targetOS_title,
-			rp_sprintf(C_("RomData", "Unknown (0x%02X)"), targOS));
+			fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), targOS));
 	}
 }
 
@@ -520,7 +518,7 @@ EXE::EXE(const IRpFilePtr &file)
 	};
 	d->exeType = static_cast<EXEPrivate::ExeType>(isRomSupported_static(&info));
 
-	d->isValid = ((int)d->exeType >= 0);
+	d->isValid = (static_cast<int>(d->exeType) >= 0);
 	if (!d->isValid) {
 		// Not an MZ executable.
 		d->file.reset();
@@ -614,13 +612,11 @@ EXE::EXE(const IRpFilePtr &file)
 	// NOTE: MSVC handles 'PE\0\0' as 0x00504500,
 	// probably due to the embedded NULL bytes.
 	if (d->hdr.pe.Signature == cpu_to_be32(0x50450000) /*'PE\0\0'*/) {
-		// Portable Executable (Win32/Win64)
-		d->mimeType = "application/vnd.microsoft.portable-executable";
-
 		// Check if it's PE or PE32+.
 		// (.NET is checked in loadFieldData().)
 		switch (le16_to_cpu(d->hdr.pe.OptionalHeader.Magic)) {
 			case IMAGE_NT_OPTIONAL_HDR32_MAGIC:
+			case 0:	// some Win32s binaries
 				d->exeType = EXEPrivate::ExeType::PE;
 				d->pe_subsystem = le16_to_cpu(d->hdr.pe.OptionalHeader.opt32.Subsystem);
 				break;
@@ -630,10 +626,14 @@ EXE::EXE(const IRpFilePtr &file)
 				break;
 			default:
 				// Unsupported PE executable.
-				d->exeType = EXEPrivate::ExeType::Unknown;
-				d->isValid = false;
+				// Fall back to MZ.
+				d->exeType = EXEPrivate::ExeType::MZ;
+				d->fileType = FileType::Executable;
 				return;
 		}
+
+		// Portable Executable (Win32/Win64)
+		d->mimeType = "application/vnd.microsoft.portable-executable";
 
 		// Check the file type.
 		const uint16_t pe_flags = le16_to_cpu(d->hdr.pe.FileHeader.Characteristics);
@@ -764,7 +764,7 @@ int EXE::isRomSupported_static(const DetectInfo *info)
 	if (pData[0] == 0xEB) {
 		// JMP8
 		// Second byte must be a forward jump. (>= 0)
-		if (((int8_t)pData[1]) >= 0) {
+		if (static_cast<int8_t>(pData[1]) >= 0) {
 			has_x86_jmp = true;
 		}
 	} else if (pData[0] == 0xE9) {
@@ -773,7 +773,7 @@ int EXE::isRomSupported_static(const DetectInfo *info)
 		// end of the executable, and cannot be in the PSP.
 		const int16_t offset = (pData[1] | (pData[2] << 8));
 		if (offset > 0 || offset < -259) {
-			const uint16_t u_offset = (uint16_t)offset;
+			const uint16_t u_offset = static_cast<uint16_t>(offset);
 			if (u_offset < info->szFile) {
 				has_x86_jmp = true;
 			}
@@ -806,33 +806,33 @@ const char *EXE::systemName(unsigned int type) const
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"EXE::systemName() array index optimization needs to be updated.");
 
-	static const char *const sysNames_Windows[4] = {
+	static const array<const char*, 4> sysNames_Windows = {{
 		"Microsoft Windows", "Windows", "Windows", nullptr
-	};
+	}};
 
 	// New Executable (and Linear Executable) operating systems.
-	static const char *const sysNames_NE[6][4] = {
+	static const array<array<const char*, 4>, 6> sysNames_NE = {{
 		// NE_OS_UNKNOWN
 		// NOTE: Windows 1.0 executables have this value.
-		{"Microsoft Windows", "Windows", "Windows", nullptr},
+		{{"Microsoft Windows", "Windows", "Windows", nullptr}},
 		// NE_OS_OS2
-		{"IBM OS/2", "OS/2", "OS/2", nullptr},
+		{{"IBM OS/2", "OS/2", "OS/2", nullptr}},
 		// NE_OS_WIN
-		{"Microsoft Windows", "Windows", "Windows", nullptr},
+		{{"Microsoft Windows", "Windows", "Windows", nullptr}},
 		// NE_OS_DOS4
-		{"European MS-DOS 4.x", "EuroDOS 4.x", "EuroDOS 4.x", nullptr},
+		{{"European MS-DOS 4.x", "EuroDOS 4.x", "EuroDOS 4.x", nullptr}},
 		// NE_OS_WIN386 (TODO)
-		{"Microsoft Windows", "Windows", "Windows", nullptr},
+		{{"Microsoft Windows", "Windows", "Windows", nullptr}},
 		// NE_OS_BOSS
-		{"Borland Operating System Services", "BOSS", "BOSS", nullptr},
-	};
+		{{"Borland Operating System Services", "BOSS", "BOSS", nullptr}},
+	}};
 
 	switch (d->exeType) {
 		case EXEPrivate::ExeType::MZ: {
 			// DOS executable.
-			static const char *const sysNames_DOS[4] = {
+			static const array<const char*, 4> sysNames_DOS = {{
 				"Microsoft MS-DOS", "MS-DOS", "DOS", nullptr
-			};
+			}};
 			return sysNames_DOS[type & SYSNAME_TYPE_MASK];
 		}
 
@@ -841,10 +841,10 @@ const char *EXE::systemName(unsigned int type) const
 			if (d->hdr.ne.targOS > NE_OS_BOSS) {
 				// Check for Phar Lap 286 extenders.
 				// Reference: https://github.com/weheartwebsites/exeinfo/blob/master/exeinfo.cpp
-				static const char *const sysNames_NE_PharLap[2][4] = {
-					{"Phar Lap 286|DOS Extender, OS/2", "Phar Lap 286 OS/2", "Phar Lap 286 OS/2", nullptr},	// 0x81
-					{"Phar Lap 286|DOS Extender, Windows", "Phar Lap 286 Windows", "Phar Lap 286 Windows", nullptr},	// 0x82
-				};
+				static const array<array<const char*, 4>, 2> sysNames_NE_PharLap = {{
+					{{"Phar Lap 286|DOS Extender, OS/2", "Phar Lap 286 OS/2", "Phar Lap 286 OS/2", nullptr}},		// 0x81
+					{{"Phar Lap 286|DOS Extender, Windows", "Phar Lap 286 Windows", "Phar Lap 286 Windows", nullptr}},	// 0x82
+				}};
 				if (d->hdr.ne.targOS == 0x81) {
 					return sysNames_NE_PharLap[0][type & SYSNAME_TYPE_MASK];
 				} else if (d->hdr.ne.targOS == 0x82) {
@@ -860,9 +860,9 @@ const char *EXE::systemName(unsigned int type) const
 		case EXEPrivate::ExeType::COM_NE: {
 			// 16-bit COM/NE hybrid.
 			// Used by Multitasking MS-DOS 4.0's IBMDOS.COM.
-			static const char *const sysNames_MultiDOS[4] = {
+			static const array<const char*, 4> sysNames_MultiDOS = {{
 				"Multitasking MS-DOS 4.0", "European DOS", "EuroDOS", nullptr
-			};
+			}};
 			return sysNames_MultiDOS[type & SYSNAME_TYPE_MASK];
 		}
 
@@ -895,19 +895,19 @@ const char *EXE::systemName(unsigned int type) const
 				case IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER:
 				case IMAGE_SUBSYSTEM_EFI_ROM: {
 					// EFI executable
-					static const char *const sysNames_EFI[4] = {
+					static const array<const char*, 4> sysNames_EFI = {{
 						"Extensible Firmware Interface", "EFI", "EFI", nullptr
-					};
+					}};
 					return sysNames_EFI[type & SYSNAME_TYPE_MASK];
 				}
 
 				case IMAGE_SUBSYSTEM_XBOX: {
 					// Check the CPU type.
-					static const char *const sysNames_Xbox[3][4] = {
+					static const array<array<const char*, 4>, 3> sysNames_Xbox = {{
 						{"Microsoft Xbox", "Xbox", "Xbox", nullptr},
 						{"Microsoft Xbox 360", "Xbox 360", "X360", nullptr},
 						{"Microsoft Xbox One", "Xbox One", "Xbone", nullptr},
-					};
+					}};
 					switch (le16_to_cpu(d->hdr.pe.FileHeader.Machine)) {
 						default:
 						case IMAGE_FILE_MACHINE_I386:
@@ -950,7 +950,7 @@ int EXE::loadFieldData(void)
 	} else if (!d->file || !d->file->isOpen()) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->exeType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->exeType) < 0) {
 		// Unknown EXE type.
 		return -EIO;
 	}
@@ -982,7 +982,7 @@ int EXE::loadFieldData(void)
 
 	const char *const type_title = C_("RomData", "Type");
 	if (d->exeType >= EXEPrivate::ExeType::MZ && d->exeType < EXEPrivate::ExeType::Max) {
-		const unsigned int offset = exeTypes_offtbl[(int)d->exeType];
+		const unsigned int offset = exeTypes_offtbl[static_cast<size_t>(d->exeType)];
 		d->fields.addField_string(type_title, &exeTypes_strtbl[offset]);
 	} else {
 		d->fields.addField_string(type_title, C_("EXE", "Unknown"));
@@ -1034,13 +1034,13 @@ int EXE::loadFieldData(void)
 int EXE::loadMetaData(void)
 {
 	RP_D(EXE);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file || !d->file->isOpen()) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->exeType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->exeType) < 0) {
 		// Unknown EXE type.
 		return -EIO;
 	}
@@ -1091,9 +1091,7 @@ int EXE::loadMetaData(void)
 		return 0;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(4);	// Maximum of 4 metadata properties.
+	d->metaData.reserve(4);	// Maximum of 4 metadata properties.
 
 	// Simple lambda function to find a string in IResourceReader::StringTable.
 	auto findval = [](const IResourceReader::StringTable &st, const char *key) -> const char* {
@@ -1114,31 +1112,31 @@ int EXE::loadMetaData(void)
 		}
 	}
 	if (val) {
-		d->metaData->addMetaData_string(Property::Title, val);
+		d->metaData.addMetaData_string(Property::Title, val);
 	}
 
 	// Publisher (CompanyName)
 	val = findval(st, "CompanyName");
 	if (val) {
-		d->metaData->addMetaData_string(Property::Publisher, val);
+		d->metaData.addMetaData_string(Property::Publisher, val);
 	}
 
 	// Description (FileDescription)
 	val = findval(st, "FileDescription");
 	if (val) {
-		d->metaData->addMetaData_string(Property::Description, val);
+		d->metaData.addMetaData_string(Property::Description, val);
 	}
 
 	// Copyright (LegalCopyright)
 	val = findval(st, "LegalCopyright");
 	if (val) {
-		d->metaData->addMetaData_string(Property::Copyright, val);
+		d->metaData.addMetaData_string(Property::Copyright, val);
 	}
 
 	// TODO: Comments? On KDE Dolphin, "Comments" is assumed to be user-added...
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -1231,4 +1229,4 @@ int EXE::checkViewedAchievements(void) const
 	return 1;
 }
 
-}
+} // namespace LibRomData

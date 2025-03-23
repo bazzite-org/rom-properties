@@ -6,32 +6,36 @@ FUNCTION(SET_EXTLIB_PROPERTIES)
 	FOREACH(_target ${ARGV})
 		IF(TARGET ${_target})
 			# Exclude from ALL builds.
-			SET_TARGET_PROPERTIES(${_target} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+			# NOTE: Cannot remove targets from all builds
+			# if they're being installed.
+			IF(SKIP_INSTALL_LIBRARIES OR SKIP_INSTALL_ALL)
+				# Nothing to do here.
+			ELSE()
+				# Exclude this target from ALL builds.
+				SET_TARGET_PROPERTIES(${_target} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+			ENDIF()
+
+			# Enable PIC.
+			SET_TARGET_PROPERTIES(${_target} PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 		ENDIF(TARGET ${_target})
 	ENDFOREACH(_target ${ARGV})
 ENDFUNCTION(SET_EXTLIB_PROPERTIES)
 
-# zlib: Assembly optimizations.
-# TODO: Test on all archs and fix Z_PREFIX issues.
-# TODO: Add more assembly files from contrib/ besides the
-# default ones that were listed in zlib's CMakeLists.txt.
-IF(CPU_i386 OR CPU_amd64)
-	# i386/amd64. Check sizeof(void*) for the actual architecture,
-	# since building 32-bit on 64-bit isn't considered "cross-compiling",
-	# so CMAKE_SYSTEM_PROCESSOR might not be accurate.
-	# NOTE: Checking CMAKE_CL_64 instead of sizeof(void*) for MSVC builds.
-	IF(MSVC AND CMAKE_CL_64)
-		SET(AMD64 "ON")
-	ELSEIF(NOT MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
-		SET(AMD64 "ON")
-	ELSE()
-		SET(ASM686 "ON")
-	ENDIF()
-ENDIF(CPU_i386 OR CPU_amd64)
+FUNCTION(SET_EXTLIB_PROPERTIES_PIC_ONLY)
+	FOREACH(_target ${ARGV})
+		IF(TARGET ${_target})
+			# Exclude from ALL builds; enable PIC.
+			SET_TARGET_PROPERTIES(${_target} PROPERTIES
+				POSITION_INDEPENDENT_CODE TRUE
+				)
+		ENDIF(TARGET ${_target})
+	ENDFOREACH(_target ${ARGV})
+ENDFUNCTION(SET_EXTLIB_PROPERTIES_PIC_ONLY)
 
 # Don't install any of these libraries by default.
 # zlib-ng and libpng will be installed if they're
 # built as shared libraries.
+SET(SKIP_INSTALL_BINARIES ON)
 SET(SKIP_INSTALL_LIBRARIES ON)
 SET(SKIP_INSTALL_HEADERS ON)
 SET(SKIP_INSTALL_FILES ON)
@@ -77,7 +81,6 @@ IF(USE_INTERNAL_ZLIB)
 	SET(WITH_CODE_COVERAGE OFF)
 	SET(WITH_INFLATE_STRICT OFF)
 	SET(WITH_INFLATE_ALLOW_INVALID_DIST OFF)
-	SET(WITH_UNALIGNED ON)
 
 	# CPU-specific optimizations
 	SET(WITH_ACLE ON)
@@ -96,7 +99,6 @@ IF(USE_INTERNAL_ZLIB)
 	SET(WITH_AVX2 ON)
 	SET(WITH_AVX512 ON)
 	SET(WITH_AVX512VNNI ON)
-	SET(WITH_VPCLMULQDQ ON)
 
 	SET(INSTALL_UTILS OFF)
 
@@ -104,6 +106,7 @@ IF(USE_INTERNAL_ZLIB)
 	# NOTE: Cannot remove targets from all builds
 	# if they're being installed.
 	#SET_EXTLIB_PROPERTIES(zlib)
+	SET_EXTLIB_PROPERTIES_PIC_ONLY(zlib)
 	SET_EXTLIB_PROPERTIES(zlibstatic)
 ENDIF(USE_INTERNAL_ZLIB)
 
@@ -142,6 +145,7 @@ IF(USE_INTERNAL_PNG)
 	# NOTE: Cannot remove targets from all builds
 	# if they're being installed.
 	#SET_EXTLIB_PROPERTIES(png_shared)
+	SET_EXTLIB_PROPERTIES_PIC_ONLY(png_shared)
 	SET_EXTLIB_PROPERTIES(png_static)
 ENDIF(USE_INTERNAL_PNG)
 
@@ -168,21 +172,36 @@ IF(USE_INTERNAL_ZSTD)
 	# NOTE: Cannot remove targets from all builds
 	# if they're being installed.
 	#SET_EXTLIB_PROPERTIES(zstd)
+	SET_EXTLIB_PROPERTIES_PIC_ONLY(zstd)
 	SET_EXTLIB_PROPERTIES(zstdstatic)
 ELSE(USE_INTERNAL_ZSTD)
 	SET(ZSTD_LIBRARY zstd)
 ENDIF(USE_INTERNAL_ZSTD)
 
 # minizip-ng
-SET(SKIP_INSTALL_LIBRARIES ON)
-SET(SKIP_INSTALL_ALL ON)
-SET(BUILD_SHARED_LIBS OFF)
-SET(BUILD_STATIC_LIBS ON)
+# On Windows and Mac OS X, this will build DLLs.
+# On other systems, this will be statically-linked.
+# NOTE: We're always using the internal copy of MiniZip-NG.
+# TODO: Support a system-wide version on Linux?
+SET(USE_INTERNAL_MINIZIP TRUE PARENT_SCOPE)
+IF(WIN32 OR APPLE)
+	SET(USE_INTERNAL_MINIZIP_DLL TRUE PARENT_SCOPE)
+	SET(SKIP_INSTALL_LIBRARIES OFF)
+	SET(SKIP_INSTALL_ALL OFF)
+	SET(BUILD_SHARED_LIBS ON)
+	SET(BUILD_STATIC_LIBS OFF)
+ELSE()
+	UNSET(USE_INTERNAL_MINIZIP_DLL PARENT_SCOPE)
+	SET(SKIP_INSTALL_LIBRARIES ON)
+	SET(SKIP_INSTALL_ALL ON)
+	SET(BUILD_SHARED_LIBS OFF)
+	SET(BUILD_STATIC_LIBS ON)
+ENDIF()
 SET(MZ_COMPAT ON)
 SET(MZ_ZLIB ON)
 SET(MZ_BZIP2 OFF)
 SET(MZ_LZMA OFF)
-SET(MZ_ZSTD ${ENABLE_ZSTD})
+SET(MZ_ZSTD OFF) # FIXME: Need to ensure zstd.dll is loaded before using MiniZip
 SET(MZ_FETCH_LIBS OFF)
 SET(MZ_FORCE_FETCH_LIBS OFF)
 SET(MZ_PKCRYPT OFF)
@@ -202,9 +221,8 @@ SET(MZ_CODE_COVERAGE OFF)
 SET(MZ_FILE32_API OFF)
 ADD_SUBDIRECTORY(minizip-ng)
 SET_EXTLIB_PROPERTIES(minizip)
-SET_EXTLIB_PROPERTIES(minigzip_cmd)
-SET_EXTLIB_PROPERTIES(minizip_cmd)
-SET_EXTLIB_PROPERTIES(test_cmd)
+SET_EXTLIB_PROPERTIES(minigzip_cli)
+SET_EXTLIB_PROPERTIES(minizip_cli)
 TARGET_COMPILE_DEFINITIONS(minizip PUBLIC -DMZ_COMPAT_VERSION=120)
 UNSET(USE_COMPAT)
 UNSET(COMPRESS_ONLY)
@@ -238,11 +256,7 @@ IF(USE_INTERNAL_XML)
 
 	# Build TinyXML2.
 	ADD_SUBDIRECTORY(tinyxml2)
-
-	# NOTE: Cannot remove targets from all builds
-	# if they're being installed.
-	SET_EXTLIB_PROPERTIES(tinyxml2_static)
-	#SET_EXTLIB_PROPERTIES(tinyxml2)
+	SET_EXTLIB_PROPERTIES(tinyxml2)
 
 	# TODO: Set TinyXML2::tinyxml2 and use it in libromdata?
 ENDIF(USE_INTERNAL_XML)
@@ -262,7 +276,7 @@ IF(ENABLE_LIBMSPACK)
 	SET(BUILD_STATIC_LIBS ON)
 	SET(BUILD_SHARED_LIBS OFF)
 	ADD_SUBDIRECTORY(libmspack-xenia)
-	SET_EXTLIB_PROPERTIES(libmspack)
+	SET_EXTLIB_PROPERTIES(mspack)
 ENDIF(ENABLE_LIBMSPACK)
 
 # PowerVR texture decompression.
@@ -290,9 +304,7 @@ IF(USE_INTERNAL_LZ4)
 	ENDIF()
 	SET(LZ4_BUNDLED_MODE ON)
 	ADD_SUBDIRECTORY(lz4/build/cmake)
-	# NOTE: Cannot remove targets from all builds
-	# if they're being installed.
-	#SET_EXTLIB_PROPERTIES(lz4_shared)
+	SET_EXTLIB_PROPERTIES(lz4_shared)
 	SET_EXTLIB_PROPERTIES(lz4_static)
 	# lz4 programs that we don't need.
 	SET_EXTLIB_PROPERTIES(lz4cli lz4c)
@@ -314,9 +326,7 @@ IF(USE_INTERNAL_LZO)
 		SET(BUILD_STATIC_LIBS ON)
 	ENDIF()
 	ADD_SUBDIRECTORY(minilzo)
-	# NOTE: Cannot remove targets from all builds
-	# if they're being installed.
-	#SET_EXTLIB_PROPERTIES(minilzo)
+	SET_EXTLIB_PROPERTIES(minilzo)
 ENDIF(USE_INTERNAL_LZO)
 
 # rapidjson
@@ -358,7 +368,7 @@ IF(BUILD_TESTING)
 	IF(WIN32)
 		# GTest is a DLL, so we need to set this.
 		TARGET_COMPILE_DEFINITIONS(gtest INTERFACE GTEST_LINKED_AS_SHARED_LIBRARY=1)
-		TARGET_COMPILE_DEFINITIONS(gtest_main INTERFACE GTEST_LINKED_AS_SHARED_LIBRARY=1)
+		#TARGET_COMPILE_DEFINITIONS(gtest_main INTERFACE GTEST_LINKED_AS_SHARED_LIBRARY=1)
 	ENDIF(WIN32)
 ENDIF(BUILD_TESTING)
 
@@ -383,3 +393,37 @@ ENDIF(NOT HAVE_WCWIDTH)
 # MicroTAR (for libromdata tests)
 ADD_SUBDIRECTORY(microtar)
 SET_EXTLIB_PROPERTIES(microtar)
+
+IF(USE_INTERNAL_FMT)
+	# Use the internal copy of fmt.
+	# On Windows and Mac OS X, this will build DLLs.
+	# On other systems, this will be statically-linked.
+	IF(WIN32 OR APPLE)
+		SET(SKIP_INSTALL_LIBRARIES OFF)
+		SET(SKIP_INSTALL_ALL ON)
+		SET(BUILD_SHARED_LIBS ON)
+		SET(BUILD_STATIC_LIBS OFF)
+		SET(FMT_INSTALL ON)
+	ELSE()
+		SET(SKIP_INSTALL_LIBRARIES ON)
+		SET(SKIP_INSTALL_ALL ON)
+		SET(BUILD_SHARED_LIBS OFF)
+		SET(BUILD_STATIC_LIBS ON)
+		SET(FMT_INSTALL OFF)
+	ENDIF()
+
+	SET(FMT_PEDANTIC OFF)
+	SET(FMT_WERROR OFF)
+
+	SET(FMT_DOC OFF)
+	SET(FMT_TEST OFF)
+	SET(FMT_CUDA_TEST OFF)
+	SET(FMT_OS ON)
+	SET(FMT_MODULE OFF)
+	SET(FMT_SYSTEM_HEADERS OFF)
+	SET(FMT_UNICODE ON)
+
+	ADD_SUBDIRECTORY(fmt)
+	SET_EXTLIB_PROPERTIES(fmt)
+	#SET_EXTLIB_PROPERTIES(fmt-header-only)
+ENDIF(USE_INTERNAL_FMT)

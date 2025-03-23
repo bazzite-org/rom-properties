@@ -2,12 +2,15 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * XboxPublishers.hpp: Xbox third-party publishers list.                   *
  *                                                                         *
- * Copyright (c) 2016-2022 by David Korth.                                 *
+ * Copyright (c) 2016-2024 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
 #include "stdafx.h"
 #include "XboxPublishers.hpp"
+
+// C++ STL classes
+using std::array;
 
 namespace LibRomData { namespace XboxPublishers {
 
@@ -22,12 +25,17 @@ namespace LibRomData { namespace XboxPublishers {
  */
 const char *lookup(uint16_t code)
 {
-	const char s_code[3] = {
+	// NOTE: Homebrew titles might have code == 0.
+	if (code == 0) {
+		return nullptr;
+	}
+
+	const array<char, 3> s_code = {{
 		(char)(code >> 8),
 		(char)(code & 0xFF),
 		'\0'
-	};
-	return lookup(s_code);
+	}};
+	return lookup(s_code.data());
 }
 
 /**
@@ -37,9 +45,15 @@ const char *lookup(uint16_t code)
  */
 const char *lookup(const char *code)
 {
+	// NOTE: Homebrew titles might have code == "\0\0".
+	assert(code);
+	if (!code || !code[0]) {
+		return nullptr;
+	}
+
 	// Code must be 2 characters, plus NULL.
-	assert(code && code[0] && code[1] && !code[2]);
-	if (!code || !code[0] || !code[1] || code[2]) {
+	assert(code[1] && !code[2]);
+	if (!code[1] || code[2]) {
 		return nullptr;
 	}
 

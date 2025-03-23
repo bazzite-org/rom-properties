@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE)                              *
  * RomDataView.cpp: RomData viewer.                                        *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -141,9 +141,9 @@ void RomDataViewPrivate::initHeaderRow(void)
 		fileType = C_("RomDataView", "(unknown filetype)");
 	}
 
-	const QString sysInfo = U82Q(rp_sprintf_p(
-		// tr: %1$s == system name, %2$s == file type
-		C_("RomDataView", "%1$s\n%2$s"), systemName, fileType));
+	const QString sysInfo = U82Q(fmt::format(
+		// tr: {0:s} == system name, {1:s} == file type
+		FRUN(C_("RomDataView", "{0:s}\n{1:s}")), systemName, fileType));
 	ui.lblSysInfo->setText(sysInfo);
 	ui.lblSysInfo->show();
 
@@ -165,7 +165,7 @@ void RomDataViewPrivate::initHeaderRow(void)
 				if (bannerSize.height() != imgStdHeight) {
 					// Need to scale the banner label to match the aspect ratio.
 					const QSize bannerScaledSize(rintf(
-						(float)imgStdHeight * ((float)bannerSize.width() / (float)bannerSize.height())),
+						static_cast<float>(imgStdHeight) * (static_cast<float>(bannerSize.width()) / static_cast<float>(bannerSize.height()))),
 						imgStdHeight);
 					ui.lblBanner->setMinimumSize(bannerScaledSize);
 					ui.lblBanner->setMaximumSize(bannerScaledSize);
@@ -220,7 +220,7 @@ void RomDataViewPrivate::initHeaderRow(void)
 				if (iconSize.height() != imgStdHeight) {
 					// Need to scale the icon label to match the aspect ratio.
 					const QSize iconScaledSize(rintf(
-						(float)imgStdHeight * ((float)iconSize.width() / (float)iconSize.height())),
+						static_cast<float>(imgStdHeight) * (static_cast<float>(iconSize.width()) / static_cast<float>(iconSize.height()))),
 						imgStdHeight);
 					ui.lblIcon->setMinimumSize(iconScaledSize);
 					ui.lblIcon->setMaximumSize(iconScaledSize);
@@ -572,7 +572,7 @@ QTreeView *RomDataViewPrivate::initListData(QLabel *lblDesc,
 	}
 
 	// Set up column sizing.
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 	if (listDataDesc.col_attrs.sizing != 0) {
 		// Explicit column sizing was specified.
 		// NOTE: RomFields' COLSZ_* enums match QHeaderView::ResizeMode.
@@ -582,11 +582,11 @@ QTreeView *RomDataViewPrivate::initListData(QLabel *lblDesc,
 			pHeader->setStretchLastSection(false);
 			unsigned int sizing = listDataDesc.col_attrs.sizing;
 			for (int i = 0; i < colCount; i++, sizing >>= RomFields::COLSZ_BITS) {
-				pHeader->setSectionResizeMode(i, (QHeaderView::ResizeMode)(sizing & RomFields::COLSZ_MASK));
+				pHeader->setSectionResizeMode(i, static_cast<QHeaderView::ResizeMode>(sizing & RomFields::COLSZ_MASK));
 			}
 		}
 	} else
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,0,0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) */
 	{
 		// No explicit column sizing.
 		// Use default column sizing, but resize columns to contents initially.
@@ -732,8 +732,7 @@ QLabel *RomDataViewPrivate::initDimensions(QLabel *lblDesc,
 {
 	// Dimensions
 	const int *const dimensions = field.data.dimensions;
-	const QString str = formatDimensions(dimensions);
-	return initString(lblDesc, field, str);
+	return initString(lblDesc, field, formatDimensions(dimensions));
 }
 
 /**
@@ -785,7 +784,7 @@ void RomDataViewPrivate::updateMulti(uint32_t user_lc)
 			// Need to add all supported languages.
 			// TODO: Do we need to do this for all of them, or just one?
 			for (const auto &psm : *pStr_multi) {
-				set_lc.emplace(psm.first);
+				set_lc.insert(psm.first);
 			}
 		}
 
@@ -820,7 +819,7 @@ void RomDataViewPrivate::updateMulti(uint32_t user_lc)
 		// NOTE: Only done on first load.
 		if (!cboLanguage) {
 			const int colCount = treeView->model()->columnCount();
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 			// Check if explicit column sizing was used.
 			// If so, only resize columns marked as "interactive".
 			QHeaderView *const pHeader = treeView->header();
@@ -832,7 +831,7 @@ void RomDataViewPrivate::updateMulti(uint32_t user_lc)
 					}
 				}
 			} else
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,0,0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) */
 			{
 				for (int i = 0; i < colCount; i++) {
 					treeView->resizeColumnToContents(i);
@@ -852,6 +851,7 @@ void RomDataViewPrivate::updateMulti(uint32_t user_lc)
 		ui.hboxHeaderRow->addWidget(cboLanguage);
 
 		// Set the languages.
+		cboLanguage->setForcePAL(romData->isPAL());
 		cboLanguage->setLCs(set_lc);
 
 		// Select the default language.
@@ -932,6 +932,7 @@ void RomDataViewPrivate::initDisplayWidgets(void)
 	if (tabCount > 1) {
 		tabs.resize(tabCount);
 		ui.tabWidget->show();
+		string tab_name;
 		for (int i = 0; i < tabCount; i++) {
 			// Create a tab.
 			const char *const name = pFields->tabName(i);
@@ -942,19 +943,18 @@ void RomDataViewPrivate::initDisplayWidgets(void)
 
 			auto &tab = tabs[i];
 			QWidget *const widget = new QWidget(q);
-			char tab_name[32];
-			snprintf(tab_name, sizeof(tab_name), "tab%d", i);
-			widget->setObjectName(QLatin1String(tab_name));
+			tab_name = fmt::format(FSTR("tab{:d}"), i);
+			widget->setObjectName(QLatin1String(tab_name.c_str()));
 
 			// Layouts.
 			// NOTE: We shouldn't zero out the QVBoxLayout margins here.
 			// Otherwise, we end up with no margins.
 			tab.vbox = new QVBoxLayout(widget);
-			snprintf(tab_name, sizeof(tab_name), "vboxTab%d", i);
-			tab.vbox->setObjectName(QLatin1String(tab_name));
+			tab_name = fmt::format(FSTR("vboxTab{:d}"), i);
+			tab.vbox->setObjectName(QLatin1String(tab_name.c_str()));
 			tab.form = new QFormLayout();
-			snprintf(tab_name, sizeof(tab_name), "formTab%d", i);
-			tab.form->setObjectName(QLatin1String(tab_name));
+			tab_name = fmt::format(FSTR("formTab{:d}"), i);
+			tab.form->setObjectName(QLatin1String(tab_name.c_str()));
 			tab.vbox->addLayout(tab.form, 1);
 
 			// Add the tab.
@@ -983,26 +983,28 @@ void RomDataViewPrivate::initDisplayWidgets(void)
 	// same width on all tabs.
 
 	// tr: Field description label.
-	const char *const desc_label_fmt = C_("RomDataView", "%s:");
+	const char *const desc_label_fmt = C_("RomDataView", "{:s}:");
 
 	// Create the data widgets.
 	int prevTabIdx = 0;
 	int fieldIdx = 0;
-	const auto pFields_cend = pFields->cend();
-	for (auto iter = pFields->cbegin(); iter != pFields_cend; ++iter, fieldIdx++) {
-		const RomFields::Field &field = *iter;
+	for (const RomFields::Field &field : *pFields) {
 		assert(field.isValid());
-		if (!field.isValid())
+		if (!field.isValid()) {
+			fieldIdx++;
 			continue;
+		}
 
 		// Verify the tab index.
 		const int tabIdx = field.tabIdx;
-		assert(tabIdx >= 0 && tabIdx < (int)tabs.size());
-		if (tabIdx < 0 || tabIdx >= (int)tabs.size()) {
+		assert(tabIdx >= 0 && tabIdx < static_cast<int>(tabs.size()));
+		if (tabIdx < 0 || tabIdx >= static_cast<int>(tabs.size())) {
 			// Tab index is out of bounds.
+			fieldIdx++;
 			continue;
 		} else if (!tabs[tabIdx].form) {
 			// Tab name is empty. Tab is hidden.
+			fieldIdx++;
 			continue;
 		}
 
@@ -1016,7 +1018,7 @@ void RomDataViewPrivate::initDisplayWidgets(void)
 		}
 
 		// tr: Field description label.
-		const string txt = rp_sprintf(desc_label_fmt, field.name);
+		const string txt = fmt::format(FRUN(desc_label_fmt), field.name);
 		QLabel *const lblDesc = new QLabel(U82Q(txt), q);
 		// NOTE: No name for this QObject.
 		lblDesc->setAlignment(Qt::AlignLeft | Qt::AlignTop);
@@ -1064,6 +1066,8 @@ void RomDataViewPrivate::initDisplayWidgets(void)
 			// Set RFT_fieldIdx for ROM operations.
 			obj->setProperty("RFT_fieldIdx", fieldIdx);
 		}
+
+		fieldIdx++;
 	}
 
 	// Initial update of RFT_STRING_MULTI and RFT_LISTDATA_MULTI fields.
@@ -1179,7 +1183,7 @@ void RomDataView::paintEvent(QPaintEvent *event)
 {
 	// Check for "viewed" achievements.
 	Q_D(RomDataView);
-	if (!d->hasCheckedAchievements && (bool)d->romData) {
+	if (!d->hasCheckedAchievements && d->romData) {
 		d->romData->checkViewedAchievements();
 		d->hasCheckedAchievements = true;
 	}
@@ -1312,7 +1316,7 @@ void RomDataView::setRomData(const RomDataPtr &romData)
 	d->romData = romData;
 	d->initDisplayWidgets();
 
-	if ((bool)romData && prevAnimTimerRunning) {
+	if (romData && prevAnimTimerRunning) {
 		// Restart the animation timer.
 		// FIXME: Ensure frame 0 is drawn?
 		d->ui.lblIcon->startAnimTimer();

@@ -3,12 +3,29 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.5)
 
 # CMP0048: Set VERSION variables based on the project version specified in PROJECT().
 # Introduced in CMake 3.0.
-CMAKE_POLICY(SET CMP0048 NEW)
+IF(POLICY CMP0048)
+	CMAKE_POLICY(SET CMP0048 NEW)
+ENDIF(POLICY CMP0048)
 
 # CMP0063: Honor visibility properties for all target types,
 # including static libraries and executables.
 # Introduced in CMake 3.3.
-CMAKE_POLICY(SET CMP0063 NEW)
+IF(POLICY CMP0063)
+	CMAKE_POLICY(SET CMP0063 NEW)
+ENDIF(POLICY CMP0063)
+
+# CMP0151: Use -isystem for AUTOMOC include directories.
+# clang complains about `using namespace` statements in the
+# generated moc_*.cpp files:
+# In file included from src/kde/kf5/kfilemetadata_rom-properties-kf5_autogen/mocs_compilation.cpp:2:
+# src/kde/kf5/kfilemetadata_rom-properties-kf5_autogen/BKZOEHIFDQ/moc_ExtractorPluginKF5.cpp:1082:17:
+#     warning: using namespace directive in global context in header [-Wheader-hygiene]
+#  1082 | using namespace RomPropertiesKF5;
+#       |                 ^
+# Introduced in CMake 3.27.
+IF(POLICY CMP0151)
+	CMAKE_POLICY(SET CMP0151 NEW)
+ENDIF(POLICY CMP0151)
 
 # Read the project version.
 CONFIGURE_FILE(version.txt version.txt.tmp)
@@ -60,9 +77,11 @@ SET(CMAKE_LINK_DEPENDS_NO_SHARED ON)
 # enough tests are added.
 ENABLE_TESTING()
 
-# Set the standards versions: C11, C++17
+# Set the standards versions. (Minimum C11, C++14)
 # C17 was added in CMake 3.21; for older versions, use C11.
 # C++17 was added in CMake 3.8; for older versions, use C++14.
+# C++20 was added in CMake 3.12; for older versions, use C++17.
+# - C++20 is needed for std::span<>.
 # NOTE: These aren't set as hard requirements, though if the compiler
 # doesn't support them, code will either be less optimal or will fail
 # to compile.
@@ -72,7 +91,10 @@ SET(CMAKE_CXX_STANDARD_REQUIRED OFF)
 SET(CMAKE_CXX_EXTENSIONS ON)
 IF(CMAKE_VERSION VERSION_GREATER 3.20)		# >= 3.21
 	SET(CMAKE_C_STANDARD 17)
-	SET(CMAKE_CXX_STANDARD 17)
+	SET(CMAKE_CXX_STANDARD 20)
+ELSEIF(CMAKE_VERSION VERSION_GREATER 3.11)	# >= 3.12
+	SET(CMAKE_C_STANDARD 11)
+	SET(CMAKE_CXX_STANDARD 20)
 ELSEIF(CMAKE_VERSION VERSION_GREATER 3.7)	# >= 3.8
 	SET(CMAKE_C_STANDARD 11)
 	SET(CMAKE_CXX_STANDARD 17)
@@ -80,15 +102,15 @@ ELSE()
 	SET(CMAKE_C_STANDARD 11)
 	SET(CMAKE_CXX_STANDARD 14)
 ENDIF()
-IF(MSVC)
-	# FIXME: Windows SDK prior to 10.0.18362.0 has issues when compiling as either C11 or C17.
+IF(MSVC AND CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION VERSION_LESS 10.0.18362.0)
+	# Windows SDK prior to 10.0.18362.0 has issues when compiling as either C11 or C17.
 	# C:\Program Files (x86)\Windows Kits\8.1\Include\um\winbase.h(8816,5): warning C5105: macro expansion producing 'defined' has undefined behavior
 	# C:\Program Files (x86)\Windows Kits\8.1\Include\um\oaidl.h(473,17): warning C5103: pasting '/' and '/' does not result in a valid preprocessing token
 	# C:\Program Files (x86)\Windows Kits\8.1\Include\shared\wtypes.h(742,1): message : in expansion of macro '_VARIANT_BOOL'
 	# C:\Program Files (x86)\Windows Kits\8.1\Include\um\oaidl.h(473,17): error C2059: syntax error: '/'
 	# Reference: https://github.com/microsoft/vcpkg/issues/15035
 	SET(CMAKE_C_STANDARD 99)
-ENDIF(MSVC)
+ENDIF(MSVC AND CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION VERSION_LESS 10.0.18362.0)
 
 # Set default build options.
 INCLUDE(cmake/options.cmake)
@@ -172,6 +194,7 @@ INCLUDE(CheckTinyXML2)
 INCLUDE(CheckZSTD)
 INCLUDE(CheckLZ4)
 INCLUDE(CheckLZO)
+INCLUDE(CheckLibfmt)
 
 # Reference: https://cmake.org/Wiki/RecipeAddUninstallTarget
 ########### Add uninstall target ###############
@@ -249,6 +272,20 @@ ELSE(ENABLE_DECRYPTION)
 	SET(ENABLE_DECRYPTION_MSG "Disabled")
 ENDIF(ENABLE_DECRYPTION)
 
+IF(HAVE_PNG)
+	IF(USE_INTERNAL_PNG)
+		SET(HAVE_PNG_APNG_MSG "Yes (bundled)")
+	ELSE(USE_INTERNAL_PNG)
+		IF(HAVE_PNG_APNG)
+			SET(HAVE_PNG_APNG_MSG "Yes (system)")
+		ELSE(HAVE_PNG_APNG)
+			SET(HAVE_PNG_APNG_MSG "No (system)")
+		ENDIF(HAVE_PNG_APNG)
+	ENDIF(USE_INTERNAL_PNG)
+ELSE(HAVE_PNG)
+	SET(HAVE_PNG_APNG_MSG "No (library not found?)")
+ENDIF(HAVE_PNG)
+
 IF(ENABLE_XML)
 	IF(USE_INTERNAL_XML)
 		SET(ENABLE_XML_MSG "Enabled (bundled)")
@@ -323,6 +360,9 @@ ENDIF(USE_INTERNAL_XML)
 IF(BUILD_TESTING)
 	SET(EXTLIB_BUILD "${EXTLIB_BUILD}- Google Test\n")
 ENDIF(BUILD_TESTING)
+IF(USE_INTERNAL_FMT)
+	SET(EXTLIB_BUILD "${EXTLIB_BUILD}- fmt\n")
+ENDIF(USE_INTERNAL_FMT)
 
 IF(BUILD_TRACKER_EXTRACTOR)
 	SET(TRACKER_API_DISPLAY "${TRACKER_INSTALL_API_VERSION}")
@@ -343,6 +383,7 @@ Build Summary:
 - libromdata is built as: ${LIBROMDATA_LIB_TYPE}
 - Security mechanism: ${SECURITY_MECHANISM}
 - Decryption functionality: ${ENABLE_DECRYPTION_MSG}
+- APNG support: ${HAVE_PNG_APNG_MSG}
 - XML parsing: ${ENABLE_XML_MSG}
 - PVRTC decoder: ${ENABLE_PVRTC_MSG}
 - ZSTD decompression: ${ENABLE_ZSTD_MSG}

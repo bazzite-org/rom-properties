@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * WiiWAD.cpp: Nintendo Wii WAD file reader.                               *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -40,6 +40,7 @@ using namespace LibRpTexture;
 #include "Handheld/NintendoDS.hpp"
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -51,14 +52,14 @@ ROMDATA_IMPL(WiiWAD)
 /** WiiWADPrivate **/
 
 /* RomDataInfo */
-const char *const WiiWADPrivate::exts[] = {
+const array<const char*, 3+1> WiiWADPrivate::exts = {{
 	".wad",		// Nintendo WAD Format
 	".bwf",		// BroadOn WAD Format
 	".tad",		// DSi TAD (similar to Nintendo WAD)
 
 	nullptr
-};
-const char *const WiiWADPrivate::mimeTypes[] = {
+}};
+const array<const char*, 3+1> WiiWADPrivate::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	"application/x-wii-wad",
 
@@ -70,9 +71,9 @@ const char *const WiiWADPrivate::mimeTypes[] = {
 	"application/x-doom-wad",
 
 	nullptr
-};
+}};
 const RomDataInfo WiiWADPrivate::romDataInfo = {
-	"WiiWAD", exts, mimeTypes
+	"WiiWAD", exts.data(), mimeTypes.data()
 };
 
 WiiWADPrivate::WiiWADPrivate(const IRpFilePtr &file)
@@ -91,7 +92,7 @@ WiiWADPrivate::WiiWADPrivate(const IRpFilePtr &file)
 	memset(&tmdHeader, 0, sizeof(tmdHeader));
 
 #ifdef ENABLE_DECRYPTION
-	memset(dec_title_key, 0, sizeof(dec_title_key));
+	dec_title_key.fill(0);
 	memset(&imet, 0, sizeof(imet));
 #endif /* ENABLE_DECRYPTION */
 }
@@ -178,12 +179,12 @@ int WiiWADPrivate::openSRL(void)
 		// Data area IV:
 		// - First two bytes are the big-endian content index.
 		// - Remaining bytes are zero.
-		uint8_t iv[16];
-		memcpy(iv, &pIMETContent->index, sizeof(pIMETContent->index));
-		memset(&iv[2], 0, sizeof(iv)-2);
+		array<uint8_t, 16> iv;
+		iv.fill(0);
+		memcpy(iv.data(), &pIMETContent->index, sizeof(pIMETContent->index));
 
 		cbcReader = std::make_shared<CBCReader>(file,
-			data_offset, data_size, dec_title_key, iv);
+			data_offset, data_size, dec_title_key.data(), iv.data());
 		if (!cbcReader->isOpen()) {
 			// Unable to open a CBC reader.
 			int ret = -cbcReader->lastError();
@@ -404,7 +405,7 @@ WiiWAD::WiiWAD(const IRpFilePtr &file)
 	// Initialize the CBC reader for the main data area.
 
 	// First, decrypt the title key.
-	int ret = d->wiiTicket->decryptTitleKey(d->dec_title_key, sizeof(d->dec_title_key));
+	int ret = d->wiiTicket->decryptTitleKey(d->dec_title_key.data(), d->dec_title_key.size());
 	d->key_status = d->wiiTicket->verifyResult();
 	if (ret != 0) {
 		// Failed to decrypt the title key.
@@ -419,14 +420,14 @@ WiiWAD::WiiWAD(const IRpFilePtr &file)
 	// Data area IV:
 	// - First two bytes are the big-endian content index.
 	// - Remaining bytes are zero.
-	uint8_t iv[16];
-	memcpy(iv, &d->pIMETContent->index, sizeof(d->pIMETContent->index));
-	memset(&iv[2], 0, sizeof(iv)-2);
+	array<uint8_t, 16> iv;
+	iv.fill(0);
+	memcpy(iv.data(), &d->pIMETContent->index, sizeof(d->pIMETContent->index));
 
 	// Create a CBC reader to decrypt the data section.
 	// TODO: Verify some known data?
 	d->cbcReader = std::make_shared<CBCReader>(d->file,
-		d->data_offset, d->data_size, d->dec_title_key, iv);
+		d->data_offset, d->data_size, d->dec_title_key.data(), iv.data());
 
 	if (d->tmdHeader.title_id.sysID != cpu_to_be16(3)) {
 		// Wii: Contents may be one of the following:
@@ -589,18 +590,18 @@ const char *WiiWAD::systemName(unsigned int type) const
 		case NINTENDO_SYSID_IOS:
 		case NINTENDO_SYSID_RVL: {
 			// Wii
-			static const char *const sysNames_Wii[4] = {
+			static const array<const char*, 4> sysNames_Wii = {{
 				"Nintendo Wii", "Wii", "Wii", nullptr
-			};
+			}};
 			return sysNames_Wii[type];
 		}
 
 		case NINTENDO_SYSID_TWL: {
 			// DSi
 			// TODO: iQue DSi for China?
-			static const char *const sysNames_DSi[4] = {
+			static const array<const char*, 4> sysNames_DSi = {{
 				"Nintendo DSi", "DSi", "DSi", nullptr
-			};
+			}};
 			return sysNames_DSi[type];
 		}
 	}
@@ -816,7 +817,7 @@ int WiiWAD::loadFieldData(void)
 			err, RomFields::STRF_WARNING);
 	}
 
-	// Type.
+	// Type
 	string s_wadType;
 	switch (d->wadType) {
 		case WiiWADPrivate::WadType::WAD: {
@@ -852,20 +853,20 @@ int WiiWAD::loadFieldData(void)
 	}
 	d->fields.addField_string(C_("RomData", "Type"), s_wadType);
 
-	// Internal name. (BroadOn WADs only)
+	// Internal name (BroadOn WADs only)
 	// FIXME: This is the same "meta" section as Nintendo WADs...
 	if (!d->wadName.empty()) {
 		d->fields.addField_string(C_("RomData", "Name"), d->wadName);
 	}
 
-	// Title ID.
+	// Title ID
 	// TODO: Make sure the ticket title ID matches the TMD title ID.
 	d->fields.addField_string(C_("Nintendo", "Title ID"),
-		rp_sprintf("%08X-%08X",
+		fmt::format(FSTR("{:0>8X}-{:0>8X}"),
 			be32_to_cpu(tmdHeader->title_id.hi),
 			be32_to_cpu(tmdHeader->title_id.lo)));
 
-	// Game ID.
+	// Game ID
 	// NOTE: Only displayed if TID lo is all alphanumeric characters.
 	// TODO: Only for certain TID hi?
 	if (ISALNUM(tmdHeader->title_id.u8[4]) &&
@@ -875,14 +876,17 @@ int WiiWAD::loadFieldData(void)
 	{
 		// Print the game ID.
 		// TODO: Is the publisher code available anywhere?
-		d->fields.addField_string(C_("RomData", "Game ID"),
-			rp_sprintf("%.4s", reinterpret_cast<const char*>(&tmdHeader->title_id.u8[4])));
+		char id4[5];
+		memcpy(id4, &tmdHeader->title_id.u8[4], 4);
+		id4[4] = '\0';
+		d->fields.addField_string(C_("RomData", "Game ID"), id4);
 	}
 
-	// Title version.
+	// Title version
 	const unsigned int title_version = be16_to_cpu(tmdHeader->title_version);
 	d->fields.addField_string(C_("Nintendo", "Title Version"),
-		rp_sprintf("%u.%u (v%u)", title_version >> 8, title_version & 0xFF, title_version));
+		fmt::format(FSTR("{:d}.{:d} (v{:d})"),
+			title_version >> 8, title_version & 0xFF, title_version));
 
 	// Wii-specific
 	unsigned int gcnRegion = ~0U;
@@ -944,8 +948,8 @@ int WiiWAD::loadFieldData(void)
 
 			string s_region;
 			if (suffix) {
-				// tr: %1$s == full region name, %2$s == abbreviation
-				s_region = rp_sprintf_p(C_("Wii", "%1$s (%2$s)"), region, suffix);
+				// tr: {0:s} == full region name, {1:s} == abbreviation
+				s_region = fmt::format(FRUN(C_("Wii", "{0:s} ({1:s})")), region, suffix);
 			} else {
 				s_region = region;
 			}
@@ -953,7 +957,7 @@ int WiiWAD::loadFieldData(void)
 			d->fields.addField_string(region_code_title, s_region);
 		} else {
 			d->fields.addField_string(region_code_title,
-				rp_sprintf(C_("RomData", "Unknown (0x%02X)"), gcnRegion));
+				fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), gcnRegion));
 		}
 
 		// Required IOS version.
@@ -965,22 +969,22 @@ int WiiWAD::loadFieldData(void)
 			{
 				// Standard IOS slot.
 				d->fields.addField_string(ios_version_title,
-					rp_sprintf("IOS%u", ios_lo));
+					fmt::format(FSTR("IOS{:d}"), ios_lo));
 			} else if (tmdHeader->sys_version.id != 0) {
 				// Non-standard IOS slot.
 				// Print the full title ID.
 				d->fields.addField_string(ios_version_title,
-					rp_sprintf("%08X-%08X",
+					fmt::format(FSTR("{:0>8X}-{:0>8X}"),
 						be32_to_cpu(tmdHeader->sys_version.hi),
 						be32_to_cpu(tmdHeader->sys_version.lo)));
 			}
 		}
 
 		// Access rights.
-		vector<string> *const v_access_rights_hdr = new vector<string>();
-		v_access_rights_hdr->reserve(2);
-		v_access_rights_hdr->emplace_back("AHBPROT");
-		v_access_rights_hdr->emplace_back(C_("Wii", "DVD Video"));
+		vector<string> *const v_access_rights_hdr = new vector<string>({
+			"AHBPROT",
+			C_("Wii", "DVD Video")
+		});
 		d->fields.addField_bitfield(C_("Wii", "Access Rights"),
 			v_access_rights_hdr, 0, be32_to_cpu(tmdHeader->access_rights));
 
@@ -1079,7 +1083,7 @@ int WiiWAD::loadFieldData(void)
 int WiiWAD::loadMetaData(void)
 {
 	RP_D(WiiWAD);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -1097,11 +1101,8 @@ int WiiWAD::loadMetaData(void)
 		if (d->mainContent) {
 			const RomMetaData *const srlMetaData = d->mainContent->metaData();
 			if (srlMetaData && !srlMetaData->empty()) {
-				// Create the metadata object.
-				d->metaData = new RomMetaData();
-
 				// Add the SRL metadata.
-				return d->metaData->addMetaData_metaData(srlMetaData) + 1;
+				return d->metaData.addMetaData_metaData(srlMetaData) + 1;
 			}
 		}
 	}
@@ -1124,15 +1125,13 @@ int WiiWAD::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Title. (first line of game info)
-	d->metaData->addMetaData_string(Property::Title, gameInfo);
+	d->metaData.addMetaData_string(Property::Title, gameInfo);
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -1195,17 +1194,17 @@ IconAnimDataConstPtr WiiWAD::iconAnimData(void) const
  * try to get the size that most closely matches the
  * requested size.
  *
- * @param imageType	[in]     Image type.
- * @param pExtURLs	[out]    Output vector.
+ * @param imageType	[in]     Image type
+ * @param extURLs	[out]    Output vector
  * @param size		[in,opt] Requested image size. This may be a requested
  *                               thumbnail size in pixels, or an ImageSizeType
  *                               enum value.
  * @return 0 on success; negative POSIX error code on error.
  */
-int WiiWAD::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
+int WiiWAD::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) const
 {
-	ASSERT_extURLs(imageType, pExtURLs);
-	pExtURLs->clear();
+	extURLs.clear();
+	ASSERT_extURLs(imageType);
 
 	// Check if the main content is present.
 	// If it is, and this is a Wii WAD, then this is a
@@ -1338,7 +1337,7 @@ int WiiWAD::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) con
 	// If we're downloading a "high-resolution" image (M or higher),
 	// also add the default image to ExtURLs in case the user has
 	// high-resolution image downloads disabled.
-	const ImageSizeDef *szdefs_dl[2];
+	array<const ImageSizeDef*, 2> szdefs_dl;
 	szdefs_dl[0] = sizeDef;
 	unsigned int szdef_count;
 	if (sizeDef->index >= 2) {
@@ -1351,25 +1350,23 @@ int WiiWAD::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) con
 	}
 
 	// Add the URLs.
-	pExtURLs->resize(szdef_count * tdb_lc.size());
-	auto extURL_iter = pExtURLs->begin();
-	const auto tdb_lc_cend = tdb_lc.cend();
+	extURLs.resize(szdef_count * tdb_lc.size());
+	auto extURL_iter = extURLs.begin();
 	for (unsigned int i = 0; i < szdef_count; i++) {
-		// Current image type.
-		char imageTypeName[16];
-		snprintf(imageTypeName, sizeof(imageTypeName), "%s%s",
-			 imageTypeName_base, (szdefs_dl[i]->name ? szdefs_dl[i]->name : ""));
+		// Current image type
+		const string imageTypeName = fmt::format(FSTR("{:s}{:s}"),
+			imageTypeName_base, (szdefs_dl[i]->name ? szdefs_dl[i]->name : ""));
 
 		// Add the images.
-		for (auto tdb_iter = tdb_lc.cbegin();
-		     tdb_iter != tdb_lc_cend; ++tdb_iter, ++extURL_iter)
-		{
-			const string lc_str = SystemRegion::lcToStringUpper(*tdb_iter);
-			extURL_iter->url = d->getURL_GameTDB(sysDir, imageTypeName, lc_str.c_str(), id4, ext);
-			extURL_iter->cache_key = d->getCacheKey_GameTDB(sysDir, imageTypeName, lc_str.c_str(), id4, ext);
-			extURL_iter->width = szdefs_dl[i]->width;
-			extURL_iter->height = szdefs_dl[i]->height;
-			extURL_iter->high_res = (szdefs_dl[i]->index >= 2);
+		for (const uint16_t lc : tdb_lc) {
+			const string lc_str = SystemRegion::lcToStringUpper(lc);
+			ExtURL &extURL = *extURL_iter;
+			extURL.url = d->getURL_GameTDB(sysDir, imageTypeName.c_str(), lc_str.c_str(), id4, ext);
+			extURL.cache_key = d->getCacheKey_GameTDB(sysDir, imageTypeName.c_str(), lc_str.c_str(), id4, ext);
+			extURL.width = szdefs_dl[i]->width;
+			extURL.height = szdefs_dl[i]->height;
+			extURL.high_res = (szdefs_dl[i]->index >= 2);
+			++extURL_iter;
 		}
 	}
 
@@ -1408,4 +1405,4 @@ int WiiWAD::checkViewedAchievements(void) const
 	return ret;
 }
 
-}
+} // namespace LibRomData

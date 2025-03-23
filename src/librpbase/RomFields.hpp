@@ -11,11 +11,9 @@
 #include "common.h"
 #include "dll-macros.h"	// for RP_LIBROMDATA_PUBLIC
 
-// C includes
-#include <stddef.h>	/* size_t */
-#include <stdint.h>
-
 // C includes (C++ namespace)
+#include <cstddef>	/* size_t */
+#include <cstdint>
 #include <cstring>
 #include <ctime>
 
@@ -127,16 +125,19 @@ class RomFields
 
 		// Display flags for RFT_DATETIME.
 		enum DateTimeFlags : uint8_t {
-			// Show the date value.
+			// Default formatting
+			RFT_DATETIME_DEFAULT = 0U,
+
+			// Show the date value
 			RFT_DATETIME_HAS_DATE = (1U << 0),
 
-			// Show the time value.
+			// Show the time value
 			RFT_DATETIME_HAS_TIME = (1U << 1),
 
-			// Date does not have a valid year value.
+			// Date does not have a valid year value
 			RFT_DATETIME_NO_YEAR = (1U << 2),
 
-			// Mask for date/time display values.
+			// Mask for date/time display values
 			RFT_DATETIME_HAS_DATETIME_MASK = RFT_DATETIME_HAS_DATE | RFT_DATETIME_HAS_TIME,
 			RFT_DATETIME_HAS_DATETIME_NO_YEAR_MASK = RFT_DATETIME_HAS_DATE | RFT_DATETIME_HAS_TIME | RFT_DATETIME_NO_YEAR,
 
@@ -170,12 +171,12 @@ class RomFields
 
 		// Age Ratings bitfields.
 		enum AgeRatingsBitfield : uint16_t {
-			AGEBF_MIN_AGE_MASK	= 0x001F,	// Low 5 bits indicate the minimum age.
-			AGEBF_ACTIVE		= 0x0020,	// Rating is only valid if this is set.
-			AGEBF_PENDING		= 0x0040,	// Rating is pending.
-			AGEBF_NO_RESTRICTION	= 0x0080,	// No age restriction.
-			AGEBF_ONLINE_PLAY	= 0x0100,	// Rating may change due to online play.
-			AGEBF_PROHIBITED	= 0x0200,	// Game is specifically prohibited.
+			AGEBF_MIN_AGE_MASK	= 0x001FU,	// Low 5 bits indicate the minimum age.
+			AGEBF_ACTIVE		= 0x0020U,	// Rating is only valid if this is set.
+			AGEBF_PENDING		= 0x0040U,	// Rating is pending.
+			AGEBF_NO_RESTRICTION	= 0x0080U,	// No age restriction.
+			AGEBF_ONLINE_PLAY	= 0x0100U,	// Rating may change due to online play.
+			AGEBF_PROHIBITED	= 0x0200U,	// Game is specifically prohibited.
 		};
 
 		// Age Ratings type.
@@ -298,7 +299,7 @@ class RomFields
 			}
 
 			/**
-			 * Destructor.
+			 * Destructor
 			 *
 			 * NOTE: Exported for test case purposes.
 			 */
@@ -322,10 +323,10 @@ class RomFields
 				return (type != RFT_INVALID);
 			}
 
-			// Field description.
+			// Field description
 			union _desc {
 				struct _bitfield {
-					// Bit flag names.
+					// Bit flag names
 					// Must be a vector of at least 'elements' strings.
 					// If a name is nullptr, that element is skipped.
 					const std::vector<std::string> *names;
@@ -347,9 +348,9 @@ class RomFields
 				} list_data;
 			} desc;
 
-			// Field data.
+			// Field data
 			union _data {
-				// Generic data for NULL.
+				// Generic data for NULL
 				uint64_t generic;
 
 				// RFT_STRING
@@ -420,7 +421,7 @@ class RomFields
 		typedef std::vector<Field>::const_iterator const_iterator;
 
 	public:
-		/** Field accessors. **/
+		/** Field accessors **/
 
 		/**
 		 * Get the number of fields.
@@ -445,17 +446,37 @@ class RomFields
 
 		/**
 		 * Get a const iterator pointing to the beginning of the RomFields.
-		 * @return Const iterator.
+		 * @return Const iterator
 		 */
 		RP_LIBROMDATA_PUBLIC
 		const_iterator cbegin(void) const;
 
 		/**
 		 * Get a const iterator pointing to the end of the RomFields.
-		 * @return Const iterator.
+		 * @return Const iterator
 		 */
 		RP_LIBROMDATA_PUBLIC
 		const_iterator cend(void) const;
+
+		/**
+		 * Get a const iterator pointing to the beginning of the RomMetaData.
+		 * Alias function required for range-based `for` loops.
+		 * @return Const iterator
+		 */
+		const_iterator begin(void) const
+		{
+			return cbegin();
+		}
+
+		/**
+		 * Get a const iterator pointing to the end of the RomMetaData.
+		 * Alias function required for range-based `for` loops.
+		 * @return Const iterator
+		 */
+		const_iterator end(void) const
+		{
+			return cend();
+		}
 
 	public:
 		/**
@@ -574,8 +595,8 @@ class RomFields
 		/**
 		 * Convert an array of char strings to a vector of std::string.
 		 * This can be used for addField_bitfield() and addField_listData().
-		 * @param strArray Array of strings.
-		 * @param count Number of strings. (nullptrs will be handled as empty strings)
+		 * @param strArray Array of strings
+		 * @param count Number of strings (nullptrs will be handled as empty strings)
 		 * @return Allocated std::vector<std::string>.
 		 */
 		static std::vector<std::string> *strArrayToVector(const char *const *strArray, size_t count);
@@ -583,12 +604,40 @@ class RomFields
 		/**
 		 * Convert an array of char strings to a vector of std::string.
 		 * This can be used for addField_bitfield() and addField_listData().
-		 * @param msgctxt i18n context.
-		 * @param strArray Array of strings.
-		 * @param count Number of strings. (nullptrs will be handled as empty strings)
+		 * @tparam size std::array<> size
+		 * @param strArray Array of strings
+		 * @return Allocated std::vector<std::string>.
+		 */
+		template<size_t size>
+		static inline std::vector<std::string> *strArrayToVector(const std::array<const char*, size> &strArray)
+		{
+			return strArrayToVector(strArray.data(), strArray.size());
+		}
+
+		/**
+		 * Convert an array of char strings to a vector of std::string.
+		 * This can be used for addField_bitfield() and addField_listData().
+		 * @param msgctxt i18n context
+		 * @param strArray Array of strings
+		 * @param count Number of strings (nullptrs will be handled as empty strings)
 		 * @return Allocated std::vector<std::string>.
 		 */
 		static std::vector<std::string> *strArrayToVector_i18n(const char *msgctxt, const char *const *strArray, size_t count);
+
+		/**
+		 * Convert an array of char strings to a vector of std::string.
+		 * This can be used for addField_bitfield() and addField_listData().
+		 * @tparam size std::array<> size
+		 * @param msgctxt i18n context
+		 * @param strArray Array of strings
+		 * @param count Number of strings (nullptrs will be handled as empty strings)
+		 * @return Allocated std::vector<std::string>.
+		 */
+		template<size_t size>
+		static inline std::vector<std::string> *strArrayToVector_i18n(const char *msgctxt, const std::array<const char*, size> &strArray)
+		{
+			return strArrayToVector_i18n(msgctxt, strArray.data(), strArray.size());
+		}
 
 		enum TabOffset {
 			TabOffset_Ignore = -1,
@@ -830,4 +879,4 @@ class RomFields
 			uint32_t def_lc = 'en', unsigned int flags = 0);
 };
 
-}
+} // namespace LibRpBase

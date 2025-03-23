@@ -28,8 +28,7 @@ namespace LibRomData {
 class WiiWIBNPrivate final : public RomDataPrivate
 {
 public:
-	WiiWIBNPrivate(const IRpFilePtr &file);
-	~WiiWIBNPrivate() final = default;
+	explicit WiiWIBNPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -37,8 +36,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 2+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -77,22 +76,22 @@ ROMDATA_IMPL_IMG(WiiWIBN)
 /* RomDataInfo */
 // NOTE: This will be handled using the same
 // settings as WiiSave.
-const char *const WiiWIBNPrivate::exts[] = {
+const array<const char*, 2+1> WiiWIBNPrivate::exts = {{
 	// Save banner is usually "banner.bin" in the save directory.
 	".bin",
 	".wibn",	// Custom
 
 	nullptr
-};
-const char *const WiiWIBNPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> WiiWIBNPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-wii-wibn",	// .wibn
 
 	nullptr
-};
+}};
 const RomDataInfo WiiWIBNPrivate::romDataInfo = {
-	"WiiSave", exts, mimeTypes
+	"WiiSave", exts.data(), mimeTypes.data()
 };
 
 WiiWIBNPrivate::WiiWIBNPrivate(const IRpFilePtr &file)
@@ -138,8 +137,8 @@ rp_image_const_ptr WiiWIBNPrivate::loadIcon(void)
 		return nullptr;
 	}
 
-	// Number of icons read.
-	const unsigned int icons_read = (unsigned int)(size / BANNER_WIBN_ICON_SIZE);
+	// Number of icons read
+	const unsigned int icons_read = static_cast<unsigned int>(size / BANNER_WIBN_ICON_SIZE);
 
 	this->iconAnimData = std::make_shared<IconAnimData>();
 	iconAnimData->count = 0;
@@ -341,10 +340,10 @@ const char *WiiWIBN::systemName(unsigned int type) const
 		"WiiWIBN::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		// NOTE: Same as Wii.
 		"Nintendo Wii", "Wii", "Wii", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -465,11 +464,10 @@ int WiiWIBN::loadFieldData(void)
 	}
 
 	// Flags
-	static const char *const flags_names[] = {
+	static const array<const char*, 1> flags_names = {{
 		NOP_C_("WiiWIBN|Flags", "No Copy"),
-	};
-	vector<string> *const v_flags_names = RomFields::strArrayToVector_i18n(
-		"WiiWIBN|Flags", flags_names, ARRAY_SIZE(flags_names));
+	}};
+	vector<string> *const v_flags_names = RomFields::strArrayToVector_i18n("WiiWIBN|Flags", flags_names);
 	d->fields.addField_bitfield(C_("RomData", "Flags"),
 		v_flags_names, 0, be32_to_cpu(wibnHeader->flags));
 
@@ -485,7 +483,7 @@ int WiiWIBN::loadFieldData(void)
 int WiiWIBN::loadMetaData(void)
 {
 	RP_D(WiiWIBN);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -497,19 +495,16 @@ int WiiWIBN::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
 	// Wii WIBN header
 	const Wii_WIBN_Header_t *const wibnHeader = &d->wibnHeader;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Title [TODO: Also subtitle?]
-	d->metaData->addMetaData_string(Property::Title,
+	d->metaData.addMetaData_string(Property::Title,
 		utf16be_to_utf8(wibnHeader->gameTitle, ARRAY_SIZE_I(wibnHeader->gameTitle)));
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -570,7 +565,7 @@ int WiiWIBN::loadInternalImage(ImageType imageType, rp_image_const_ptr &pImage)
 	}
 
 	// TODO: -ENOENT if the file doesn't actually have an icon/banner.
-	return ((bool)pImage ? 0 : -EIO);
+	return (pImage) ? 0 : -EIO;
 }
 
 /**
@@ -607,4 +602,4 @@ IconAnimDataConstPtr WiiWIBN::iconAnimData(void) const
 	return d->iconAnimData;
 }
 
-}
+} // namespace LibRomData

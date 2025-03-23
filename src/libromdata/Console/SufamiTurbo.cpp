@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * SufamiTurbo.cpp: Sufami Turbo ROM image reader.                         *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -16,6 +16,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::vector;
 
@@ -24,7 +25,7 @@ namespace LibRomData {
 class SufamiTurboPrivate final : public RomDataPrivate
 {
 public:
-	SufamiTurboPrivate(const IRpFilePtr &file);
+	explicit SufamiTurboPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -32,8 +33,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 3+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -59,13 +60,13 @@ ROMDATA_IMPL_IMG(SufamiTurbo)
 
 /* RomDataInfo */
 // NOTE: Handling Sufami Turbo ROMs as if they're Super NES.
-const char *const SufamiTurboPrivate::exts[] = {
+const array<const char*, 1+1> SufamiTurboPrivate::exts = {{
 	// NOTE: Not including ".smc" here.
 	".st",
 
 	nullptr
-};
-const char *const SufamiTurboPrivate::mimeTypes[] = {
+}};
+const array<const char*, 3+1> SufamiTurboPrivate::mimeTypes = {{
 	// Vendor-specific MIME types from FreeDesktop.org.
 	"application/vnd.nintendo.snes.rom",
 
@@ -74,9 +75,9 @@ const char *const SufamiTurboPrivate::mimeTypes[] = {
 	"application/x-sufami-turbo-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo SufamiTurboPrivate::romDataInfo = {
-	"SNES", exts, mimeTypes
+	"SNES", exts.data(), mimeTypes.data()
 };
 
 SufamiTurboPrivate::SufamiTurboPrivate(const IRpFilePtr &file)
@@ -250,9 +251,9 @@ const char *SufamiTurbo::systemName(unsigned int type) const
 		"SufamiTurbo::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Sufami Turbo", "ST", "ST", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -345,19 +346,17 @@ int SufamiTurbo::loadFieldData(void)
 	// Game ID
 	// FIXME: This seems useless, so not including it for now...
 #if 0
-	char gameID[16];
-	snprintf(gameID, sizeof(gameID), "%02X%02X%02X",
-		romHeader->game_id[0], romHeader->game_id[1], romHeader->game_id[2]);
-	d->fields.addField_string(C_("RomData", "Game ID"), gameID,
+	d->fields.addField_string(C_("RomData", "Game ID"),
+		fmt::format(FSTR("{:0>2X}{:0>2X}{:0>2X}"),
+			romHeader->game_id[0], romHeader->game_id[1], romHeader->game_id[2]),
 		RomFields::STRF_MONOSPACE);
 #endif
 
 	// Features
-	static const char *const features_bitfield_names[] = {
+	static const array<const char*, 4> features_bitfield_names = {{
 		"SlowROM", "FastROM", "SRAM", "Special"
-	};
-	vector<string> *const v_features_bitfield_names = RomFields::strArrayToVector(
-		features_bitfield_names, ARRAY_SIZE(features_bitfield_names));
+	}};
+	vector<string> *const v_features_bitfield_names = RomFields::strArrayToVector(features_bitfield_names);
 	uint32_t features = 0;
 	switch (romHeader->rom_speed) {
 		default:
@@ -405,7 +404,7 @@ int SufamiTurbo::loadFieldData(void)
 int SufamiTurbo::loadMetaData(void)
 {
 	RP_D(SufamiTurbo);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -416,18 +415,15 @@ int SufamiTurbo::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
 	// ROM header is read in the constructor.
 	//const ST_RomHeader *const romHeader = &d->romHeader;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Title
-	d->metaData->addMetaData_string(Property::Title, d->getRomTitle());
+	d->metaData.addMetaData_string(Property::Title, d->getRomTitle());
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -438,17 +434,17 @@ int SufamiTurbo::loadMetaData(void)
  * try to get the size that most closely matches the
  * requested size.
  *
- * @param imageType	[in]     Image type.
- * @param pExtURLs	[out]    Output vector.
+ * @param imageType	[in]     Image type
+ * @param extURLs	[out]    Output vector
  * @param size		[in,opt] Requested image size. This may be a requested
  *                               thumbnail size in pixels, or an ImageSizeType
  *                               enum value.
  * @return 0 on success; negative POSIX error code on error.
  */
-int SufamiTurbo::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
+int SufamiTurbo::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) const
 {
-	ASSERT_extURLs(imageType, pExtURLs);
-	pExtURLs->clear();
+	extURLs.clear();
+	ASSERT_extURLs(imageType);
 
 	RP_D(const SufamiTurbo);
 	if (!d->isValid) {
@@ -493,16 +489,16 @@ int SufamiTurbo::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size
 	}
 
 	// Add the URLs.
-	pExtURLs->resize(1);
-	auto extURL_iter = pExtURLs->begin();
-	extURL_iter->url = d->getURL_RPDB("snes", imageTypeName, "ST", s_title.c_str(), ext);
-	extURL_iter->cache_key = d->getCacheKey_RPDB("snes", imageTypeName, "ST", s_title.c_str(), ext);
-	extURL_iter->width = sizeDefs[0].width;
-	extURL_iter->height = sizeDefs[0].height;
-	extURL_iter->high_res = (sizeDefs[0].index >= 2);
+	extURLs.resize(1);
+	ExtURL &extURL = extURLs[0];
+	extURL.url = d->getURL_RPDB("snes", imageTypeName, "ST", s_title.c_str(), ext);
+	extURL.cache_key = d->getCacheKey_RPDB("snes", imageTypeName, "ST", s_title.c_str(), ext);
+	extURL.width = sizeDefs[0].width;
+	extURL.height = sizeDefs[0].height;
+	extURL.high_res = (sizeDefs[0].index >= 2);
 
 	// All URLs added.
 	return 0;
 }
 
-}
+} // namespace LibRomData

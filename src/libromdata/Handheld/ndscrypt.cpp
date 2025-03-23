@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * ndscrypt.cpp: Nintendo DS encryption.                                   *
  *                                                                         *
- * Copyright (c) 2020-2024 by David Korth.                                 *
+ * Copyright (c) 2020-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -18,12 +18,10 @@
 #include "ndscrypt.hpp"
 #include "nds_crc.hpp"
 
-// C includes
-#include <stdint.h>
-
 // C includes (C++ namespace)
 #include <cassert>
 #include <cerrno>
+#include <cstdint>
 
 // librpbase, librpfile, librpthreads
 #include "librpbase/crypto/Hash.hpp"
@@ -36,6 +34,7 @@ using LibRpThreads::Mutex;
 using LibRpThreads::MutexLocker;
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::unique_ptr;
 
@@ -53,7 +52,9 @@ static constexpr uint8_t blowfish_md5[3][16] = {
 	{0xBC,0x03,0xB0,0xBF,0x27,0x38,0xA2,0x88,
 	 0x9B,0xEA,0x52,0xEE,0xC4,0xF1,0x35,0x7F},
 };
-static unique_ptr<uint8_t[]> blowfish_data[3];
+
+typedef array<uint8_t, NDS_BLOWFISH_SIZE> blowfish_data_t;
+static unique_ptr<blowfish_data_t> blowfish_data[3];
 
 /**
  * Load and verify a Blowfish file.
@@ -63,15 +64,16 @@ static unique_ptr<uint8_t[]> blowfish_data[3];
  */
 int ndscrypt_load_blowfish_bin(BlowfishKey bfkey)
 {
-	static constexpr const char *const filenames[] = {
+	static const array<const char*, 3> filenames = {{
 		"nds-blowfish.bin",
 		"dsi-blowfish.bin",
 		"dsi-devel-blowfish.bin",
-	};
+	}};
 	assert(bfkey >= NDSCRYPT_BF_NDS);
 	assert(bfkey < NDSCRYPT_BF_MAX);
-	if (bfkey < NDSCRYPT_BF_NDS || bfkey >= NDSCRYPT_BF_MAX)
+	if (bfkey < NDSCRYPT_BF_NDS || bfkey >= NDSCRYPT_BF_MAX) {
 		return -EINVAL;
+	}
 
 	if (blowfish_data[bfkey] != nullptr) {
 		// Blowfish data was already loaded.
@@ -114,8 +116,8 @@ int ndscrypt_load_blowfish_bin(BlowfishKey bfkey)
 	}
 
 	// Read the file.
-	blowfish_data[bfkey].reset(new uint8_t[NDS_BLOWFISH_SIZE]);
-	size_t size = f_blowfish->read(blowfish_data[bfkey].get(), NDS_BLOWFISH_SIZE);
+	blowfish_data[bfkey].reset(new blowfish_data_t);
+	size_t size = f_blowfish->read(blowfish_data[bfkey]->data(), blowfish_data[bfkey]->size());
 	if (size != NDS_BLOWFISH_SIZE) {
 		// Read error.
 		blowfish_data[bfkey].reset(nullptr);
@@ -285,7 +287,7 @@ void NDSCrypt::init2(uint32_t *magic, uint32_t a[3])
 void NDSCrypt::init1(BlowfishKey bfkey)
 {
 	// FIXME: Not big-endian safe.
-	memcpy(m_card_hash, blowfish_data[bfkey].get(), 4*(1024 + 18));
+	memcpy(m_card_hash, blowfish_data[bfkey]->data(), 4*(1024 + 18));
 	m_keycode[0] = m_gamecode;
 	m_keycode[1] = m_gamecode >> 1;
 	m_keycode[2] = m_gamecode << 1;
@@ -303,8 +305,8 @@ void NDSCrypt::init0(BlowfishKey bfkey)
 }
 
 // ARM9 decryption check values
-#define MAGIC30		0x72636E65
-#define MAGIC34		0x6A624F79
+static constexpr uint32_t MAGIC30 = 0x72636E65U;
+static constexpr uint32_t MAGIC34 = 0x6A624F79U;
 
 /*
  * decrypt_arm9

@@ -34,7 +34,6 @@ using LibWin32UI::LoadDialog_i18n;
 // C++ STL classes
 using std::array;
 using std::tstring;
-using std::unique_ptr;
 
 // Win32 dark mode
 #include "libwin32darkmode/DarkMode.hpp"
@@ -76,7 +75,14 @@ RP_XAttrView_Private::~RP_XAttrView_Private()
 int RP_XAttrView_Private::loadDosAttrs(void)
 {
 	const bool hasDosAttributes = xattrReader->hasDosAttributes();
-	const unsigned int attrs = (likely(hasDosAttributes)) ? xattrReader->dosAttributes() : 0;
+	unsigned int attrs, validAttrs;
+	if (likely(hasDosAttributes)) {
+		attrs = xattrReader->dosAttributes();
+		validAttrs = xattrReader->validDosAttributes();
+	} else {
+		attrs = 0;
+		validAttrs = 0;
+	}
 
 	// TODO: Use a "starting resource ID" instead of specifying each one?
 	struct res_map_t {
@@ -93,7 +99,9 @@ int RP_XAttrView_Private::loadDosAttrs(void)
 	}};
 
 	for (const auto &p : res_map) {
-		Button_SetCheck(GetDlgItem(hDlgSheet, p.id), (attrs & p.attr) ? BST_CHECKED : BST_UNCHECKED);
+		HWND hCheckbox = GetDlgItem(hDlgSheet, p.id);
+		Button_SetCheck(hCheckbox, (attrs & p.attr) ? BST_CHECKED : BST_UNCHECKED);
+		EnableWindow(hCheckbox, !!(validAttrs & p.attr));
 	}
 
 	return (likely(hasDosAttributes)) ? 0 : -ENOENT;
@@ -122,8 +130,8 @@ int RP_XAttrView_Private::loadADS(void)
 	const XAttrReader::XAttrList &xattrList = xattrReader->genericXAttrs();
 
 	LVITEM lvItem;
-	memset(&lvItem, 0, sizeof(lvItem));
 	lvItem.mask = LVIF_TEXT;
+	lvItem.iItem = 0;
 	for (const auto &xattr : xattrList) {
 		tstring tstr = U82T_c(xattr.first.c_str());
 		lvItem.iSubItem = 0;
@@ -395,7 +403,7 @@ IFACEMETHODIMP RP_XAttrView::Initialize(
 	// TODO: Check for "bad" file systems before checking ADS?
 #if 0
 	config = Config::instance();
-	if (FileSystem::isOnBadFS(tfilename.c_str(), config->getBoolConfigOption(Config::BoolConfig::Options_EnableThumbnailOnNetworkFS))) {
+	if (FileSystem::isOnBadFS(tfilename, config->getBoolConfigOption(Config::BoolConfig::Options_EnableThumbnailOnNetworkFS))) {
 		// This file is on a "bad" file system.
 		goto cleanup;
 	}

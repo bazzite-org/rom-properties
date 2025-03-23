@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * NGPC.cpp: Neo Geo Pocket (Color) ROM reader.                            *
  *                                                                         *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -16,6 +16,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::vector;
 
@@ -24,7 +25,7 @@ namespace LibRomData {
 class NGPCPrivate final : public RomDataPrivate
 {
 public:
-	NGPCPrivate(const IRpFilePtr &file);
+	explicit NGPCPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -32,8 +33,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 3+1> exts;
+	static const array<const char*, 2+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -61,12 +62,12 @@ ROMDATA_IMPL_IMG(NGPC)
 /** NGPCPrivate **/
 
 /* RomDataInfo */
-const char *const NGPCPrivate::exts[] = {
+const array<const char*, 3+1> NGPCPrivate::exts = {{
 	".ngp",  ".ngc", ".ngpc",
 
 	nullptr
-};
-const char *const NGPCPrivate::mimeTypes[] = {
+}};
+const array<const char*, 2+1> NGPCPrivate::mimeTypes = {{
 	// NOTE: Ordering matches RomType.
 
 	// Unofficial MIME types from FreeDesktop.org.
@@ -74,9 +75,9 @@ const char *const NGPCPrivate::mimeTypes[] = {
 	"application/x-neo-geo-pocket-color-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo NGPCPrivate::romDataInfo = {
-	"NGPC", exts, mimeTypes
+	"NGPC", exts.data(), mimeTypes.data()
 };
 
 NGPCPrivate::NGPCPrivate(const IRpFilePtr &file)
@@ -129,7 +130,7 @@ NGPC::NGPC(const IRpFilePtr &file)
 		0		// szFile (not needed for NGPC)
 	};
 	d->romType = static_cast<NGPCPrivate::RomType>(isRomSupported_static(&info));
-	d->isValid = ((int)d->romType >= 0);
+	d->isValid = (static_cast<int>(d->romType) >= 0);
 
 	if (!d->isValid) {
 		d->file.reset();
@@ -137,8 +138,8 @@ NGPC::NGPC(const IRpFilePtr &file)
 	}
 
 	// Set the MIME type.
-	if ((int)d->romType < ARRAY_SIZE_I(d->mimeTypes)-1) {
-		d->mimeType = d->mimeTypes[(int)d->romType];
+	if (static_cast<int>(d->romType) < ARRAY_SIZE_I(d->mimeTypes)-1) {
+		d->mimeType = d->mimeTypes[static_cast<int>(d->romType)];
 	}
 }
 
@@ -204,19 +205,19 @@ const char *NGPC::systemName(unsigned int type) const
 	// ignore the region selection.
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"NGPC::systemName() array index optimization needs to be updated.");
-	static_assert((int)NGPCPrivate::RomType::Max == 2,
+	static_assert(static_cast<int>(NGPCPrivate::RomType::Max) == 2,
 		"NGPC::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
 	// Bit 2: Machine type. (0 == NGP, 1 == NGPC)
-	static const char *const sysNames[2][4] = {
-		{"Neo Geo Pocket", "NGP", "NGP", nullptr},
-		{"Neo Geo Pocket Color", "NGPC", "NGPC", nullptr}
-	};
+	static const array<array<const char*, 4>, 2> sysNames = {{
+		{{"Neo Geo Pocket", "NGP", "NGP", nullptr}},
+		{{"Neo Geo Pocket Color", "NGPC", "NGPC", nullptr}},
+	}};
 
 	// NOTE: This might return an incorrect system name if
 	// d->romType is RomType::TYPE_UNKNOWN.
-	return sysNames[(int)d->romType & 1][type & SYSNAME_TYPE_MASK];
+	return sysNames[static_cast<size_t>(d->romType) & 1U][type & SYSNAME_TYPE_MASK];
 }
 
 /**
@@ -290,7 +291,7 @@ int NGPC::loadFieldData(void)
 	} else if (!d->file || !d->file->isOpen()) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->romType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->romType) < 0) {
 		// Unknown ROM image type.
 		return -EIO;
 	}
@@ -307,18 +308,17 @@ int NGPC::loadFieldData(void)
 
 	// Product ID
 	d->fields.addField_string(C_("RomData", "Product ID"),
-		rp_sprintf("NEOP%02X%02X", romHeader->id_code[1], romHeader->id_code[0]));
+		fmt::format(FSTR("NEOP{:0>2X}{:0>2X}"), romHeader->id_code[1], romHeader->id_code[0]));
 
 	// Revision
 	d->fields.addField_string_numeric(C_("RomData", "Revision"),
 		romHeader->version, RomFields::Base::Dec, 2);
 
 	// System
-	static const char *const system_bitfield_names[] = {
+	static const array<const char*, 2> system_bitfield_names = {{
 		"NGP (Monochrome)", "NGP Color"
-	};
-	vector<string> *const v_system_bitfield_names = RomFields::strArrayToVector(
-		system_bitfield_names, ARRAY_SIZE(system_bitfield_names));
+	}};
+	vector<string> *const v_system_bitfield_names = RomFields::strArrayToVector(system_bitfield_names);
 	d->fields.addField_bitfield(C_("NGPC", "System"),
 		v_system_bitfield_names, 0,
 			(d->romType == NGPCPrivate::RomType::NGPC ? 3 : 1));
@@ -344,7 +344,7 @@ int NGPC::loadFieldData(void)
 		d->fields.addField_string(C_("NGPC", "Debug Mode"), s_debug);
 	} else {
 		d->fields.addField_string(C_("NGPC", "Debug Mode"),
-			rp_sprintf(C_("RomData", "Unknown (0x%02X)"), entry_point >> 24));
+			fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), entry_point >> 24));
 	}
 
 	// Finished reading the field data.
@@ -359,32 +359,29 @@ int NGPC::loadFieldData(void)
 int NGPC::loadMetaData(void)
 {
 	RP_D(NGPC);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->romType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->romType) < 0) {
 		// Unknown ROM image type.
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
 	// ROM header is read in the constructor.
 	const NGPC_RomHeader *const romHeader = &d->romHeader;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Title
 	// NOTE: It's listed as ASCII. We'll use Latin-1.
-	d->metaData->addMetaData_string(Property::Title,
+	d->metaData.addMetaData_string(Property::Title,
 		latin1_to_utf8(romHeader->title, sizeof(romHeader->title)),
 		RomMetaData::STRF_TRIM_END);
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -395,20 +392,20 @@ int NGPC::loadMetaData(void)
  * try to get the size that most closely matches the
  * requested size.
  *
- * @param imageType	[in]     Image type.
- * @param pExtURLs	[out]    Output vector.
+ * @param imageType	[in]     Image type
+ * @param extURLs	[out]    Output vector
  * @param size		[in,opt] Requested image size. This may be a requested
  *                               thumbnail size in pixels, or an ImageSizeType
  *                               enum value.
  * @return 0 on success; negative POSIX error code on error.
  */
-int NGPC::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
+int NGPC::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) const
 {
-	ASSERT_extURLs(imageType, pExtURLs);
-	pExtURLs->clear();
+	extURLs.clear();
+	ASSERT_extURLs(imageType);
 
 	RP_D(const NGPC);
-	if (!d->isValid || (int)d->romType < 0) {
+	if (!d->isValid || static_cast<int>(d->romType) < 0) {
 		// ROM image isn't valid.
 		return -EIO;
 	}
@@ -447,48 +444,47 @@ int NGPC::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
 	// TODO: Special cases for duplicates?
 	const uint16_t id_code = (romHeader->id_code[1] << 8) | romHeader->id_code[0];
 	const char *p_extra_subdir = nullptr;
-	char extra_subdir[12];
-	char game_id[13];	// original size is 12
+	string extra_subdir;
+	string game_id;	// original size is 12
 
 	switch (id_code) {
 		default:
-			// No special handling for tihs game.
-			snprintf(game_id, sizeof(game_id), "NEOP%04X", id_code);
+			// No special handling for this game.
+			game_id = fmt::format(FSTR("NEOP{:0>4X}"), id_code);
 			break;
 
 		case 0x0000:	// Homebrew
 		case 0x1234:	// Some samples
 			// Use the game ID as the extra subdirectory,
 			// and the ROM title as the game ID.
-			memcpy(game_id, romHeader->title, sizeof(romHeader->title));
-			game_id[sizeof(game_id)-1] = '\0';
+			game_id.assign(romHeader->title, sizeof(romHeader->title));
 			// Trim spaces from the game ID.
-			for (int i = (int)sizeof(game_id)-2; i > 0; i--) {
+			for (int i = static_cast<int>(game_id.size()) - 1; i > 0; i--) {
 				if (game_id[i] != '\0' && game_id[i] != ' ')
 					break;
-				game_id[i] = '\0';
+				game_id.resize(i - 1);
 			}
-			if (game_id[0] == '\0') {
+			if (game_id.empty()) {
 				// Title is empty.
 				return -ENOENT;
 			}
 
-			snprintf(extra_subdir, sizeof(extra_subdir), "NEOP%04X", id_code);
-			p_extra_subdir = extra_subdir;
+			extra_subdir = fmt::format(FSTR("NEOP{:0>4X}"), id_code);
+			p_extra_subdir = extra_subdir.c_str();
 			break;
 	}
 
 	// Add the URLs.
-	pExtURLs->resize(1);
-	auto extURL_iter = pExtURLs->begin();
-	extURL_iter->url = d->getURL_RPDB("ngpc", imageTypeName, p_extra_subdir, game_id, ext);
-	extURL_iter->cache_key = d->getCacheKey_RPDB("ngpc", imageTypeName, p_extra_subdir, game_id, ext);
-	extURL_iter->width = sizeDefs[0].width;
-	extURL_iter->height = sizeDefs[0].height;
-	extURL_iter->high_res = (sizeDefs[0].index >= 2);
+	extURLs.resize(1);
+	ExtURL &extURL = extURLs[0];
+	extURL.url = d->getURL_RPDB("ngpc", imageTypeName, p_extra_subdir, game_id.c_str(), ext);
+	extURL.cache_key = d->getCacheKey_RPDB("ngpc", imageTypeName, p_extra_subdir, game_id.c_str(), ext);
+	extURL.width = sizeDefs[0].width;
+	extURL.height = sizeDefs[0].height;
+	extURL.high_res = (sizeDefs[0].index >= 2);
 
 	// All URLs added.
 	return 0;
 }
 
-}
+} // namespace LibRomData

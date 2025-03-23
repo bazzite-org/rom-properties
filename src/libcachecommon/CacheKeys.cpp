@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libcachecommon)                   *
  * CacheKeys.cpp: Cache key handling functions.                            *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -13,9 +13,9 @@
 // C includes (C++ namespace)
 #include <cassert>
 #include <cerrno>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <stdint.h>
 
 // C++ STL classes
 #include <array>
@@ -25,6 +25,9 @@ using std::string;
 #ifdef _WIN32
 using std::wstring;
 #endif /* _WIN32 */
+
+// libfmt
+#include "rp-libfmt.h"
 
 // OS-specific directory separator.
 #ifdef _WIN32
@@ -83,7 +86,7 @@ int filterCacheKey(char *pCacheKey)
 
 	for (char *p = pCacheKey; *p != '\0'; p++) {
 		// See valid_ascii_table for a description of valid characters.
-		const uint8_t chr = (uint8_t)*p;
+		const unsigned char chr = static_cast<unsigned char>(*p);
 		if (chr & 0x80) {
 			// Start of UTF-8 sequence.
 			// Verify that the sequence is valid.
@@ -446,10 +449,8 @@ string urlencode(const char *url)
 	for (; *url != '\0'; url++) {
 		const uint8_t chr = static_cast<uint8_t>(*url);
 		if (chr & 0x80) {
-			// UTF-8 code sequence.
-			char buf[8];
-			snprintf(buf, sizeof(buf), "%%%02X", chr);
-			s_ret += buf;
+			// UTF-8 code sequence
+			s_ret += fmt::format(FSTR("%{:0>2X}"), chr);
 		} else {
 			switch (*url) {
 				case ' ':

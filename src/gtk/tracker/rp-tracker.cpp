@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (GNOME Tracker)                    *
  * rp-tracker.cpp: Tracker extractor module                                *
  *                                                                         *
- * Copyright (c) 2017-2024 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -14,12 +14,12 @@
 
 // GLib on non-Windows platforms (prior to 2.53.1) defines G_MODULE_EXPORT to a no-op.
 // This doesn't work when we use symbol visibility settings.
-#if !GLIB_CHECK_VERSION(2,53,1) && !defined(_WIN32) && (defined(__GNUC__) && __GNUC__ >= 4)
+#if !GLIB_CHECK_VERSION(2, 53, 1) && !defined(_WIN32) && (defined(__GNUC__) && __GNUC__ >= 4)
 #  ifdef G_MODULE_EXPORT
 #    undef G_MODULE_EXPORT
 #  endif
 #  define G_MODULE_EXPORT __attribute__((visibility("default")))
-#endif /* !GLIB_CHECK_VERSION(2,53,1) && !_WIN32 && __GNUC__ >= 4 */
+#endif /* !GLIB_CHECK_VERSION(2, 53, 1) && !_WIN32 && __GNUC__ >= 4 */
 
 // libromdata
 #include "librpbase/config/Config.hpp"
@@ -32,14 +32,20 @@ using namespace LibRpFile;
 using namespace LibRomData;
 
 // C includes (C++ namespace)
-#include <stdlib.h>
+#include <cstdlib>
+
+// C++ STL classes
+using std::array;
 
 static void
 add_metadata_properties_v1(const RomMetaData *metaData, TrackerSparqlBuilder *builder)
 {
-	const auto iter_end = metaData->cend();
-	for (auto iter = metaData->cbegin(); iter != iter_end; ++iter) {
-		const RomMetaData::MetaData &prop = *iter;
+	for (const RomMetaData::MetaData &prop : *metaData) {
+		if (prop.type == PropertyType::String && (!prop.data.str || prop.data.str[0] == '\0')) {
+			// Should not happen...
+			assert(!"nullptr string detected");
+			break;
+		}
 
 		switch (prop.name) {
 			default:
@@ -58,7 +64,7 @@ add_metadata_properties_v1(const RomMetaData *metaData, TrackerSparqlBuilder *bu
 				break;
 			case Property::Genre:
 				tracker_sparql_pfns.v1.builder.predicate(builder, "nmm:genre");
-				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str->c_str());
+				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str);
 				break;
 			case Property::SampleRate:
 				tracker_sparql_pfns.v1.builder.predicate(builder, "nfo:sampleRate");
@@ -80,41 +86,41 @@ add_metadata_properties_v1(const RomMetaData *metaData, TrackerSparqlBuilder *bu
 				break;
 			case Property::Album:
 				tracker_sparql_pfns.v1.builder.predicate(builder, "nmm:musicAlbum");
-				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str->c_str());
+				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str);
 				break;
 			case Property::AlbumArtist:
 				// TODO
 				break;
 			case Property::Composer:
 				tracker_sparql_pfns.v1.builder.predicate(builder, "nmm:composer");
-				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str->c_str());
+				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str);
 				break;
 			case Property::Lyricist:
 				tracker_sparql_pfns.v1.builder.predicate(builder, "nmm:lyricist");
-				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str->c_str());
+				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str);
 				break;
 
 			// Document
 			case Property::Author:
 				// NOTE: Closest equivalent is "Creator".
 				tracker_sparql_pfns.v1.builder.predicate(builder, "nco:creator");
-				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str->c_str());
+				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str);
 				break;
 			case Property::Title:
 				tracker_sparql_pfns.v1.builder.predicate(builder, "nie:title");
-				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str->c_str());
+				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str);
 				break;
 			case Property::Copyright:
 				tracker_sparql_pfns.v1.builder.predicate(builder, "nie:copyright");
-				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str->c_str());
+				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str);
 				break;
 			case Property::Publisher:
 				tracker_sparql_pfns.v1.builder.predicate(builder, "nco:publisher");
-				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str->c_str());
+				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str);
 				break;
 			case Property::Description:
 				tracker_sparql_pfns.v1.builder.predicate(builder, "nie:description");
-				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str->c_str());
+				tracker_sparql_pfns.v1.builder.object_string(builder, prop.data.str);
 				break;
 			case Property::CreationDate:
 				// TODO: Convert from Unix timestamp to "xsd:dateTime" for "nie:contentCreated".
@@ -142,10 +148,18 @@ add_metadata_properties_v1(const RomMetaData *metaData, TrackerSparqlBuilder *bu
 static void
 add_metadata_properties_v2(const RomMetaData *metaData, TrackerResource *resource)
 {
-	// TODO: Make use of tracker_resource_set_relation(), like in tracker-extract-mp3.c?
-	const auto iter_end = metaData->cend();
-	for (auto iter = metaData->cbegin(); iter != iter_end; ++iter) {
-		const RomMetaData::MetaData &prop = *iter;
+	// for album relations
+	TrackerResource *album_artist = nullptr;
+	const char *album_name = nullptr;
+	int disc_number = 0;
+	bool has_disc_number = false;
+
+	for (const RomMetaData::MetaData &prop : *metaData) {
+		if (prop.type == PropertyType::String && !prop.data.str) {
+			// Should not happen...
+			assert(!"nullptr string detected");
+			break;
+		}
 
 		switch (prop.name) {
 			default:
@@ -161,7 +175,7 @@ add_metadata_properties_v2(const RomMetaData *metaData, TrackerResource *resourc
 				tracker_sparql_pfns.v2.resource.set_int(resource, "nfo:duration", prop.data.ivalue / 1000);
 				break;
 			case Property::Genre:
-				tracker_sparql_pfns.v2.resource.set_string(resource, "nmm:genre", prop.data.str->c_str());
+				tracker_sparql_pfns.v2.resource.set_string(resource, "nmm:genre", prop.data.str);
 				break;
 			case Property::SampleRate:
 				tracker_sparql_pfns.v2.resource.set_int(resource, "nfo:sampleRate", prop.data.ivalue);
@@ -179,34 +193,43 @@ add_metadata_properties_v2(const RomMetaData *metaData, TrackerResource *resourc
 				// TODO
 				break;
 			case Property::Album:
-				tracker_sparql_pfns.v2.resource.set_string(resource, "nmm:musicAlbum", prop.data.str->c_str());
+				// NOTE: Property is added later.
+				//tracker_sparql_pfns.v2.resource.set_string(resource, "nmm:musicAlbum", prop.data.str);
+				album_name = prop.data.str;
 				break;
 			case Property::AlbumArtist:
-				// TODO
+				// NOTE: Property is added later. (as part of Album, or standalone if not specified)
+				// TODO: Separate from composer?
+				//tracker_sparql_pfns.v2.resource.set_string(resource, "nmm:composer", prop.data.str);
+				album_artist = tracker_extract_pfns.v2._new.artist(prop.data.str);
 				break;
-			case Property::Composer:
-				tracker_sparql_pfns.v2.resource.set_string(resource, "nmm:composer", prop.data.str->c_str());
+			case Property::Composer: {
+				TrackerResource *const composer = tracker_extract_pfns.v2._new.artist(prop.data.str);
+				tracker_sparql_pfns.v2.resource.add_take_relation(resource, "nmm:composer", composer);
 				break;
-			case Property::Lyricist:
-				tracker_sparql_pfns.v2.resource.set_string(resource, "nmm:lyricist", prop.data.str->c_str());
+			}
+			case Property::Lyricist: {
+				TrackerResource *const lyricist = tracker_extract_pfns.v2._new.artist(prop.data.str);
+				tracker_sparql_pfns.v2.resource.add_take_relation(resource, "nmm:lyricist", lyricist);
 				break;
+			}
 
 			// Document
 			case Property::Author:
 				// NOTE: Closest equivalent is "Creator".
-				tracker_sparql_pfns.v2.resource.set_string(resource, "nco:creator", prop.data.str->c_str());
+				tracker_sparql_pfns.v2.resource.set_string(resource, "nco:creator", prop.data.str);
 				break;
 			case Property::Title:
-				tracker_sparql_pfns.v2.resource.set_string(resource, "nie:title", prop.data.str->c_str());
+				tracker_sparql_pfns.v2.resource.set_string(resource, "nie:title", prop.data.str);
 				break;
 			case Property::Copyright:
-				tracker_sparql_pfns.v2.resource.set_string(resource, "nie:copyright", prop.data.str->c_str());
+				tracker_sparql_pfns.v2.resource.set_string(resource, "nie:copyright", prop.data.str);
 				break;
 			case Property::Publisher:
-				tracker_sparql_pfns.v2.resource.set_string(resource, "nco:publisher", prop.data.str->c_str());
+				tracker_sparql_pfns.v2.resource.set_string(resource, "nco:publisher", prop.data.str);
 				break;
 			case Property::Description:
-				tracker_sparql_pfns.v2.resource.set_string(resource, "nie:description", prop.data.str->c_str());
+				tracker_sparql_pfns.v2.resource.set_string(resource, "nie:description", prop.data.str);
 				break;
 			case Property::CreationDate:
 				// TODO: Convert from Unix timestamp to "xsd:dateTime" for "nie:contentCreated".
@@ -222,10 +245,33 @@ add_metadata_properties_v2(const RomMetaData *metaData, TrackerResource *resourc
 
 			// Audio
 			case Property::DiscNumber:
-				tracker_sparql_pfns.v2.resource.set_int(resource, "nmm:setNumber", prop.data.ivalue);
+				// NOTE: Property is added later. (as part of Album, or standalone if not specified)
+				disc_number = prop.data.ivalue;
+				has_disc_number = true;
 				break;
 		}
 	}
+
+	if (album_name) {
+		// Create an Album relation.
+		// TODO: Release date
+		TrackerResource *const album_disc = tracker_extract_pfns.v2._new.music_album_disc(
+			album_name, album_artist, (disc_number > 0) ? disc_number : 1, "");
+
+		tracker_sparql_pfns.v2.resource.set_take_relation(resource, "nmm:musicAlbumDisc", album_disc);
+
+		TrackerResource *const album = tracker_sparql_pfns.v2.resource.get_first_relation(album_disc, "nmm:albumDiscAlbum");
+		tracker_sparql_pfns.v2.resource.set_relation(resource, "nmm:musicAlbum", album);
+	} else {
+		// Set other properties.
+		if (has_disc_number) {
+			tracker_sparql_pfns.v2.resource.set_int(resource, "nmm:setNumber", disc_number);
+		}
+
+		// TODO: album_artist?
+	}
+
+	g_clear_object(&album_artist);
 }
 
 // NOTE: The "error" parameter was added in tracker-3.0.
@@ -300,7 +346,7 @@ tracker_extract_get_metadata(TrackerExtractInfo *info, GError **error)
 
 	// Determine the file type.
 	// TODO: Better NFOs for some of these.
-	const char *fileTypes[2] = {nullptr, nullptr};
+	array<const char*, 2> fileTypes = {{nullptr, nullptr}};
 	switch (romData->fileType()) {
 		default:
 			assert(!"Unhandled file type!");

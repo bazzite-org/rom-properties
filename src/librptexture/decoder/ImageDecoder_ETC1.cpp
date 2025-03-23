@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librptexture)                     *
  * ImageDecoder_ETC1.cpp: Image decoding functions: ETC1                   *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -30,16 +30,16 @@ typedef union _etc1_block {
 		// - diffbit == 1: 5 MSB == base, 3 LSB == differential
 		// Some compilers pad this structure to a multiple of 4 bytes
 #pragma pack(1)
-		union PACKED {
+		union RP_PACKED {
 			// Indiv/Diff
-			struct PACKED {
+			struct RP_PACKED {
 				uint8_t R;
 				uint8_t G;
 				uint8_t B;
 			} id;
 
 			// ETC2 'T' mode
-			struct PACKED {
+			struct RP_PACKED {
 				uint8_t R1;
 				uint8_t G1B1;
 				uint8_t R2G2;
@@ -47,7 +47,7 @@ typedef union _etc1_block {
 			} t;
 
 			// ETC2 'H' mode
-			struct PACKED {
+			struct RP_PACKED {
 				uint8_t R1G1a;
 				uint8_t G1bB1aB1b;
 				uint8_t B1bR2G2;
@@ -285,7 +285,7 @@ struct ColorRGB {
  * @param color ColorRGB struct.
  * @return xRGB32 value. (Alpha channel set to 0xFF)
  */
-static inline uint32_t clamp_ColorRGB(const ColorRGB &color)
+static inline uint32_t clamp_ColorRGB(ColorRGB color)
 {
 	uint32_t xrgb32 = 0;
 	if (color.B > 255) {
@@ -333,12 +333,12 @@ static void decodeBlock_ETC_RGB(array<uint32_t, 4*4> &tileBuf, const etc1_block 
 	// For ETC1 mode, these are used as base colors for the two subblocks.
 	// For 'T' and 'H' mode, these are used to calculate the paint colors.
 	// For 'Planar' mode, three colors are used as 'O', 'H', and 'V'.
-	ColorRGB base_color[3];
+	array<ColorRGB, 3> base_color;
 
 	// 'T', 'H' modes: Paint colors are used instead of base colors.
 	// Intensity modifications are not supported, so we'll store the
 	// final xRGB32 values instead of ColorRGB.
-	uint32_t paint_color[4];
+	array<uint32_t, 4> paint_color;
 
 	// ETC2 block mode.
 	etc2_block_mode block_mode = etc2_block_mode::Unknown;
@@ -511,7 +511,7 @@ static void decodeBlock_ETC_RGB(array<uint32_t, 4*4> &tileBuf, const etc1_block 
 			// ETC1 block mode.
 
 			// Intensities for the table codewords.
-			const int16_t *tbl[2];
+			array<const int16_t*, 2> tbl;
 			if ((mode & ETC2_DM_A1) && !(etc1_src->control & 0x02)) {
 				// ETC2, punchthrough alpha: Opaque bit is unset.
 				tbl[0] = etc2_intensity_a1[ etc1_src->control >> 5];
@@ -617,9 +617,9 @@ rp_image_ptr fromETC1(int width, int height,
 	assert(img_buf != nullptr);
 	assert(width > 0);
 	assert(height > 0);
-	assert(img_siz >= (((size_t)width * (size_t)height) / 2));
+	assert(img_siz >= (static_cast<size_t>(width) * static_cast<size_t>(height) / 2));
 	if (!img_buf || width <= 0 || height <= 0 ||
-	    img_siz < (((size_t)width * (size_t)height) / 2))
+	    img_siz < (static_cast<size_t>(width) * static_cast<size_t>(height) / 2))
 	{
 		return nullptr;
 	}
@@ -683,9 +683,9 @@ rp_image_ptr fromETC2_RGB(int width, int height,
 	assert(img_buf != nullptr);
 	assert(width > 0);
 	assert(height > 0);
-	assert(img_siz >= (((size_t)width * (size_t)height) / 2));
+	assert(img_siz >= (static_cast<size_t>(width) * static_cast<size_t>(height) / 2));
 	if (!img_buf || width <= 0 || height <= 0 ||
-	    img_siz < (((size_t)width * (size_t)height) / 2))
+	    img_siz < (static_cast<size_t>(width) * static_cast<size_t>(height) / 2))
 	{
 		return nullptr;
 	}
@@ -793,9 +793,9 @@ rp_image_ptr fromETC2_RGBA(int width, int height,
 	assert(img_buf != nullptr);
 	assert(width > 0);
 	assert(height > 0);
-	assert(img_siz >= ((size_t)width * (size_t)height));
+	assert(img_siz >= (static_cast<size_t>(width) * static_cast<size_t>(height)));
 	if (!img_buf || width <= 0 || height <= 0 ||
-	    img_siz < ((size_t)width * (size_t)height))
+	    img_siz < (static_cast<size_t>(width) * static_cast<size_t>(height)))
 	{
 		return nullptr;
 	}
@@ -863,9 +863,9 @@ rp_image_ptr fromETC2_RGB_A1(int width, int height,
 	assert(img_buf != nullptr);
 	assert(width > 0);
 	assert(height > 0);
-	assert(img_siz >= (((size_t)width * (size_t)height) / 2));
+	assert(img_siz >= (static_cast<size_t>(width) * static_cast<size_t>(height) / 2));
 	if (!img_buf || width <= 0 || height <= 0 ||
-	    img_siz < (((size_t)width * (size_t)height) / 2))
+	    img_siz < (static_cast<size_t>(width) * static_cast<size_t>(height) / 2))
 	{
 		return nullptr;
 	}
@@ -929,9 +929,9 @@ rp_image_ptr fromEAC_R11(int width, int height,
 	assert(img_buf != nullptr);
 	assert(width > 0);
 	assert(height > 0);
-	assert(img_siz >= (((size_t)width * (size_t)height) / 2));
+	assert(img_siz >= (static_cast<size_t>(width) * static_cast<size_t>(height) / 2));
 	if (!img_buf || width <= 0 || height <= 0 ||
-	    img_siz < (((size_t)width * (size_t)height) / 2))
+	    img_siz < (static_cast<size_t>(width) * static_cast<size_t>(height) / 2))
 	{
 		return nullptr;
 	}
@@ -999,9 +999,9 @@ rp_image_ptr fromEAC_RG11(int width, int height,
 	assert(img_buf != nullptr);
 	assert(width > 0);
 	assert(height > 0);
-	assert(img_siz >= ((size_t)width * (size_t)height));
+	assert(img_siz >= (static_cast<size_t>(width) * static_cast<size_t>(height)));
 	if (!img_buf || width <= 0 || height <= 0 ||
-	    img_siz < ((size_t)width * (size_t)height))
+	    img_siz < (static_cast<size_t>(width) * static_cast<size_t>(height)))
 	{
 		return nullptr;
 	}

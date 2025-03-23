@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * WiiUPackage_p.hpp: Wii U NUS Package reader. (PRIVATE CLASS)            *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -33,6 +33,7 @@
 #include "tcharx.h"
 
 // C++ STL includes
+#include <memory>
 #include <vector>
 
 // TinyXML2
@@ -50,7 +51,6 @@ public:
 #if defined(_WIN32) && defined(_UNICODE)
 	WiiUPackagePrivate(const wchar_t *path);
 #endif /* _WIN32 && _UNICODE */
-	~WiiUPackagePrivate();
 
 private:
 	typedef LibRpBase::RomDataPrivate super;
@@ -58,18 +58,29 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const std::array<const char*, 0+1> exts;
+	static const std::array<const char*, 1+1> mimeTypes;
 	static const LibRpBase::RomDataInfo romDataInfo;
 
 public:
-	// Directory path (strdup()'d)
-	TCHAR *path;
+	// Package type
+	enum class PackageType {
+		Unknown	= -1,
+
+		NUS		= 0,	// NUS format
+		Extracted	= 1,	// Extracted
+
+		Max
+	};
+	PackageType packageType;
+
+	// Directory path
+	std::tstring path;
 
 	// Ticket, TMD, and FST
-	WiiTicket *ticket;
-	WiiTMD *tmd;
-	WiiUFst *fst;
+	std::unique_ptr<WiiTicket> ticket;
+	std::unique_ptr<WiiTMD> tmd;
+	std::unique_ptr<WiiUFst> fst;
 
 	// Icon (loaded from "/meta/iconTex.tga")
 	LibRpTexture::rp_image_const_ptr img_icon;
@@ -110,17 +121,6 @@ public:
 	 * @return Icon, or nullptr on error.
 	 */
 	LibRpTexture::rp_image_const_ptr loadIcon(void);
-
-public:
-	/**
-	 * Is a directory supported by this class?
-	 * @tparam T Character type (char for UTF-8; wchar_t for Windows UTF-16)
-	 * @param path Directory to check
-	 * @param filenames_to_check Array of filenames to check
-	 * @return Class-specific system ID (>= 0) if supported; -1 if not.
-	 */
-	template<typename T>
-	static int T_isDirSupported_static(const T *path, const std::array<const T*, 3> &filenames_to_check);
 
 #ifdef ENABLE_XML
 private:
@@ -184,7 +184,14 @@ public:
 	 * @return 0 on success; negative POSIX error code on error.
 	 */
 	int addMetaData_System_XMLs(void);
+
+	/**
+	 * Get the product code from meta.xml, and application type from app.xml.
+	 * @param pApplType	[out] Pointer to uint32_t for application type
+	 * @return Product code, or empty string on error.
+	 */
+	std::string getProductCodeAndApplType_xml(uint32_t *pApplType);
 #endif /* ENABLE_XML */
 };
 
-}
+} // namespace LibRomData

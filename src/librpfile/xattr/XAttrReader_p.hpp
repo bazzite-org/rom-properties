@@ -13,8 +13,8 @@
 #include "dll-macros.h"	// for RP_LIBROMDATA_PUBLIC
 #include "tcharx.h"
 
-// C includes
-#include <stdint.h>
+// C includes (C++ namespace)
+#include <cstdint>
 
 // C++ includes
 #include <list>
@@ -33,14 +33,6 @@ class XAttrReaderPrivate
 #ifndef _WIN32
 		~XAttrReaderPrivate();
 #endif /* !_WIN32 */
-
-	private:
-		/**
-		 * Initialize attributes.
-		 * Internal fd (filename on Windows) must be set.
-		 * @return 0 on success; negative POSIX error code on error.
-		 */
-		int init(void);
 
 	private:
 		RP_DISABLE_COPY(XAttrReaderPrivate)
@@ -117,7 +109,8 @@ class XAttrReaderPrivate
 		uint32_t xfsXFlags;
 		uint32_t xfsProjectId;
 		unsigned int dosAttributes;
+		unsigned int validDosAttributes;
 		XAttrReader::XAttrList genericXAttrs;
 };
 
-}
+} // namespace LibRpFile

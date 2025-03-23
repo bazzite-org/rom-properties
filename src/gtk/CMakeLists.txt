@@ -51,11 +51,13 @@ FUNCTION(GDBUS_CODEGEN _outvar _prefix _xml)
 	SET(${_outvar} "${_prefix}.c" "${_prefix}.h" PARENT_SCOPE)
 ENDFUNCTION(GDBUS_CODEGEN)
 
-# D-Bus bindings for NetworkManager.
-GDBUS_CODEGEN(NetworkManager_GDBus_SRCS NetworkManager "${CMAKE_CURRENT_SOURCE_DIR}/../dbus/org.freedesktop.NetworkManager.xml")
+# D-Bus bindings
 IF(ENABLE_ACHIEVEMENTS)
 	GDBUS_CODEGEN(Notifications_GDBus_SRCS Notifications "${CMAKE_CURRENT_SOURCE_DIR}/../dbus/org.freedesktop.Notifications.xml")
 ENDIF(ENABLE_ACHIEVEMENTS)
+IF(ENABLE_NETWORKING)
+	GDBUS_CODEGEN(NetworkManager_GDBus_SRCS NetworkManager "${CMAKE_CURRENT_SOURCE_DIR}/../dbus/org.freedesktop.NetworkManager.xml")
+ENDIF(ENABLE_NETWORKING)
 
 # Sources and headers (GLib common; no GTK dependencies)
 SET(${PROJECT_NAME}_GLib_SRCS
@@ -64,24 +66,20 @@ SET(${PROJECT_NAME}_GLib_SRCS
 	RomDataFormat.cpp
 	RpFile_gio.cpp
 	is-supported.cpp
-	ProxyForUrl.cpp
 	RpGtkCpp.cpp
 	sort_funcs_common.c
 
 	config/CacheCleaner.cpp
-	config/UpdateChecker.cpp
 	)
 SET(${PROJECT_NAME}_GLib_H
 	RomDataFormat.hpp
 	RpFile_gio.hpp
 	is-supported.hpp
-	ProxyForUrl.hpp
 	glib-compat.h
 	RpGtkCpp.hpp
 	sort_funcs_common.h
 
 	config/CacheCleaner.hpp
-	config/UpdateChecker.hpp
 	)
 
 # Sources and headers
@@ -161,7 +159,15 @@ SET(${PROJECT_NAME}_GTK3MAX_H
 	gtk3/sort_funcs.h
 	)
 
-# Sources and headers (GTK4+ only)
+# Sources and headers (GTK3+)
+SET(${PROJECT_NAME}_GTK3MIN_SRCS
+	pfn_adwaita.c
+	)
+SET(${PROJECT_NAME}_GTK3MIN_H
+	pfn_adwaita.h
+	)
+
+# Sources and headers (GTK4+)
 SET(${PROJECT_NAME}_GTK4MIN_SRCS
 	LanguageComboBox_gtk4.cpp
 	LanguageComboBoxItem.c
@@ -195,6 +201,18 @@ IF(ENABLE_ACHIEVEMENTS)
 	SET(${PROJECT_NAME}-notify_SRCS AchGDBus.cpp)
 	SET(${PROJECT_NAME}-notify_H    AchGDBus.hpp)
 ENDIF(ENABLE_ACHIEVEMENTS)
+
+IF(ENABLE_NETWORKING)
+	# GLib common: Networking code, e.g. update checker
+	SET(${PROJECT_NAME}_GLib_NETWORKING_SRCS
+		ProxyForUrl.cpp
+		config/UpdateChecker.cpp
+		)
+	SET(${PROJECT_NAME}_GLib_NETWORKING_H
+		ProxyForUrl.hpp
+		config/UpdateChecker.hpp
+		)
+ENDIF(ENABLE_NETWORKING)
 
 # Common libraries required for both GTK+ 2.x and 3.x.
 FIND_PACKAGE(GLib2 ${GLIB_MIN_VERSION})
@@ -251,10 +269,14 @@ CONFIGURE_FILE("${CMAKE_CURRENT_SOURCE_DIR}/config.gtk.h.in" "${CMAKE_CURRENT_BI
 IF(BUILD_XFCE OR BUILD_GTK3 OR BUILD_GTK4)
 	# GLib common library
 	ADD_LIBRARY(rom-properties-glib STATIC
-		${${PROJECT_NAME}_GLib_SRCS}
-		${${PROJECT_NAME}_GLib_H}
+		${${PROJECT_NAME}_GLib_SRCS} ${${PROJECT_NAME}_GLib_H}
+		${${PROJECT_NAME}_GLib_NETWORKING_SRCS} ${${PROJECT_NAME}_GLib_NETWORKING_H}
 		)
-	SET_TARGET_PROPERTIES(rom-properties-glib PROPERTIES EXCLUDE_FROM_ALL TRUE)
+	# Exclude from ALL builds; enable PIC.
+	SET_TARGET_PROPERTIES(rom-properties-glib PROPERTIES
+		EXCLUDE_FROM_ALL TRUE
+		POSITION_INDEPENDENT_CODE TRUE
+		)
 	TARGET_INCLUDE_DIRECTORIES(rom-properties-glib
 		PUBLIC	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>		# gtk
 			$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>		# gtk
@@ -264,14 +286,12 @@ IF(BUILD_XFCE OR BUILD_GTK3 OR BUILD_GTK4)
 	TARGET_LINK_LIBRARIES(rom-properties-glib PUBLIC glibresources)
 	TARGET_LINK_LIBRARIES(rom-properties-glib PUBLIC GLib2::gio-unix GLib2::gio GLib2::gobject GLib2::glib)
 	TARGET_LINK_LIBRARIES(rom-properties-glib PRIVATE romdata)		# for config.librptext.h
-ENDIF(BUILD_XFCE OR BUILD_GTK3 OR BUILD_GTK4)
 
-# Unix: Add -fpic/-fPIC in order to use this static library in plugins.
-# NOTE: This will be propagated to subprojects.
-IF(UNIX AND NOT APPLE)
-	SET(CMAKE_C_FLAGS	"${CMAKE_C_FLAGS} -fpic -fPIC")
-	SET(CMAKE_CXX_FLAGS	"${CMAKE_CXX_FLAGS} -fpic -fPIC")
-ENDIF(UNIX AND NOT APPLE)
+	# libfmt
+	IF(Fmt_FOUND)
+		TARGET_LINK_LIBRARIES(rom-properties-glib PRIVATE ${Fmt_LIBRARY})
+	ENDIF(Fmt_FOUND)
+ENDIF(BUILD_XFCE OR BUILD_GTK3 OR BUILD_GTK4)
 
 # Build GTK+ 2.x frontends.
 IF(BUILD_XFCE)

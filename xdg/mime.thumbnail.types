@@ -26,6 +26,8 @@ application/x-cbm2-cartridge		# CBMCart
 application/x-vic20-cartridge		# CBMCart
 application/x-plus4-cartridge		# CBMCart
 application/pkix-cert			# CBMCart (NOTE: Workaround; .crt is detected as this)
+application/x-cdi			# Dreamcast
+application/x-discjuggler-cd-image	# Dreamcast
 application/x-dreamcast-rom		# Dreamcast
 application/x-dreamcast-iso-image	# Dreamcast
 application/x-dc-rom			# Dreamcast
@@ -83,6 +85,7 @@ application/x-gba-rom			# GameBoyAdvance
 application/x-gameboy-advance-rom	# GameBoyAdvance (mGBA)
 application/x-agb-rom			# GameBoyAdvance (mGBA)
 application/x-game-com-rom		# GameCom
+application/java-archive		# J2ME (possibly other Java archives, too...)
 application/x-neo-geo-pocket-rom	# NGPC
 application/x-neo-geo-pocket-color-rom	# NGPC
 model/x.stl-binary			# Nintendo3DS (?)
@@ -127,6 +130,8 @@ image/x-godot-ctex			# Godot CTEX (v4)
 image/ktx				# KhronosKTX
 image/ktx2				# KhronosKTX2
 image/x-pvr				# PowerVR3
+image/x-qoi				# Qoi
+image/qoi				# Qoi
 image/x-sega-pvr			# SegaPVR
 image/x-sega-gvr			# SegaPVR
 image/x-sega-svr			# SegaPVR

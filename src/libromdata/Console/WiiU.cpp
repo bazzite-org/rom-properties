@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * WiiU.cpp: Nintendo Wii U disc image reader.                             *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -23,6 +23,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::vector;
 
@@ -31,8 +32,7 @@ namespace LibRomData {
 class WiiUPrivate final : public RomDataPrivate
 {
 public:
-	WiiUPrivate(const IRpFilePtr &file);
-	~WiiUPrivate() final = default;
+	explicit WiiUPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -40,8 +40,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 3+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -55,7 +55,7 @@ ROMDATA_IMPL_IMG(WiiU)
 /** WiiUPrivate **/
 
 /* RomDataInfo */
-const char *const WiiUPrivate::exts[] = {
+const array<const char*, 3+1> WiiUPrivate::exts = {{
 	".wud", ".wux",
 
 	// NOTE: May cause conflicts on Windows
@@ -63,16 +63,16 @@ const char *const WiiUPrivate::exts[] = {
 	".iso",
 
 	nullptr
-};
-const char *const WiiUPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> WiiUPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-wii-u-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo WiiUPrivate::romDataInfo = {
-	"WiiU", exts, mimeTypes
+	"WiiU", exts.data(), mimeTypes.data()
 };
 
 WiiUPrivate::WiiUPrivate(const IRpFilePtr &file)
@@ -156,6 +156,9 @@ WiiU::WiiU(const IRpFilePtr &file)
 		d->file.reset();
 		return;
 	}
+
+	// Is PAL? (TODO: Proper region check.)
+	d->isPAL = (d->discHeader.region[0] == 'E');	// for "EUR"
 }
 
 /** ROM detection functions. **/
@@ -235,9 +238,9 @@ const char *WiiU::systemName(unsigned int type) const
 		"WiiU::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Nintendo Wii U", "Wii U", "Wii U", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -331,16 +334,17 @@ int WiiU::loadFieldData(void)
 
 	// Publisher
 	// Look up the publisher ID.
-	char publisher_code[5];
 	const char *publisher = nullptr;
 	string s_publisher;
 
 	const uint32_t publisher_id = WiiUData::lookup_disc_publisher(discHeader->id4);
-	publisher_code[0] = (publisher_id >> 24) & 0xFF;
-	publisher_code[1] = (publisher_id >> 16) & 0xFF;
-	publisher_code[2] = (publisher_id >>  8) & 0xFF;
-	publisher_code[3] =  publisher_id & 0xFF;
-	publisher_code[4] = 0;
+	const array<char, 5> publisher_code = {{
+		static_cast<char>((publisher_id >> 24) & 0xFF),
+		static_cast<char>((publisher_id >> 16) & 0xFF),
+		static_cast<char>((publisher_id >>  8) & 0xFF),
+		static_cast<char>( publisher_id & 0xFF),
+		'\0'
+	}};
 	if (publisher_id != 0 && (publisher_id & 0xFFFF0000) == 0x30300000) {
 		// Publisher ID is a valid two-character ID.
 		publisher = NintendoPublishers::lookup(&publisher_code[2]);
@@ -351,9 +355,9 @@ int WiiU::loadFieldData(void)
 		if (ISALNUM(publisher_code[0]) && ISALNUM(publisher_code[1]) &&
 		    ISALNUM(publisher_code[2]) && ISALNUM(publisher_code[3]))
 		{
-			s_publisher = rp_sprintf(C_("RomData", "Unknown (%.4s)"), publisher_code);
+			s_publisher = fmt::format(FRUN(C_("RomData", "Unknown ({:s})")), publisher_code.data());
 		} else {
-			s_publisher = rp_sprintf(C_("RomData", "Unknown (%02X %02X %02X %02X)"),
+			s_publisher = fmt::format(FRUN(C_("RomData", "Unknown ({:0>2X} {:0>2X} {:0>2X} {:0>2X})")),
 				static_cast<uint8_t>(publisher_code[0]),
 				static_cast<uint8_t>(publisher_code[1]),
 				static_cast<uint8_t>(publisher_code[2]),
@@ -369,12 +373,12 @@ int WiiU::loadFieldData(void)
 
 	// OS version
 	// TODO: Validate the version characters.
-	const char s_os_version[] = {
+	const array<char, 6> s_os_version = {{
 		discHeader->os_version[0], '.',
 		discHeader->os_version[1], '.',
 		discHeader->os_version[2], '\0'
-	};
-	d->fields.addField_string(C_("RomData", "OS Version"), s_os_version);
+	}};
+	d->fields.addField_string(C_("RomData", "OS Version"), s_os_version.data());
 
 	// Region
 	// TODO: Compare against list of regions and show the fancy name.
@@ -387,40 +391,36 @@ int WiiU::loadFieldData(void)
 
 /**
  * Get a list of URLs for an external image type.
+ * Common function used by both WiiU and WiiUPackage.
  *
  * A thumbnail size may be requested from the shell.
  * If the subclass supports multiple sizes, it should
  * try to get the size that most closely matches the
  * requested size.
  *
- * @param imageType	[in]     Image type.
- * @param pExtURLs	[out]    Output vector.
+ * @param id4		[in]     Game ID (ID4)
+ * @param imageType	[in]     Image type
+ * @param extURLs	[out]    Output vector
  * @param size		[in,opt] Requested image size. This may be a requested
  *                               thumbnail size in pixels, or an ImageSizeType
  *                               enum value.
  * @return 0 on success; negative POSIX error code on error.
  */
-int WiiU::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
+int WiiU::extURLs_int(const char *id4, ImageType imageType, vector<ExtURL> &extURLs, int size)
 {
-	ASSERT_extURLs(imageType, pExtURLs);
-	pExtURLs->clear();
-
-	RP_D(const WiiU);
-	if (!d->isValid) {
-		// Disc image isn't valid.
-		return -EIO;
-	}
+	extURLs.clear();
+	ASSERT_extURLs(imageType);
 
 	// Get the image sizes and sort them based on the
 	// requested image size.
-	vector<ImageSizeDef> sizeDefs = supportedImageSizes(imageType);
+	vector<ImageSizeDef> sizeDefs = supportedImageSizes_static(imageType);
 	if (sizeDefs.empty()) {
 		// No image sizes.
 		return -ENOENT;
 	}
 
 	// Select the best size.
-	const ImageSizeDef *const sizeDef = d->selectBestSize(sizeDefs, size);
+	const ImageSizeDef *const sizeDef = RomDataPrivate::selectBestSize(sizeDefs, size);
 	if (!sizeDef) {
 		// No size available...
 		return -ENOENT;
@@ -461,11 +461,8 @@ int WiiU::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
 			return -ENOENT;
 	}
 
-	// Disc header is read in the constructor.
-	const WiiU_DiscHeader *const discHeader = &d->discHeader;
-
 	// Look up the publisher ID.
-	const uint32_t publisher_id = WiiUData::lookup_disc_publisher(discHeader->id4);
+	const uint32_t publisher_id = WiiUData::lookup_disc_publisher(id4);
 	if (publisher_id == 0 || (publisher_id & 0xFFFF0000) != 0x30300000) {
 		// Either the publisher ID is unknown, or it's a
 		// 4-character ID, which isn't supported by
@@ -476,19 +473,19 @@ int WiiU::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
 	// Determine the GameTDB language code(s).
 	// TODO: Figure out the actual Wii U region code.
 	// Using the game ID for now.
-	const vector<uint16_t> tdb_lc = GameCubeRegions::gcnRegionToGameTDB(~0U, discHeader->id4[3]);
+	const vector<uint16_t> tdb_lc = GameCubeRegions::gcnRegionToGameTDB(~0U, id4[3]);
 
-	// Game ID.
+	// Game ID
 	// Replace any non-printable characters with underscores.
 	// (GameCube NDDEMO has ID6 "00\0E01".)
 	char id6[7];
 	for (unsigned int i = 0; i < 4; i++) {
-		id6[i] = (ISPRINT(discHeader->id4[i]))
-			? discHeader->id4[i]
+		id6[i] = (ISPRINT(id4[i]))
+			? id4[i]
 			: '_';
 	}
 
-	// Publisher ID.
+	// Publisher ID
 	id6[4] = (publisher_id >> 8) & 0xFF;
 	id6[5] = publisher_id & 0xFF;
 	id6[6] = 0;
@@ -496,7 +493,7 @@ int WiiU::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
 	// If we're downloading a "high-resolution" image (M or higher),
 	// also add the default image to ExtURLs in case the user has
 	// high-resolution image downloads disabled.
-	const ImageSizeDef *szdefs_dl[2];
+	array<const ImageSizeDef*, 2> szdefs_dl;
 	szdefs_dl[0] = sizeDef;
 	unsigned int szdef_count;
 	if (sizeDef->index > 0) {
@@ -509,25 +506,23 @@ int WiiU::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
 	}
 
 	// Add the URLs.
-	pExtURLs->resize(szdef_count * tdb_lc.size());
-	auto extURL_iter = pExtURLs->begin();
-	const auto tdb_lc_cend = tdb_lc.cend();
+	extURLs.resize(szdef_count * tdb_lc.size());
+	auto extURL_iter = extURLs.begin();
 	for (unsigned int i = 0; i < szdef_count; i++) {
-		// Current image type.
-		char imageTypeName[16];
-		snprintf(imageTypeName, sizeof(imageTypeName), "%s%s",
-			 imageTypeName_base, (szdefs_dl[i]->name ? szdefs_dl[i]->name : ""));
+		// Current image type
+		const string imageTypeName = fmt::format(FSTR("{:s}{:s}"),
+			imageTypeName_base, (szdefs_dl[i]->name ? szdefs_dl[i]->name : ""));
 
 		// Add the images.
-		for (auto tdb_iter = tdb_lc.cbegin();
-		     tdb_iter != tdb_lc_cend; ++tdb_iter, ++extURL_iter)
-		{
-			const string lc_str = SystemRegion::lcToStringUpper(*tdb_iter);
-			extURL_iter->url = d->getURL_GameTDB("wiiu", imageTypeName, lc_str.c_str(), id6, ext);
-			extURL_iter->cache_key = d->getCacheKey_GameTDB("wiiu", imageTypeName, lc_str.c_str(), id6, ext);
-			extURL_iter->width = szdefs_dl[i]->width;
-			extURL_iter->height = szdefs_dl[i]->height;
-			extURL_iter->high_res = (szdefs_dl[i]->index > 0);
+		for (const uint16_t lc : tdb_lc) {
+			const string lc_str = SystemRegion::lcToStringUpper(lc);
+			ExtURL &extURL = *extURL_iter;
+			extURL.url = RomDataPrivate::getURL_GameTDB("wiiu", imageTypeName.c_str(), lc_str.c_str(), id6, ext);
+			extURL.cache_key = RomDataPrivate::getCacheKey_GameTDB("wiiu", imageTypeName.c_str(), lc_str.c_str(), id6, ext);
+			extURL.width = szdefs_dl[i]->width;
+			extURL.height = szdefs_dl[i]->height;
+			extURL.high_res = (szdefs_dl[i]->index > 0);
+			++extURL_iter;
 		}
 	}
 
@@ -535,4 +530,31 @@ int WiiU::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
 	return 0;
 }
 
+/**
+ * Get a list of URLs for an external image type.
+ *
+ * A thumbnail size may be requested from the shell.
+ * If the subclass supports multiple sizes, it should
+ * try to get the size that most closely matches the
+ * requested size.
+ *
+ * @param imageType	[in]     Image type
+ * @param extURLs	[out]    Output vector
+ * @param size		[in,opt] Requested image size. This may be a requested
+ *                               thumbnail size in pixels, or an ImageSizeType
+ *                               enum value.
+ * @return 0 on success; negative POSIX error code on error.
+ */
+int WiiU::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) const
+{
+	RP_D(const WiiU);
+	if (!d->isValid) {
+		// Disc image isn't valid.
+		extURLs.clear();
+		return -EIO;
+	}
+
+	return extURLs_int(d->discHeader.id4, imageType, extURLs, size);
 }
+
+} // namespace LibRomData

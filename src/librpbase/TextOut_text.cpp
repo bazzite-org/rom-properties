@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpbase)                        *
  * TextOut.hpp: Text output for RomData. (User-readable text)              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * Copyright (c) 2016-2018 by Egor.                                        *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
@@ -48,6 +48,8 @@ extern "C" {
 namespace LibRpBase {
 
 class StreamStateSaver {
+	RP_DISABLE_COPY(StreamStateSaver)
+
 	std::ios &stream;	// Stream being adjusted.
 	std::ios state;		// Copy of original flags.
 public:
@@ -147,10 +149,10 @@ private:
 			if (cp.width && *p == '\n') {
 				escaped += '\n';
 				escaped.append(cp.width + (cp.quotes ? 1 : 0), ' ');
-			} else if ((unsigned char)*p < 0x20) {
+			} else if (static_cast<unsigned char>(*p) < 0x20) {
 				// Encode control characters using U+2400 through U+241F.
 				escaped += "\xE2\x90";
-				escaped += (char)(0x80 + (unsigned char)*p);
+				escaped += static_cast<char>(0x80 + static_cast<unsigned char>(*p));
 			} else {
 				escaped += *p;
 			}
@@ -172,7 +174,7 @@ public:
 		return os << process(cp);
 	}
 
-	operator string() {
+	operator string() const {
 		return process(*this);
 	}
 };
@@ -180,12 +182,19 @@ public:
 class StringField {
 	size_t width;
 	const RomFields::Field &romField;
+	bool useAnsiColor;
 public:
-	StringField(size_t width, const RomFields::Field &romField)
-		: width(width), romField(romField) { }
+	StringField(size_t width, const RomFields::Field &romField, bool useAnsiColor)
+		: width(width), romField(romField), useAnsiColor(useAnsiColor) { }
 	friend ostream& operator<<(ostream& os, const StringField& field) {
 		// NOTE: nullptr string is an empty string, not an error.
-		auto romField = field.romField;
+		const auto &romField = field.romField;
+
+		if ((field.romField.flags & RomFields::STRF_WARNING) && field.useAnsiColor) {
+			// Field should be printed as bold red.
+			os << "\033[31;1m";
+		}
+
 		os << ColonPad(field.width, romField.name);
 		if (romField.data.str) {
 			os << SafeString(romField.data.str, true, field.width);
@@ -193,6 +202,12 @@ public:
 			// Empty string.
 			os << "''";
 		}
+
+		if ((field.romField.flags & RomFields::STRF_WARNING) && field.useAnsiColor) {
+			// Reset the formatting.
+			os << "\033[0m";
+		}
+
 		return os;
 	}
 };
@@ -204,7 +219,7 @@ public:
 	BitfieldField(size_t width, const RomFields::Field &romField)
 		: width(width), romField(romField) { }
 	friend ostream& operator<<(ostream& os, const BitfieldField& field) {
-		auto romField = field.romField;
+		const auto &romField = field.romField;
 		const auto &bitfieldDesc = romField.desc.bitfield;
 		assert(bitfieldDesc.names != nullptr);
 		if (!bitfieldDesc.names) {
@@ -219,8 +234,9 @@ public:
 		// Determine the column widths.
 		unsigned int col = 0;
 		for (const string &name : *(bitfieldDesc.names)) {
-			if (name.empty())
+			if (name.empty()) {
 				continue;
+			}
 
 			colSize[col] = max(utf8_disp_strlen(name), colSize[col]);
 			col++;
@@ -236,11 +252,11 @@ public:
 		StreamStateSaver state(os);
 		col = 0;
 		uint32_t bitfield = romField.data.bitfield;
-		const auto names_cend = bitfieldDesc.names->cend();
-		for (auto iter = bitfieldDesc.names->cbegin(); iter != names_cend; ++iter, bitfield >>= 1) {
-			const string &name = *iter;
-			if (name.empty())
+		for (const string &name : *(bitfieldDesc.names)) {
+			if (name.empty()) {
+				bitfield >>= 1;
 				continue;
+			}
 
 			// Update the current column number before printing.
 			// This prevents an empty row from being printed
@@ -258,7 +274,9 @@ public:
 			for (size_t x = str_sz; x < colSize[col]; x++) {
 				os << ' ';
 			}
+
 			col++;
+			bitfield >>= 1;
 		}
 		return os;
 	}
@@ -266,31 +284,25 @@ public:
 
 /**
  * Format an RFT_DATETIME field (or an `is_timestamp` column in RFT_LISTDATA).
- * @param buf		[out] Output buffer
- * @param size		[in] Size of `buf`
  * @param timestamp	[in] Timestamp to format
  * @param dtflags	[in] DateTimeFlags
- * @return 0 on success; non-zero on error.
+ * @return Formatted RFT_DATETIME on success; empty string on error.
  */
-static int formatDateTime(char *buf, size_t size, time_t timestamp, RomFields::DateTimeFlags dtflags)
+static string formatDateTime(time_t timestamp, RomFields::DateTimeFlags dtflags)
 {
-	struct tm tm_struct;
-	struct tm *ret;
-	if (dtflags & RomFields::RFT_DATETIME_IS_UTC) {
-		ret = gmtime_r(&timestamp, &tm_struct);
-	}
-	else {
-		tzset();
-		ret = localtime_r(&timestamp, &tm_struct);
-	}
+	string s_ret;
 
-	if (!ret) {
-		// gmtime_r() or localtime_r() failed.
-		return -1;
+	struct tm tm_struct;
+	if (dtflags & RomFields::RFT_DATETIME_IS_UTC) {
+		tm_struct = fmt::gmtime(timestamp);
+	} else {
+		tzset(); // FIXME: Is this still needed?
+		tm_struct = fmt::localtime(timestamp);
 	}
 
 	if (likely(SystemRegion::getLanguageCode() != 0)) {
 		// Localized time format
+		// FIXME: Does fmt::format() support `struct tm`?
 		static constexpr char formats_strtbl[] =
 			"\0"		// [0] No date or time
 			"%x\0"		// [1] Date
@@ -309,15 +321,17 @@ static int formatDateTime(char *buf, size_t size, time_t timestamp, RomFields::D
 		const char *format = &formats_strtbl[formats_offtbl[offset]];
 		assert(format[0] != '\0');
 		if (likely(format[0] != '\0')) {
-			strftime(buf, size, format, &tm_struct);
-		} else {
-			return -2;
+			// TODO: fmt::format()? [may need <fmt/chrono.h>]
+			char buf[64];
+			strftime(buf, sizeof(buf), format, &tm_struct);
+			s_ret.assign(buf);
 		}
 	} else {
 		// LC_ALL=C
 		// Always use the same format regardless of platform.
 		// This is needed on Windows because LC_ALL doesn't affect
 		// MSVCRT's strftime().
+		// TODO: This might not be needed if fmt::format() is used...
 
 		// Month names for dates without years
 		static constexpr char months[12][4] = {
@@ -330,23 +344,23 @@ static int formatDateTime(char *buf, size_t size, time_t timestamp, RomFields::D
 			case RomFields::RFT_DATETIME_NO_YEAR:
 			default:
 				// Nothing to do...
-				return -3;
+				break;
 
 			case RomFields::RFT_DATETIME_HAS_DATE:
 				// Date, with year
-				snprintf(buf, size, "%04d/%02d/%02d",
+				s_ret = fmt::format(FSTR("{:0>4d}/{:0>2d}/{:0>2d}"),
 					tm_struct.tm_year + 1900, tm_struct.tm_mon + 1, tm_struct.tm_mday);
 				break;
 			case RomFields::RFT_DATETIME_HAS_TIME:
 			case RomFields::RFT_DATETIME_HAS_TIME | RomFields::RFT_DATETIME_NO_YEAR:
 				// Time
-				snprintf(buf, size, "%02d:%02d:%02d",
+				s_ret = fmt::format(FSTR("{:0>2d}:{:0>2d}:{:0>2d}"),
 					 tm_struct.tm_hour, tm_struct.tm_min, tm_struct.tm_sec);
 				break;
 			case RomFields::RFT_DATETIME_HAS_DATE |
 			     RomFields::RFT_DATETIME_HAS_TIME:
 				// Date and time (with year)
-				snprintf(buf, size, "%04d/%02d/%02d %02d:%02d:%02d",
+				s_ret = fmt::format(FSTR("{:0>4d}/{:0>2d}/{:0>2d} {:0>2d}:{:0>2d}:{:0>2d}"),
 					tm_struct.tm_year + 1900, tm_struct.tm_mon + 1, tm_struct.tm_mday,
 					tm_struct.tm_hour, tm_struct.tm_min, tm_struct.tm_sec);
 				break;
@@ -357,7 +371,7 @@ static int formatDateTime(char *buf, size_t size, time_t timestamp, RomFields::D
 					? months[tm_struct.tm_mon]
 					: "Unk";
 
-				snprintf(buf, size, "%s %02d", s_mon, tm_struct.tm_mday);
+				s_ret = fmt::format(FSTR("{:s} {:0>2d}"), s_mon, tm_struct.tm_mday);
 				break;
 			}
 
@@ -368,7 +382,7 @@ static int formatDateTime(char *buf, size_t size, time_t timestamp, RomFields::D
 					? months[tm_struct.tm_mon]
 					: "Unk";
 
-				snprintf(buf, size, "%s %02d %02d:%02d:%02d",
+				s_ret = fmt::format(FSTR("{:s} {:0>2d} {:0>2d}:{:0>2d}:{:0>2d}"),
 					s_mon, tm_struct.tm_mday,
 					tm_struct.tm_hour, tm_struct.tm_min, tm_struct.tm_sec);
 				break;
@@ -376,7 +390,7 @@ static int formatDateTime(char *buf, size_t size, time_t timestamp, RomFields::D
 		}
 	}
 
-	return 0;
+	return s_ret;
 }
 
 class ListDataField {
@@ -389,7 +403,7 @@ public:
 	ListDataField(size_t width, const RomFields::Field &romField, uint32_t def_lc, uint32_t user_lc, unsigned int flags)
 		: width(width), romField(romField), def_lc(def_lc), user_lc(user_lc), flags(flags) { }
 	friend ostream& operator<<(ostream& os, const ListDataField& field) {
-		auto romField = field.romField;
+		const auto &romField = field.romField;
 		os << ColonPad(field.width, romField.name);
 
 		const auto &listDataDesc = romField.desc.list_data;
@@ -455,12 +469,11 @@ public:
 				if (unlikely(is_timestamp & 1)) {
 					// This is a timestamp column.
 					// Use a dummy timestamp to figure out the width.
-					char buf[128];
-					int ret = formatDateTime(buf, sizeof(buf), 0,
-						listDataDesc.col_attrs.dtflags);
-					if (likely(ret == 0)) {
+					const string s_timestamp = formatDateTime(
+						0, listDataDesc.col_attrs.dtflags);
+					if (likely(!s_timestamp.empty())) {
 						// Got the column width.
-						colSize[i] = std::max(colSize[i], utf8_disp_strlen(buf));
+						colSize[i] = std::max(colSize[i], utf8_disp_strlen(s_timestamp.c_str()));
 					}
 				}
 
@@ -476,12 +489,11 @@ public:
 				if (unlikely(is_timestamp & 1)) {
 					// This is a timestamp column.
 					// Use a dummy timestamp to figure out the width.
-					char buf[128];
-					int ret = formatDateTime(buf, sizeof(buf), 0,
-						listDataDesc.col_attrs.dtflags);
-					if (likely(ret == 0)) {
+					const string s_timestamp = formatDateTime(
+						0, listDataDesc.col_attrs.dtflags);
+					if (likely(!s_timestamp.empty())) {
 						// Got the column width.
-						colSize[i] = utf8_disp_strlen(buf);
+						colSize[i] = utf8_disp_strlen(s_timestamp.c_str());
 					}
 				}
 			}
@@ -654,13 +666,10 @@ public:
 							RomFields::TimeString_t time_string;
 							memcpy(time_string.str, jt->data(), 8);
 
-							char buf[128];
-							int ret = formatDateTime(buf, sizeof(buf),
+							str = formatDateTime(
 								static_cast<time_t>(time_string.time),
 								listDataDesc.col_attrs.dtflags);
-							if (likely(ret == 0)) {
-								str.assign(buf);
-							} else {
+							if (unlikely(str.empty())) {
 								str = C_("RomData", "Unknown");
 							}
 						} else {
@@ -736,7 +745,7 @@ public:
 	DateTimeField(size_t width, const RomFields::Field &romField)
 		: width(width), romField(romField) { }
 	friend ostream& operator<<(ostream& os, const DateTimeField& field) {
-		auto romField = field.romField;
+		const auto &romField = field.romField;
 
 		os << ColonPad(field.width, romField.name);
 		StreamStateSaver state(os);
@@ -747,13 +756,11 @@ public:
 			return os;
 		}
 
-		char str[128];
-		str[0] = '\0';
-		int ret = formatDateTime(str, sizeof(str),
-			static_cast<time_t>(romField.data.date_time),
+		const string s_timestamp = formatDateTime(
+			romField.data.date_time,
 			static_cast<RomFields::DateTimeFlags>(romField.flags));
-		if (likely(ret == 0)) {
-			os << str;
+		if (likely(!s_timestamp.empty())) {
+			os << s_timestamp;
 		} else {
 			os << C_("RomData", "Unknown");
 		}
@@ -768,7 +775,7 @@ public:
 	AgeRatingsField(size_t width, const RomFields::Field &romField)
 		: width(width), romField(romField) { }
 	friend ostream& operator<<(ostream& os, const AgeRatingsField& field) {
-		auto romField = field.romField;
+		const auto &romField = field.romField;
 
 		os << ColonPad(field.width, romField.name);
 		StreamStateSaver state(os);
@@ -787,7 +794,7 @@ public:
 	DimensionsField(size_t width, const RomFields::Field &romField)
 		: width(width), romField(romField) { }
 	friend ostream& operator<<(ostream& os, const DimensionsField& field) {
-		auto romField = field.romField;
+		const auto &romField = field.romField;
 
 		os << ColonPad(field.width, romField.name);
 		StreamStateSaver state(os);
@@ -818,7 +825,7 @@ public:
 	}
 	friend ostream& operator<<(ostream& os, const StringMultiField& field) {
 		// NOTE: nullptr string is an empty string, not an error.
-		auto romField = field.romField;
+		const auto &romField = field.romField;
 		os << ColonPad(field.width, romField.name);
 
 		const auto *const pStr_multi = romField.data.str_multi;
@@ -845,6 +852,8 @@ public:
 	explicit FieldsOutput(const RomFields& fields, uint32_t lc = 0, unsigned int flags = 0)
 		: fields(fields), lc(lc), flags(flags) { }
 	friend std::ostream& operator<<(std::ostream& os, const FieldsOutput& fo) {
+		const bool useAnsiColor = !!(fo.flags & OF_Text_UseAnsiColor);
+
 		// FIXME: Use std::max_element() [but that requires more strlen() calls...]
 		size_t maxWidth = 0;
 		std::for_each(fo.fields.cbegin(), fo.fields.cend(),
@@ -862,15 +871,15 @@ public:
 		const uint32_t user_lc = (fo.lc != 0 ? fo.lc : def_lc);
 
 		bool printed_first = false;
-		const auto fields_cend = fo.fields.cend();
-		for (auto iter = fo.fields.cbegin(); iter != fields_cend; ++iter) {
-			const auto &romField = *iter;
+		for (const RomFields::Field &romField : fo.fields) {
 			assert(romField.isValid());
-			if (!romField.isValid())
+			if (!romField.isValid()) {
 				continue;
+			}
 
-			if (printed_first)
+			if (printed_first) {
 				os << '\n';
+			}
 
 			// New tab?
 			if (tabCount > 1 && tabIdx != romField.tabIdx) {
@@ -885,7 +894,7 @@ public:
 				if (name) {
 					os << name;
 				} else {
-					os << rp_sprintf(C_("TextOut", "(tab %d)"), tabIdx);
+					os << fmt::format(FRUN(C_("TextOut", "(tab {:d})")), tabIdx);
 				}
 				os << " -----" << '\n';
 			}
@@ -896,7 +905,7 @@ public:
 					assert(!"Field type is RFT_INVALID");
 					break;
 				case RomFields::RFT_STRING:
-					os << StringField(maxWidth, romField);
+					os << StringField(maxWidth, romField, useAnsiColor);
 					break;
 				case RomFields::RFT_BITFIELD:
 					os << BitfieldField(maxWidth, romField);
@@ -935,7 +944,7 @@ ROMOutput::ROMOutput(const RomData *romdata, uint32_t lc, unsigned int flags)
 	, flags(flags) { }
 RP_LIBROMDATA_PUBLIC
 std::ostream& operator<<(std::ostream& os, const ROMOutput& fo) {
-	auto romdata = fo.romdata;
+	const auto *const romdata = fo.romdata;
 	const char *const systemName = romdata->systemName(RomData::SYSNAME_TYPE_LONG | RomData::SYSNAME_REGION_ROM_LOCAL);
 	const char *const fileType = romdata->fileType_string();
 	assert(systemName != nullptr);
@@ -944,7 +953,7 @@ std::ostream& operator<<(std::ostream& os, const ROMOutput& fo) {
 	// NOTE: RomDataView context is used for the "unknown" strings.
 	{
 		// tr: "[System] [FileType] detected."
-		const string detectMsg = rp_sprintf_p(C_("TextOut", "%1$s %2$s detected"),
+		const string detectMsg = fmt::format(FRUN(C_("TextOut", "{0:s} {1:s} detected")),
 			(systemName ? systemName : C_("RomDataView", "(unknown system)")),
 			(fileType ? fileType : C_("RomDataView", "(unknown filetype)")));
 
@@ -963,18 +972,19 @@ std::ostream& operator<<(std::ostream& os, const ROMOutput& fo) {
 		// Internal images
 		if (!(fo.flags & OF_SkipInternalImages)) {
 			for (int i = RomData::IMG_INT_MIN; i <= RomData::IMG_INT_MAX; i++) {
-				if (!(imgbf & (1U << i)))
+				if (!(imgbf & (1U << i))) {
 					continue;
+				}
 
-				auto image = romdata->image((RomData::ImageType)i);
+				auto image = romdata->image(static_cast<RomData::ImageType>(i));
 				if (image && image->isValid()) {
 					// tr: Image Type name, followed by Image Type ID
-					os << "-- " << rp_sprintf_p(C_("TextOut", "%1$s is present (use -x%2$d to extract)"),
-						RomData::getImageTypeName((RomData::ImageType)i), i) << '\n';
+					os << "-- " << fmt::format(FRUN(C_("TextOut", "{0:s} is present (use -x{1:d} to extract)")),
+						RomData::getImageTypeName(static_cast<RomData::ImageType>(i)), i) << '\n';
 					// TODO: After localizing, add enough spaces for alignment.
 					os << "   Format : " << rp_image::getFormatName(image->format()) << '\n';
 					os << "   Size   : " << image->width() << " x " << image->height() << '\n';
-					if (romdata->imgpf((RomData::ImageType) i)  & RomData::IMGPF_ICON_ANIMATED) {
+					if (romdata->imgpf(static_cast<RomData::ImageType>(i))  & RomData::IMGPF_ICON_ANIMATED) {
 						os << "   " << C_("TextOut", "Animated icon is present (use -a to extract)") << '\n';
 					}
 				}
@@ -985,8 +995,9 @@ std::ostream& operator<<(std::ostream& os, const ROMOutput& fo) {
 		// NOTE: IMGPF_ICON_ANIMATED won't ever appear in external images.
 		std::vector<RomData::ExtURL> extURLs;
 		for (int i = RomData::IMG_EXT_MIN; i <= RomData::IMG_EXT_MAX; i++) {
-			if (!(imgbf & (1U << i)))
+			if (!(imgbf & (1U << i))) {
 				continue;
+			}
 
 			// NOTE: extURLs may be empty even though the class supports it.
 			// Check extURLs before doing anything else.
@@ -994,13 +1005,14 @@ std::ostream& operator<<(std::ostream& os, const ROMOutput& fo) {
 			extURLs.clear();	// NOTE: May not be needed...
 			// TODO: Customize the image size parameter?
 			// TODO: Option to retrieve supported image size?
-			int ret = romdata->extURLs((RomData::ImageType)i, &extURLs, RomData::IMAGE_SIZE_DEFAULT);
-			if (ret != 0 || extURLs.empty())
+			int ret = romdata->extURLs(static_cast<RomData::ImageType>(i), extURLs, RomData::IMAGE_SIZE_DEFAULT);
+			if (ret != 0 || extURLs.empty()) {
 				continue;
+			}
 
 			for (const RomData::ExtURL &extURL : extURLs) {
 				os << "-- " <<
-					RomData::getImageTypeName((RomData::ImageType)i) << ": " << urlPartialUnescape(extURL.url) <<
+					RomData::getImageTypeName(static_cast<RomData::ImageType>(i)) << ": " << urlPartialUnescape(extURL.url) <<
 					" (cache_key: " << extURL.cache_key << ')' << '\n';
 			}
 		}
@@ -1010,4 +1022,4 @@ std::ostream& operator<<(std::ostream& os, const ROMOutput& fo) {
 	return os;
 }
 
-}
+} // namespace LibRpBase

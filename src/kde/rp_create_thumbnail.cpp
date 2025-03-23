@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE4/KF5)                           *
  * rp_create_thumbnail.cpp: Thumbnail creation function export for rp-stub.  *
  *                                                                           *
- * Copyright (c) 2016-2024 by David Korth.                                   *
+ * Copyright (c) 2016-2025 by David Korth.                                   *
  * SPDX-License-Identifier: GPL-2.0-or-later                                 *
  *****************************************************************************/
 
@@ -20,7 +20,6 @@
 using LibRpBase::Config;
 using LibRpBase::RomDataPtr;
 using LibRpBase::RpPngWriter;
-using LibRpText::rp_sprintf;
 using LibRpTexture::rp_image;
 using namespace LibRpFile;
 using namespace LibRomData;
@@ -60,7 +59,7 @@ Q_DECL_EXPORT int RP_C_API rp_create_thumbnail2(const char *source_file, const c
 	// Check if this is a directory.
 	const QUrl localUrl = localizeQUrl(QUrl(QString::fromUtf8(source_file)));
 	const string s_local_filename = localUrl.toLocalFile().toUtf8().constData();
-	if (unlikely(!s_local_filename.empty() && FileSystem::is_directory(s_local_filename.c_str()))) {
+	if (unlikely(!s_local_filename.empty() && FileSystem::is_directory(s_local_filename))) {
 		const Config *const config = Config::instance();
 		if (!config->getBoolConfigOption(Config::BoolConfig::Options_ThumbnailDirectoryPackages)) {
 			// Directory package thumbnailing is disabled.
@@ -68,7 +67,7 @@ Q_DECL_EXPORT int RP_C_API rp_create_thumbnail2(const char *source_file, const c
 		}
 
 		// Directory: Call RomDataFactory::create() with the filename.
-		romData = RomDataFactory::create(s_local_filename.c_str());
+		romData = RomDataFactory::create(s_local_filename);
 	} else {
 		// File: Open the file and call RomDataFactory::create() with the opened file.
 
@@ -90,10 +89,9 @@ Q_DECL_EXPORT int RP_C_API rp_create_thumbnail2(const char *source_file, const c
 	}
 
 	// Create the thumbnail.
-	RomThumbCreatorPrivate *const d = new RomThumbCreatorPrivate();
+	RomThumbCreatorPrivate rtcp;
 	RomThumbCreatorPrivate::GetThumbnailOutParams_t outParams;
-	int ret = d->getThumbnail(romData, maximum_size, &outParams);
-	delete d;
+	int ret = rtcp.getThumbnail(romData, maximum_size, &outParams);
 
 	if (ret != 0 || outParams.retImg.isNull()) {
 		// No image.
@@ -129,9 +127,9 @@ Q_DECL_EXPORT int RP_C_API rp_create_thumbnail2(const char *source_file, const c
 			return RPCT_ERROR_OUTPUT_FILE_FAILED;
 	}
 
-	unique_ptr<RpPngWriter> pngWriter(new RpPngWriter(output_file,
-		outParams.retImg.width(), height, format));
-	if (!pngWriter->isOpen()) {
+	RpPngWriter pngWriter(output_file,
+		outParams.retImg.width(), height, format);
+	if (!pngWriter.isOpen()) {
 		// Could not open the PNG writer.
 		return RPCT_ERROR_OUTPUT_FILE_FAILED;
 	}
@@ -158,13 +156,13 @@ Q_DECL_EXPORT int RP_C_API rp_create_thumbnail2(const char *source_file, const c
 			// Modification time
 			const int64_t mtime = fi_src.lastModified().toMSecsSinceEpoch() / 1000;
 			if (mtime > 0) {
-				kv.emplace_back("Thumb::MTime", rp_sprintf("%" PRId64, mtime));
+				kv.emplace_back("Thumb::MTime", fmt::to_string(mtime));
 			}
 
 			// File size
 			const off64_t szFile = fi_src.size();
 			if (szFile > 0) {
-				kv.emplace_back("Thumb::Size", rp_sprintf("%" PRId64, szFile));
+				kv.emplace_back("Thumb::Size", fmt::to_string(szFile));
 			}
 		}
 
@@ -176,11 +174,8 @@ Q_DECL_EXPORT int RP_C_API rp_create_thumbnail2(const char *source_file, const c
 
 		// Original image dimensions
 		if (outParams.fullSize.width > 0 && outParams.fullSize.height > 0) {
-			char imgdim_str[16];
-			snprintf(imgdim_str, sizeof(imgdim_str), "%d", outParams.fullSize.width);
-			kv.emplace_back("Thumb::Image::Width", imgdim_str);
-			snprintf(imgdim_str, sizeof(imgdim_str), "%d", outParams.fullSize.height);
-			kv.emplace_back("Thumb::Image::Height", imgdim_str);
+			kv.emplace_back("Thumb::Image::Width", fmt::to_string(outParams.fullSize.width));
+			kv.emplace_back("Thumb::Image::Height", fmt::to_string(outParams.fullSize.height));
 		}
 
 		// URI
@@ -191,7 +186,7 @@ Q_DECL_EXPORT int RP_C_API rp_create_thumbnail2(const char *source_file, const c
 	}
 
 	// Write the tEXt chunks.
-	pngWriter->write_tEXt(kv);
+	pngWriter.write_tEXt(kv);
 
 	/** IHDR **/
 
@@ -202,7 +197,7 @@ Q_DECL_EXPORT int RP_C_API rp_create_thumbnail2(const char *source_file, const c
 
 	// If sBIT wasn't found, all fields will be 0.
 	// RpPngWriter will ignore sBIT in this case.
-	int pwRet = pngWriter->write_IHDR(&outParams.sBIT,
+	int pwRet = pngWriter.write_IHDR(&outParams.sBIT,
 		colorTable.constData(), colorTable.size());
 	if (pwRet != 0) {
 		// Error writing IHDR.
@@ -215,13 +210,13 @@ Q_DECL_EXPORT int RP_C_API rp_create_thumbnail2(const char *source_file, const c
 	// Initialize the row pointers.
 	unique_ptr<const uint8_t*[]> row_pointers(new const uint8_t*[height]);
 	const uint8_t *bits = outParams.retImg.bits();
-	const int bytesPerLine = outParams.retImg.bytesPerLine();
+	const rp_qsizetype bytesPerLine = outParams.retImg.bytesPerLine();
 	for (int y = 0; y < height; y++, bits += bytesPerLine) {
 		row_pointers[y] = bits;
 	}
 
 	// Write the IDAT section.
-	pwRet = pngWriter->write_IDAT(row_pointers.get());
+	pwRet = pngWriter.write_IDAT(row_pointers.get());
 	if (pwRet != 0) {
 		// Error writing IDAT.
 		// TODO: Unlink the PNG image.

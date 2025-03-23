@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE4/KF5)                         *
  * RomDataView.cpp: RomData viewer. (ROM operations)                       *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -22,7 +22,6 @@
 #include "librpbase/TextOut.hpp"
 using namespace LibRpBase;
 using namespace LibRpFile;
-using namespace LibRpText;
 
 // Qt includes
 #include <QtGui/QClipboard>
@@ -194,7 +193,7 @@ void RomDataViewPrivate::doRomOp_stdop(int id)
 	switch (id) {
 		case OPTION_COPY_TEXT: {
 			ostringstream oss;
-			oss << "== " << rp_sprintf(C_("RomDataView", "File: '%s'"), rom_filename) << '\n';
+			oss << "== " << fmt::format(FRUN(C_("RomDataView", "File: '{:s}'")), rom_filename) << '\n';
 			ROMOutput ro(romData.get(), sel_lc);
 			oss << ro;
 			oss.flush();
@@ -264,7 +263,7 @@ void RomDataViewPrivate::doRomOp_stdop(int id)
 
 	switch (id) {
 		case OPTION_EXPORT_TEXT: {
-			ofs << "== " << rp_sprintf(C_("RomDataView", "File: '%s'"), rom_filename) << '\n';
+			ofs << "== " << fmt::format(FRUN(C_("RomDataView", "File: '{:s}'")), rom_filename) << '\n';
 			ROMOutput ro(romData.get(), sel_lc);
 			ofs << ro;
 			ofs.flush();
@@ -305,8 +304,8 @@ void RomDataView::btnOptions_triggered(int id)
 	// Run a ROM operation.
 	// TODO: Don't keep rebuilding this vector...
 	vector<RomData::RomOp> ops = d->romData->romOps();
-	assert(id < (int)ops.size());
-	if (id >= (int)ops.size()) {
+	assert(id < static_cast<int>(ops.size()));
+	if (id >= static_cast<int>(ops.size())) {
 		// ID is out of range.
 		return;
 	}
@@ -349,8 +348,8 @@ void RomDataView::btnOptions_triggered(int id)
 		// Update the RomOp menu entry in case it changed.
 		// NOTE: Assuming the RomOps vector order hasn't changed.
 		ops = d->romData->romOps();
-		assert(id < (int)ops.size());
-		if (id < (int)ops.size()) {
+		assert(id < static_cast<int>(ops.size()));
+		if (id < static_cast<int>(ops.size())) {
 			d->btnOptions->updateOp(id, &ops[id]);
 		}
 

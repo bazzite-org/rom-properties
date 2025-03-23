@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * DMG.hpp: Game Boy (DMG/CGB/SGB) ROM reader.                             *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * Copyright (c) 2016-2018 by Egor.                                        *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
@@ -35,7 +35,7 @@ namespace LibRomData {
 class DMGPrivate final : public RomDataPrivate
 {
 public:
-	DMGPrivate(const IRpFilePtr &file);
+	explicit DMGPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -43,8 +43,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 7+1> exts;
+	static const array<const char*, 3+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -220,7 +220,7 @@ ROMDATA_IMPL(DMG)
 /** DMGPrivate **/
 
 /* RomDataInfo */
-const char *const DMGPrivate::exts[] = {
+const array<const char*, 7+1> DMGPrivate::exts = {{
 	".gb",  ".sgb", ".sgb2",
 	".gbc", ".cgb",
 
@@ -231,8 +231,8 @@ const char *const DMGPrivate::exts[] = {
 	".pocket",
 
 	nullptr
-};
-const char *const DMGPrivate::mimeTypes[] = {
+}};
+const array<const char*, 3+1> DMGPrivate::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	"application/x-gameboy-rom",
 	"application/x-gameboy-color-rom",
@@ -242,9 +242,9 @@ const char *const DMGPrivate::mimeTypes[] = {
 	"application/x-analogue-pocket-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo DMGPrivate::romDataInfo = {
-	"DMG", exts, mimeTypes
+	"DMG", exts.data(), mimeTypes.data()
 };
 
 /** Internal ROM data **/
@@ -539,10 +539,14 @@ string DMGPrivate::getPublisher(void) const
 			if (ISALNUM(romHeader.new_publisher_code[0]) &&
 			    ISALNUM(romHeader.new_publisher_code[1]))
 			{
-				s_publisher = rp_sprintf(C_("RomData", "Unknown (%.2s)"),
-					romHeader.new_publisher_code);
+				const array<char, 3> s_company = {{
+					romHeader.new_publisher_code[0],
+					romHeader.new_publisher_code[1],
+					'\0'
+				}};
+				s_publisher = fmt::format(FRUN(C_("RomData", "Unknown ({:s})")), s_company.data());
 			} else {
-				s_publisher = rp_sprintf(C_("RomData", "Unknown (%02X %02X)"),
+				s_publisher = fmt::format(FRUN(C_("RomData", "Unknown ({:0>2X} {:0>2X})")),
 					static_cast<uint8_t>(romHeader.new_publisher_code[0]),
 					static_cast<uint8_t>(romHeader.new_publisher_code[1]));
 			}
@@ -553,7 +557,7 @@ string DMGPrivate::getPublisher(void) const
 		if (publisher) {
 			s_publisher = publisher;
 		} else {
-			s_publisher = rp_sprintf(C_("RomData", "Unknown (%02X)"),
+			s_publisher = fmt::format(FRUN(C_("RomData", "Unknown ({:0>2X})")),
 				romHeader.old_publisher_code);
 		}
 	}
@@ -625,11 +629,10 @@ void DMGPrivate::addFields_romHeader(const DMG_RomHeader *pRomHeader)
 
 	// System
 	const uint32_t dmg_system = systemID(pRomHeader);
-	static const char *const system_bitfield_names[] = {
+	static const array<const char*, 3> system_bitfield_names = {{
 		"DMG", "SGB", "CGB"
-	};
-	vector<string> *const v_system_bitfield_names = RomFields::strArrayToVector(
-		system_bitfield_names, ARRAY_SIZE(system_bitfield_names));
+	}};
+	vector<string> *const v_system_bitfield_names = RomFields::strArrayToVector(system_bitfield_names);
 	fields.addField_bitfield(C_("DMG", "System"),
 		v_system_bitfield_names, 0, dmg_system);
 
@@ -674,15 +677,15 @@ void DMGPrivate::addFields_romHeader(const DMG_RomHeader *pRomHeader)
 		DMGPrivate::dmg_hardware_names[static_cast<int>(cart_type.hardware)]);
 
 	// Features
-	static const char *const feature_bitfield_names[] = {
+	static const array<const char*, 5> feature_bitfield_names = {{
 		NOP_C_("DMG|Features", "RAM"),
 		NOP_C_("DMG|Features", "Battery"),
 		NOP_C_("DMG|Features", "Timer"),
 		NOP_C_("DMG|Features", "Rumble"),
 		NOP_C_("DMG|Features", "Tilt Sensor"),
-	};
+	}};
 	vector<string> *const v_feature_bitfield_names = RomFields::strArrayToVector_i18n(
-		"DMG|Features", feature_bitfield_names, ARRAY_SIZE(feature_bitfield_names));
+		"DMG|Features", feature_bitfield_names);
 	fields.addField_bitfield(C_("DMG", "Features"),
 		v_feature_bitfield_names, 3, cart_type.features);
 
@@ -695,12 +698,12 @@ void DMGPrivate::addFields_romHeader(const DMG_RomHeader *pRomHeader)
 		if (rom_size > 32) {
 			const int banks = rom_size / 16;
 			fields.addField_string(rom_size_title,
-				rp_sprintf_p(NC_("DMG", "%1$u KiB (%2$u bank)", "%1$u KiB (%2$u banks)", banks),
+				fmt::format(FRUN(NC_("DMG", "{0:d} KiB ({1:d} bank)", "{0:d} KiB ({1:d} banks)", banks)),
 					static_cast<unsigned int>(rom_size),
 					static_cast<unsigned int>(banks)));
 		} else {
 			fields.addField_string(rom_size_title,
-				rp_sprintf(C_("DMG", "%u KiB"), static_cast<unsigned int>(rom_size)));
+				fmt::format(FRUN(C_("DMG", "{:d} KiB")), static_cast<unsigned int>(rom_size)));
 		}
 	}
 
@@ -718,12 +721,12 @@ void DMGPrivate::addFields_romHeader(const DMG_RomHeader *pRomHeader)
 			if (ram_size > 8) {
 				const int banks = ram_size / 8;
 				fields.addField_string(ram_size_title,
-					rp_sprintf_p(NC_("DMG", "%1$u KiB (%2$u bank)", "%1$u KiB (%2$u banks)", banks),
+					fmt::format(FRUN(NC_("DMG", "{0:d} KiB ({1:d} bank)", "{0:d} KiB ({1:d} banks)", banks)),
 						static_cast<unsigned int>(ram_size),
 						static_cast<unsigned int>(banks)));
 			} else {
 				fields.addField_string(ram_size_title,
-					rp_sprintf(C_("DMG", "%u KiB"), static_cast<unsigned int>(ram_size)));
+					fmt::format(FRUN(C_("DMG", "{:d} KiB")), static_cast<unsigned int>(ram_size)));
 			}
 		}
 	} else {
@@ -744,7 +747,8 @@ void DMGPrivate::addFields_romHeader(const DMG_RomHeader *pRomHeader)
 		default:
 			// Invalid value.
 			fields.addField_string(region_code_title,
-				rp_sprintf(C_("DMG", "0x%02X (INVALID)"), pRomHeader->region));
+				fmt::format(FRUN(C_("DMG", "0x{:0>2X} (INVALID)")), pRomHeader->region),
+					RomFields::STRF_WARNING);
 			break;
 	}
 
@@ -765,11 +769,12 @@ void DMGPrivate::addFields_romHeader(const DMG_RomHeader *pRomHeader)
 	const char *const checksum_title = C_("RomData", "Checksum");
 	if (checksum - pRomHeader->header_checksum != 0) {
 		fields.addField_string(checksum_title,
-			rp_sprintf_p(C_("DMG", "0x%1$02X (INVALID; should be 0x%2$02X)"),
-				pRomHeader->header_checksum, checksum));
+			fmt::format(FRUN(C_("DMG", "0x{0:0>2X} (INVALID; should be 0x{1:0>2X})")),
+				pRomHeader->header_checksum, checksum),
+				RomFields::STRF_WARNING);
 	} else {
 		fields.addField_string(checksum_title,
-			rp_sprintf(C_("DMG", "0x%02X (valid)"), checksum));
+			fmt::format(FRUN(C_("DMG", "0x{:0>2X} (valid)")), checksum));
 	}
 }
 
@@ -901,7 +906,7 @@ DMG::DMG(const IRpFilePtr &file)
 	// Set the MIME type. (unofficial)
 	assert((int)d->romType >= 0);
 	assert((int)d->romType < ARRAY_SIZE_I(d->mimeTypes));
-	d->mimeType = d->mimeTypes[(int)d->romType];
+	d->mimeType = d->mimeTypes[static_cast<int>(d->romType)];
 }
 
 /** ROM detection functions. **/
@@ -1017,16 +1022,16 @@ const char *DMG::systemName(unsigned int type) const
 
 	// Bits 0-1: Type. (long, short, abbreviation)
 	// Bits 2-3: System type. (DMG-specific)
-	static const char *const sysNames[4][4] = {
-		{"Nintendo Game Boy", "Game Boy", "GB", nullptr},
-		{"Nintendo Game Boy Color", "Game Boy Color", "GBC", nullptr},
-		{"Analogue Pocket", "Analogue Pocket", "AP", nullptr},
-		{nullptr, nullptr, nullptr, nullptr},
-	};
+	static const array<array<const char*, 4>, 4> sysNames = {{
+		{{"Nintendo Game Boy", "Game Boy", "GB", nullptr}},
+		{{"Nintendo Game Boy Color", "Game Boy Color", "GBC", nullptr}},
+		{{"Analogue Pocket", "Analogue Pocket", "AP", nullptr}},
+		{{nullptr, nullptr, nullptr, nullptr}},
+	}};
 
 	// NOTE: This might return an incorrect system name if
 	// d->romType is ROM_TYPE_UNKNOWN.
-	return sysNames[(int)d->romType & 3][type & SYSNAME_TYPE_MASK];
+	return sysNames[static_cast<size_t>(d->romType) & 3U][type & SYSNAME_TYPE_MASK];
 }
 
 /**
@@ -1122,7 +1127,7 @@ int DMG::loadFieldData(void)
 	} else if (!d->file || !d->file->isOpen()) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->romType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->romType) < 0) {
 		// Unknown ROM image type.
 		return -EIO;
 	}
@@ -1193,9 +1198,8 @@ int DMG::loadFieldData(void)
 				DMGPrivate::RomType mmm01_romType = static_cast<DMGPrivate::RomType>(isRomSupported_static(&info));
 				if ((int)mmm01_romType >= 0) {
 					// ROM header is valid.
-					char buf[16];
-					snprintf(buf, sizeof(buf), "0x%05X", addr - d->copier_offset);
-					d->fields.addTab(buf);
+					const string s_tab_name = fmt::format(FSTR("0x{:0>5X}"), addr - d->copier_offset);
+					d->fields.addTab(s_tab_name.c_str());
 					d->addFields_romHeader(&mmm01_header.romHeader);
 				}
 			}
@@ -1211,7 +1215,7 @@ int DMG::loadFieldData(void)
 		// GBX version
 		// TODO: Do things based on the version number?
 		d->fields.addField_string(C_("DMG", "GBX Version"),
-			rp_sprintf_p("%1$u.%2$u",
+			fmt::format(FSTR("{0:d}.{1:d}"),
 				be32_to_cpu(gbxFooter->version.major),
 				be32_to_cpu(gbxFooter->version.minor)));
 
@@ -1301,13 +1305,13 @@ int DMG::loadFieldData(void)
 			gbx_features |= (1U << 2);
 		}
 
-		static const char *const gbx_feature_bitfield_names[] = {
+		static const array<const char*, 3> gbx_feature_bitfield_names = {{
 			NOP_C_("DMG|Features", "Battery"),
 			NOP_C_("DMG|Features", "Rumble"),
 			NOP_C_("DMG|Features", "Timer"),
-		};
+		}};
 		vector<string> *const v_gbx_feature_bitfield_names = RomFields::strArrayToVector_i18n(
-			"DMG|Features", gbx_feature_bitfield_names, ARRAY_SIZE(gbx_feature_bitfield_names));
+			"DMG|Features", gbx_feature_bitfield_names);
 		d->fields.addField_bitfield(C_("DMG", "Features"),
 			v_gbx_feature_bitfield_names, 0, gbx_features);
 
@@ -1325,9 +1329,9 @@ int DMG::loadFieldData(void)
 	// Check for GBS.
 	// NOTE: Loaded on demand, since GBS isn't used for metadata at the moment.
 	// TODO: Maybe it should be?
-	uint8_t gbs_jmp[3];
-	size_t size = d->file->seekAndRead(0, gbs_jmp, sizeof(gbs_jmp));
-	if (size == sizeof(gbs_jmp) && gbs_jmp[0] == 0xC3) {
+	array<uint8_t, 3> gbs_jmp;
+	size_t size = d->file->seekAndRead(0, gbs_jmp.data(), gbs_jmp.size());
+	if (size == gbs_jmp.size() && gbs_jmp[0] == 0xC3) {
 		// Read the jump address.
 		// GBS header is at the jump address minus sizeof(GBS_Header).
 		uint16_t jp_addr = (gbs_jmp[2] << 8) | gbs_jmp[1];
@@ -1342,10 +1346,10 @@ int DMG::loadFieldData(void)
 				shared_ptr<SubFile> gbsFile = std::make_shared<SubFile>(d->file, jp_addr, fileSize + d->copier_offset - jp_addr);
 				if (gbsFile->isOpen()) {
 					// Open the GBS.
-					GBS *const gbs = new GBS(gbsFile);
-					if (gbs->isOpen()) {
+					GBS gbs(gbsFile);
+					if (gbs.isOpen()) {
 						// Add the fields.
-						const RomFields *const gbsFields = gbs->fields();
+						const RomFields *const gbsFields = gbs.fields();
 						assert(gbsFields != nullptr);
 						assert(!gbsFields->empty());
 						if (gbsFields && !gbsFields->empty()) {
@@ -1353,7 +1357,6 @@ int DMG::loadFieldData(void)
 								RomFields::TabOffset_AddTabs);
 						}
 					}
-					delete gbs;
 				}
 			}
 		}
@@ -1371,23 +1374,20 @@ int DMG::loadFieldData(void)
 int DMG::loadMetaData(void)
 {
 	RP_D(DMG);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->romType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->romType) < 0) {
 		// Unknown ROM image type.
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(2);	// Maximum of 2 metadata properties.
-
 	// DMG ROM header
 	//const DMG_RomHeader *const romHeader = &d->romHeader;
+	d->metaData.reserve(2);	// Maximum of 2 metadata properties.
 
 	// Title
 	// NOTE: We don't actually need the game ID right now,
@@ -1396,15 +1396,15 @@ int DMG::loadMetaData(void)
 	string s_title, s_gameID;
 	d->getTitleAndGameID(s_title, s_gameID);
 	if (!s_title.empty()) {
-		d->metaData->addMetaData_string(Property::Title,
+		d->metaData.addMetaData_string(Property::Title,
 			s_title, RomMetaData::STRF_TRIM_END);
 	}
 
 	// Publisher
-	d->metaData->addMetaData_string(Property::Publisher, d->getPublisher());
+	d->metaData.addMetaData_string(Property::Publisher, d->getPublisher());
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -1415,20 +1415,20 @@ int DMG::loadMetaData(void)
  * try to get the size that most closely matches the
  * requested size.
  *
- * @param imageType	[in]     Image type.
- * @param pExtURLs	[out]    Output vector.
+ * @param imageType	[in]     Image type
+ * @param extURLs	[out]    Output vector
  * @param size		[in,opt] Requested image size. This may be a requested
  *                               thumbnail size in pixels, or an ImageSizeType
  *                               enum value.
  * @return 0 on success; negative POSIX error code on error.
  */
-int DMG::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
+int DMG::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) const
 {
-	ASSERT_extURLs(imageType, pExtURLs);
-	pExtURLs->clear();
+	extURLs.clear();
+	ASSERT_extURLs(imageType);
 
 	RP_D(const DMG);
-	if (!d->isValid || (int)d->romType < 0) {
+	if (!d->isValid || static_cast<int>(d->romType) < 0) {
 		// ROM image isn't valid.
 		return -EIO;
 	}
@@ -1554,9 +1554,7 @@ int DMG::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
 		// Append the ROM checksum.
 		// NOTE: pandocs says "high byte first", but the actual ROMs
 		// seem to use little-endian.
-		char cksum[16];
-		snprintf(cksum, sizeof(cksum), "-%04X", le16_to_cpu(romHeader->rom_checksum));
-		img_filename += cksum;
+		img_filename += fmt::format(FSTR("-{:0>4X}"), le16_to_cpu(romHeader->rom_checksum));
 	}
 
 	// Check for invalid characters and replace them with '_'.
@@ -1598,16 +1596,16 @@ int DMG::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
 	}
 
 	// Add the URLs.
-	pExtURLs->resize(1);
-	auto extURL_iter = pExtURLs->begin();
-	extURL_iter->url = d->getURL_RPDB("gb", imageTypeName, img_subdir.c_str(), img_filename.c_str(), ext);
-	extURL_iter->cache_key = d->getCacheKey_RPDB("gb", imageTypeName, img_subdir.c_str(), img_filename.c_str(), ext);
-	extURL_iter->width = sizeDefs[0].width;
-	extURL_iter->height = sizeDefs[0].height;
-	extURL_iter->high_res = (sizeDefs[0].index >= 2);
+	extURLs.resize(1);
+	ExtURL &extURL = extURLs[0];
+	extURL.url = d->getURL_RPDB("gb", imageTypeName, img_subdir.c_str(), img_filename.c_str(), ext);
+	extURL.cache_key = d->getCacheKey_RPDB("gb", imageTypeName, img_subdir.c_str(), img_filename.c_str(), ext);
+	extURL.width = sizeDefs[0].width;
+	extURL.height = sizeDefs[0].height;
+	extURL.high_res = (sizeDefs[0].index >= 2);
 
 	// All URLs added.
 	return 0;
 }
 
-}
+} // namespace LibRomData

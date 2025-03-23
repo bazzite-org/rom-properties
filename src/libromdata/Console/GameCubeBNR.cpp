@@ -21,6 +21,7 @@ using namespace LibRpText;
 using namespace LibRpTexture;
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::vector;
 
@@ -32,8 +33,7 @@ namespace LibRomData {
 class GameCubeBNRPrivate final : public RomDataPrivate
 {
 public:
-	GameCubeBNRPrivate(const IRpFilePtr &file, uint32_t gcnRegion = ~0U);
-	~GameCubeBNRPrivate() final = default;
+	explicit GameCubeBNRPrivate(const IRpFilePtr &file, uint32_t gcnRegion = ~0U);
 
 private:
 	typedef RomDataPrivate super;
@@ -41,8 +41,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -129,20 +129,20 @@ ROMDATA_IMPL_IMG(GameCubeBNR)
 /* RomDataInfo */
 // NOTE: This will be handled using the same
 // settings as GameCube.
-const char *const GameCubeBNRPrivate::exts[] = {
+const array<const char*, 1+1> GameCubeBNRPrivate::exts = {{
 	".bnr",
 
 	nullptr
-};
-const char *const GameCubeBNRPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> GameCubeBNRPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-gamecube-bnr",	// .bnr
 
 	nullptr
-};
+}};
 const RomDataInfo GameCubeBNRPrivate::romDataInfo = {
-	"GameCube", exts, mimeTypes
+	"GameCube", exts.data(), mimeTypes.data()
 };
 
 GameCubeBNRPrivate::GameCubeBNRPrivate(const IRpFilePtr &file, uint32_t gcnRegion)
@@ -374,35 +374,8 @@ string GameCubeBNRPrivate::getGameInfoString(const gcn_banner_comment_t *comment
  *
  * @param file Open banner file
  */
-GameCubeBNR::GameCubeBNR(const IRpFilePtr &file)
-	: super(new GameCubeBNRPrivate(file))
-{
-	init();
-}
-
-/**
- * Read a Nintendo GameCube banner file.
- *
- * A save file must be opened by the caller. The file handle
- * will be ref()'d and must be kept open in order to load
- * data from the disc image.
- *
- * To close the file, either delete this object or call close().
- *
- * NOTE: Check isValid() to determine if this is a valid ROM.
- *
- * @param file Open banner file
- */
 GameCubeBNR::GameCubeBNR(const IRpFilePtr &file, uint32_t gcnRegion)
 	: super(new GameCubeBNRPrivate(file, gcnRegion))
-{
-	init();
-}
-
-/**
- * Common initialization function for the constructors.
- */
-void GameCubeBNR::init(void)
 {
 	// This class handles banner files.
 	// NOTE: This will be handled using the same
@@ -465,8 +438,13 @@ void GameCubeBNR::init(void)
 		if (size != expSize) {
 			// Seek and/or read error.
 			d->comments.clear();
+			d->isValid = false;
+			return;
 		}
 	}
+
+	// Is PAL?
+	d->isPAL = (d->bannerType == GameCubeBNRPrivate::BannerType::BNR2);
 }
 
 /** ROM detection functions. **/
@@ -532,10 +510,10 @@ const char *GameCubeBNR::systemName(unsigned int type) const
 		"GameCubeBNR::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		// FIXME: "NGC" in Japan?
 		"Nintendo GameCube", "GameCube", "GCN", nullptr,
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -623,13 +601,13 @@ int GameCubeBNR::loadFieldData(void)
 	const char *const s_company_title = C_("GameCubeBNR", "Company");
 	const char *const s_description_title = C_("RomData", "Description");
 
-	if (d->bannerType == GameCubeBNRPrivate::BannerType::BNR1) {
+	if (d->bannerType == GameCubeBNRPrivate::BannerType::BNR1 && d->comments.size() >= 1) {
 		// BNR1: Assuming Shift-JIS with cp1252 fallback.
 		// The language is either English or Japanese, so we're
 		// using RFT_STRING here.
 
 		// Only one banner comment.
-		const gcn_banner_comment_t *const comment = &d->comments.at(0);
+		const gcn_banner_comment_t *const comment = &d->comments[0];
 
 		// Game name
 		string s_tmp = d->getGameNameString(comment);
@@ -648,7 +626,7 @@ int GameCubeBNR::loadFieldData(void)
 		if (!s_tmp.empty()) {
 			d->fields.addField_string(s_description_title, s_tmp);
 		}
-	} else {
+	} else if (d->bannerType == GameCubeBNRPrivate::BannerType::BNR2) {
 		// BNR2: Assuming cp1252.
 		// Multiple languages may be present, so we're using
 		// RFT_STRING_MULTI here.
@@ -659,12 +637,13 @@ int GameCubeBNR::loadFieldData(void)
 		const bool dedupe_titles = (comment_en.gamename_full[0] != '\0') ||
 		                           (comment_en.gamename[0] != '\0');
 
-		// Fields.
+		// Fields
 		RomFields::StringMultiMap_t *const pMap_gamename = new RomFields::StringMultiMap_t();
 		RomFields::StringMultiMap_t *const pMap_company = new RomFields::StringMultiMap_t();
 		RomFields::StringMultiMap_t *const pMap_gamedesc = new RomFields::StringMultiMap_t();
-		for (int langID = 0; langID < GCN_PAL_LANG_MAX; langID++) {
-			const gcn_banner_comment_t *const comment = &d->comments.at(langID);
+		const int maxLangID = std::max(static_cast<int>(GCN_PAL_LANG_MAX), static_cast<int>(d->comments.size()));
+		for (int langID = 0; langID < maxLangID; langID++) {
+			const gcn_banner_comment_t *const comment = &d->comments[langID];
 
 			// Check for empty strings first.
 			if (comment->gamename_full[0] == '\0' &&
@@ -697,8 +676,9 @@ int GameCubeBNR::loadFieldData(void)
 
 			const uint32_t lc = NintendoLanguage::getGcnPalLanguageCode(langID);
 			assert(lc != 0);
-			if (lc == 0)
+			if (lc == 0) {
 				continue;
+			}
 
 			// Game name
 			string s_tmp = d->getGameNameString(comment);
@@ -750,7 +730,7 @@ int GameCubeBNR::loadFieldData(void)
 int GameCubeBNR::loadMetaData(void)
 {
 	RP_D(GameCubeBNR);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -767,9 +747,7 @@ int GameCubeBNR::loadMetaData(void)
 		return 0;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(3);	// Maximum of 3 metadata properties.
+	d->metaData.reserve(3);	// Maximum of 3 metadata properties.
 
 	// TODO: Show both full and normal?
 	// Currently showing full if it's there; otherwise, normal.
@@ -809,16 +787,16 @@ int GameCubeBNR::loadMetaData(void)
 	}
 
 	// Game name
-	d->metaData->addMetaData_string(Property::Title, d->getGameNameString(comment));
+	d->metaData.addMetaData_string(Property::Title, d->getGameNameString(comment));
 
 	// Company
-	d->metaData->addMetaData_string(Property::Publisher, d->getCompanyString(comment));
+	d->metaData.addMetaData_string(Property::Publisher, d->getCompanyString(comment));
 
 	// Game description
-	d->metaData->addMetaData_string(Property::Description, d->getGameDescriptionString(comment));
+	d->metaData.addMetaData_string(Property::Description, d->getGameDescriptionString(comment));
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -935,4 +913,4 @@ int GameCubeBNR::addField_gameInfo(LibRpBase::RomFields *fields) const
 	return 0;
 }
 
-}
+} // namespace LibRomData

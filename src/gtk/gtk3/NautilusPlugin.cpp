@@ -47,15 +47,14 @@ rp_nautilus_register_types(GTypeModule *g_module)
 	/* Setup the plugin provider type list */
 	type_list[0] = RP_TYPE_NAUTILUS_PROPERTY_PAGE_PROVIDER;
 	type_list[1] = RP_TYPE_NAUTILUS_MENU_PROVIDER;
-}
-
-/** Per-frontend initialization functions. **/
 
 #ifdef ENABLE_ACHIEVEMENTS
-#  define REGISTER_ACHDBUS() AchGDBus::instance()
-#else /* !ENABLE_ACHIEVEMENTS */
-#  define REGISTER_ACHDBUS() do { } while (0)
+	// Register AchGDBus.
+	AchGDBus::instance();
 #endif /* ENABLE_ACHIEVEMENTS */
+}
+
+/** Per-frontend initialization functions **/
 
 #define NAUTILUS_MODULE_INITIALIZE_FUNC_INT(prefix) do { \
 	CHECK_UID(); \
@@ -88,9 +87,6 @@ rp_nautilus_register_types(GTypeModule *g_module)
 	DLSYM(nautilus_menu_provider_get_type,		prefix##_menu_provider_get_type); \
 	DLSYM(nautilus_property_page_provider_get_type,	prefix##_property_page_provider_get_type); \
 	DLSYM(nautilus_property_page_new,		prefix##_property_page_new); \
-\
-	/* Register AchGDBus if it's available. */ \
-	REGISTER_ACHDBUS(); \
 } while (0)
 
 extern "C" G_MODULE_EXPORT void
@@ -98,7 +94,7 @@ nautilus_module_initialize(GTypeModule *g_module)
 {
 	NAUTILUS_MODULE_INITIALIZE_FUNC_INT(nautilus);
 
-	// Symbols loaded. Register our types
+	// Symbols loaded. Register our types.
 	rp_nautilus_register_types(g_module);
 }
 
@@ -110,7 +106,7 @@ caja_module_initialize(GTypeModule *g_module)
 	// Initialize Caja-specific function pointers.
 	rp_caja_init(libextension_so);
 
-	// Symbols loaded. Register our types
+	// Symbols loaded. Register our types.
 	rp_nautilus_register_types(g_module);
 }
 
@@ -122,7 +118,7 @@ nemo_module_initialize(GTypeModule *g_module)
 	// Initialize Nemo-specific function pointers.
 	rp_nemo_init(libextension_so);
 
-	// Symbols loaded. Register our types
+	// Symbols loaded. Register our types.
 	rp_nautilus_register_types(g_module);
 }
 

@@ -3,7 +3,7 @@
  * Nintendo3DS_SMDH.hpp: Nintendo 3DS SMDH reader.                         *
  * Handles SMDH files and SMDH sections.                                   *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -33,8 +33,7 @@ namespace LibRomData {
 class Nintendo3DS_SMDH_Private final : public RomDataPrivate
 {
 public:
-	Nintendo3DS_SMDH_Private(const IRpFilePtr &file);
-	~Nintendo3DS_SMDH_Private() final = default;
+	explicit Nintendo3DS_SMDH_Private(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -42,8 +41,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 2+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -87,12 +86,12 @@ ROMDATA_IMPL_IMG_SIZES(Nintendo3DS_SMDH)
 
 /* RomDataInfo */
 // NOTE: Using the same image settings as Nintendo3DS.
-const char *const Nintendo3DS_SMDH_Private::exts[] = {
+const array<const char*, 1+1> Nintendo3DS_SMDH_Private::exts = {{
 	".smdh",	// SMDH (icon) file.
 
 	nullptr
-};
-const char *const Nintendo3DS_SMDH_Private::mimeTypes[] = {
+}};
+const array<const char*, 2+1> Nintendo3DS_SMDH_Private::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-nintendo-3ds-smdh",
@@ -101,9 +100,9 @@ const char *const Nintendo3DS_SMDH_Private::mimeTypes[] = {
 	"application/x-ctr-smdh",
 
 	nullptr
-};
+}};
 const RomDataInfo Nintendo3DS_SMDH_Private::romDataInfo = {
-	"Nintendo3DS", exts, mimeTypes
+	"Nintendo3DS", exts.data(), mimeTypes.data()
 };
 
 Nintendo3DS_SMDH_Private::Nintendo3DS_SMDH_Private(const IRpFilePtr &file)
@@ -277,6 +276,14 @@ Nintendo3DS_SMDH::Nintendo3DS_SMDH(const IRpFilePtr &file)
 		d->file.reset();
 		return;
 	}
+
+	// Is PAL?
+	const uint32_t region_code = le32_to_cpu(d->smdh.header.settings.region_code);
+	if (region_code & (N3DS_REGION_EUROPE | N3DS_REGION_AUSTRALIA)) {
+		if (!(region_code & ~(N3DS_REGION_EUROPE | N3DS_REGION_AUSTRALIA))) {
+			d->isPAL = true;
+		}
+	}
 }
 
 /** ROM detection functions. **/
@@ -341,10 +348,10 @@ const char *Nintendo3DS_SMDH::systemName(unsigned int type) const
 	// Bits 0-1: Type. (long, short, abbreviation)
 	// Bit 2: iQue
 	// TODO: Is it possible to identify "*New*" Nintendo 3DS" from just the SMDH?
-	static const char *const sysNames[4*4] = {
+	static const array<const char*, 2*4> sysNames = {{
 		"Nintendo 3DS", "Nintendo 3DS", "3DS", nullptr,
 		"iQue 3DS", "iQue 3DS", "3DS", nullptr,
-	};
+	}};
 
 	return sysNames[idx];
 }
@@ -522,7 +529,7 @@ int Nintendo3DS_SMDH::loadFieldData(void)
 
 	// Region code.
 	// Maps directly to the SMDH field.
-	static const char *const n3ds_region_bitfield_names[] = {
+	static const array<const char*, 7> n3ds_region_bitfield_names = {{
 		NOP_C_("Region", "Japan"),
 		NOP_C_("Region", "USA"),
 		NOP_C_("Region", "Europe"),
@@ -530,9 +537,8 @@ int Nintendo3DS_SMDH::loadFieldData(void)
 		NOP_C_("Region", "China"),
 		NOP_C_("Region", "South Korea"),
 		NOP_C_("Region", "Taiwan"),
-	};
-	vector<string> *const v_n3ds_region_bitfield_names = RomFields::strArrayToVector_i18n(
-		"Region", n3ds_region_bitfield_names, ARRAY_SIZE(n3ds_region_bitfield_names));
+	}};
+	vector<string> *const v_n3ds_region_bitfield_names = RomFields::strArrayToVector_i18n("Region", n3ds_region_bitfield_names);
 	d->fields.addField_bitfield(C_("RomData", "Region Code"),
 		v_n3ds_region_bitfield_names, 3, le32_to_cpu(smdhHeader->settings.region_code));
 
@@ -602,7 +608,7 @@ int Nintendo3DS_SMDH::loadFieldData(void)
 			// NOTE: MSVC is known to mishandle UTF-8 on certain systems.
 			// The UTF-8 text is: "新出审字 [%s]%s号"
 			d->fields.addField_string(C_("RomData", "Publishing Approval No."),
-				rp_sprintf("\xE6\x96\xB0\xE5\x87\xBA\xE5\xAE\xA1\xE5\xAD\x97 [%s]%s\xE5\x8F\xB7",
+				fmt::format(FSTR("\xE6\x96\xB0\xE5\x87\xBA\xE5\xAE\xA1\xE5\xAD\x97 [{:s}]{:s}\xE5\x8F\xB7"),
 					latin1_to_utf8(&ique_data[17+11+1], 4).c_str(),
 					latin1_to_utf8(&ique_data[17+11+1+4], 3).c_str()));
 		}
@@ -620,7 +626,7 @@ int Nintendo3DS_SMDH::loadFieldData(void)
 int Nintendo3DS_SMDH::loadMetaData(void)
 {
 	RP_D(Nintendo3DS_SMDH);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -638,37 +644,35 @@ int Nintendo3DS_SMDH::loadMetaData(void)
 		return 0;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(2);	// Maximum of 2 metadata properties.
+	d->metaData.reserve(2);	// Maximum of 2 metadata properties.
 
-	// Title.
+	// Title
 	// NOTE: Preferring Full Title. If not found, using Title.
 	const N3DS_Language_ID langID = d->getLanguageID();
 	if (smdhHeader->titles[langID].desc_long[0] != '\0') {
 		// Using the Full Title.
-		d->metaData->addMetaData_string(Property::Title,
+		d->metaData.addMetaData_string(Property::Title,
 			utf16le_to_utf8(
 				smdhHeader->titles[langID].desc_long,
 				ARRAY_SIZE(smdhHeader->titles[langID].desc_long)));
 	} else if (smdhHeader->titles[langID].desc_short[0] != '\0') {
 		// Using the regular Title.
-		d->metaData->addMetaData_string(Property::Title,
+		d->metaData.addMetaData_string(Property::Title,
 			utf16le_to_utf8(
 				smdhHeader->titles[langID].desc_short,
 				ARRAY_SIZE(smdhHeader->titles[langID].desc_short)));
 	}
 
-	// Publisher.
+	// Publisher
 	if (smdhHeader->titles[langID].publisher[0] != '\0') {
-		d->metaData->addMetaData_string(Property::Publisher,
+		d->metaData.addMetaData_string(Property::Publisher,
 			utf16le_to_utf8(
 				smdhHeader->titles[langID].publisher,
 				ARRAY_SIZE(smdhHeader->titles[langID].publisher)));
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -706,7 +710,7 @@ int Nintendo3DS_SMDH::loadInternalImage(ImageType imageType, rp_image_const_ptr 
 
 	// Load the icon.
 	pImage = d->loadIcon(idx);
-	return ((bool)pImage ? 0 : -EIO);
+	return (pImage) ? 0 : -EIO;
 }
 
 /** Special SMDH accessor functions **/
@@ -725,4 +729,4 @@ uint32_t Nintendo3DS_SMDH::getRegionCode(void) const
 	return le32_to_cpu(d->smdh.header.settings.region_code);
 }
 
-}
+} // namespace LibRomData

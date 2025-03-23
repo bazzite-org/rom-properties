@@ -1,9 +1,14 @@
 # librpbase test suite
 PROJECT(librpbase-tests LANGUAGES CXX)
 
-# Top-level src directory.
+# Top-level src directory
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/../..)
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR}/../..)
+
+# MSVC: Set /DEPENDENTLOADFLAG:0xA00 for unit tests.
+IF(COMMAND SET_DEPENDENT_LOAD_FLAG_GTEST)
+	SET_DEPENDENT_LOAD_FLAG_GTEST()
+ENDIF(COMMAND SET_DEPENDENT_LOAD_FLAG_GTEST)
 
 # ZLIB and libpng are checked in the top-level CMakeLists.txt.
 
@@ -20,6 +25,11 @@ TARGET_LINK_LIBRARIES(rptest PUBLIC rpsecure)
 # librptest doesn't use gtest directly, but all tests do,
 # so add it with interface linkage.
 TARGET_LINK_LIBRARIES(rptest INTERFACE gtest)
+# librptest *does* use libfmt directly, as do most tests.
+# Add it with public linkage.
+IF(Fmt_FOUND)
+	TARGET_LINK_LIBRARIES(rptest PUBLIC ${Fmt_LIBRARY})
+ENDIF(Fmt_FOUND)
 IF(WIN32)
 	# rptest initializes GDI+, since it's used by rp_image.
 	TARGET_LINK_LIBRARIES(rptest PRIVATE gdiplus)
@@ -63,8 +73,25 @@ IF(ENABLE_DECRYPTION)
 	DO_SPLIT_DEBUG(CryptoTests)
 	SET_WINDOWS_SUBSYSTEM(CryptoTests CONSOLE)
 	SET_WINDOWS_ENTRYPOINT(CryptoTests wmain OFF)
-	ADD_TEST(NAME CryptoTests COMMAND CryptoTests --gtest_brief)
 ENDIF(ENABLE_DECRYPTION)
+
+# CBCReader tests
+# NOTE: Has a pass-through mode for NoCrypto, so building regardless of ENABLE_DECRYPTION.
+ADD_TEST(NAME CBCReaderTests COMMAND CBCReaderTests --gtest_brief)
+ADD_EXECUTABLE(CBCReaderTests CBCReaderTest.cpp)
+TARGET_LINK_LIBRARIES(CBCReaderTests PRIVATE rptest romdata)
+TARGET_COMPILE_DEFINITIONS(CBCReaderTests PRIVATE RP_BUILDING_FOR_DLL=1)
+IF(WIN32)
+	TARGET_LINK_LIBRARIES(CBCReaderTests PRIVATE advapi32)
+ENDIF(WIN32)
+IF(NETTLE_LIBRARY)
+	TARGET_LINK_LIBRARIES(CBCReaderTests PRIVATE ${NETTLE_LIBRARY})
+	TARGET_INCLUDE_DIRECTORIES(CBCReaderTests PRIVATE ${NETTLE_INCLUDE_DIRS})
+ENDIF(NETTLE_LIBRARY)
+DO_SPLIT_DEBUG(CBCReaderTests)
+SET_WINDOWS_SUBSYSTEM(CBCReaderTests CONSOLE)
+SET_WINDOWS_ENTRYPOINT(CBCReaderTests wmain OFF)
+ADD_TEST(NAME CryptoTests COMMAND CryptoTests --gtest_brief)
 
 # TimegmTest
 ADD_EXECUTABLE(TimegmTest TimegmTest.cpp)

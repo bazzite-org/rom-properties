@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * Lynx.hpp: Atari Lynx ROM reader.                                        *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * Copyright (c) 2017-2018 by Egor.                                        *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
@@ -16,12 +16,15 @@ using namespace LibRpBase;
 using namespace LibRpFile;
 using namespace LibRpText;
 
+// C++ STL classes
+using std::array;
+
 namespace LibRomData {
 
 class LynxPrivate final : public RomDataPrivate
 {
 public:
-	LynxPrivate(const IRpFilePtr &file);
+	explicit LynxPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -29,8 +32,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 2+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -43,20 +46,20 @@ ROMDATA_IMPL(Lynx)
 /** LynxPrivate **/
 
 /* RomDataInfo */
-const char *const LynxPrivate::exts[] = {
+const array<const char*, 2+1> LynxPrivate::exts = {{
 	".lnx",
 	".lyx",
 
 	nullptr
-};
-const char *const LynxPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> LynxPrivate::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	"application/x-atari-lynx-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo LynxPrivate::romDataInfo = {
-	"Lynx", exts, mimeTypes
+	"Lynx", exts.data(), mimeTypes.data()
 };
 
 LynxPrivate::LynxPrivate(const IRpFilePtr &file)
@@ -96,25 +99,21 @@ Lynx::Lynx(const IRpFilePtr &file)
 	d->file->rewind();
 
 	// Read the ROM header. [0x40 bytes]
-	uint8_t header[0x40];
-	size_t size = d->file->read(header, sizeof(header));
-	if (size != sizeof(header)) {
+	size_t size = d->file->read(&d->romHeader, sizeof(d->romHeader));
+	if (size != sizeof(d->romHeader)) {
 		d->file.reset();
 		return;
 	}
 
 	// Check if this ROM is supported.
 	const DetectInfo info = {
-		{0, sizeof(header), header},
+		{0, sizeof(d->romHeader), reinterpret_cast<const uint8_t*>(&d->romHeader)},
 		nullptr,	// ext (not needed for Lynx)
 		0		// szFile (not needed for Lynx)
 	};
 	d->isValid = (isRomSupported_static(&info) >= 0);
 
-	if (d->isValid) {
-		// Save the header for later.
-		memcpy(&d->romHeader, header, sizeof(d->romHeader));
-	} else {
+	if (!d->isValid) {
 		d->file.reset();
 	}
 }
@@ -169,9 +168,9 @@ const char *Lynx::systemName(unsigned int type) const
 		"Lynx::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Atari Lynx", "Lynx", "LNX", nullptr,
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -233,7 +232,7 @@ int Lynx::loadFieldData(void)
 int Lynx::loadMetaData(void)
 {
 	RP_D(Lynx);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -245,23 +244,20 @@ int Lynx::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(2);	// Maximum of 2 metadata properties.
-
 	// Lynx ROM header
 	const Lynx_RomHeader *const romHeader = &d->romHeader;
+	d->metaData.reserve(2);	// Maximum of 2 metadata properties.
 
 	// Title
-	d->metaData->addMetaData_string(Property::Title,
+	d->metaData.addMetaData_string(Property::Title,
 		latin1_to_utf8(romHeader->cartname, sizeof(romHeader->cartname)));
 
 	// Publisher (aka manufacturer)
-	d->metaData->addMetaData_string(Property::Publisher,
+	d->metaData.addMetaData_string(Property::Publisher,
 		latin1_to_utf8(romHeader->manufname, sizeof(romHeader->manufname)));
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

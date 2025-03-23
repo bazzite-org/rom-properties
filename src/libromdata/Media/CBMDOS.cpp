@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * CBMDOS.cpp: Commodore DOS floppy disk image parser.                     *
  *                                                                         *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -34,6 +34,7 @@ using namespace LibRpTexture;
 using std::array;
 using std::bitset;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 // Uninitialized vector class
@@ -44,8 +45,7 @@ namespace LibRomData {
 class CBMDOSPrivate final : public RomDataPrivate
 {
 public:
-	CBMDOSPrivate(const IRpFilePtr &file);
-	~CBMDOSPrivate();
+	explicit CBMDOSPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -53,8 +53,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 10+1> exts;
+	static const array<const char*, 18+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -95,8 +95,7 @@ public:
 	// Track offsets
 	// Index is track number, minus one.
 	struct track_offsets_t {
-		uint8_t sector_count;		// Sectors per track
-		uint8_t reserved[3];
+		unsigned int sector_count;	// Sectors per track
 		unsigned int start_offset;	// Starting offset (in bytes)
 	};
 	rp::uvector<track_offsets_t> track_offsets;
@@ -134,11 +133,11 @@ public:
 	struct GCR_track_buffer_t {
 		uint8_t sectors[21][CBMDOS_SECTOR_SIZE];
 	};
-	GCR_track_buffer_t *GCR_track_buffer;
+	unique_ptr<GCR_track_buffer_t> GCR_track_buffer;
 
 	// GCR track size (usually 7,928; we'll allow up to 8,192)
 	unsigned int GCR_track_size;
-#define GCR_MAX_TRACK_SIZE 8192U
+	static constexpr unsigned int GCR_MAX_TRACK_SIZE = 8192U;
 
 public:
 	// Disk header
@@ -160,6 +159,8 @@ public:
 	 * @param gcr	[in] Input buffer with 5 GCR bytes
 	 * @return 0 on success; non-zero on error.
 	 */
+	ATTR_ACCESS(write_only, 1)
+	ATTR_ACCESS(read_only, 2)
 	static int decode_GCR_bytes(uint8_t *data, const uint8_t *gcr);
 
 	/**
@@ -178,6 +179,7 @@ public:
 	 * @param sector	[in] Sector# (starts at 0)
 	 * @return Number of bytes read on success, or zero on error.
 	 */
+	ATTR_ACCESS_SIZE(write_only, 2, 3)
 	size_t read_sector(void *buf, size_t siz, uint8_t track, uint8_t sector);
 
 	/**
@@ -186,6 +188,7 @@ public:
 	 * @param siz	[in] Size of buf
 	 * @return String length with $A0 padding removed.
 	 */
+	ATTR_ACCESS_SIZE(read_only, 1, 2)
 	static size_t remove_A0_padding(const char *buf, size_t siz);
 
 	/**
@@ -202,7 +205,7 @@ ROMDATA_IMPL(CBMDOS)
 /** CBMDOSPrivate **/
 
 /* RomDataInfo */
-const char *const CBMDOSPrivate::exts[] = {
+const array<const char*, 10+1> CBMDOSPrivate::exts = {{
 	".d64",	".d41",	// Standard C1541 disk image
 	".d71",		// Standard C1571 disk image
 	".d80",		// Standard C8050 disk image
@@ -216,8 +219,8 @@ const char *const CBMDOSPrivate::exts[] = {
 	// TODO: More?
 
 	nullptr
-};
-const char *const CBMDOSPrivate::mimeTypes[] = {
+}};
+const array<const char*, 18+1> CBMDOSPrivate::mimeTypes = {{
 	// NOTE: Ordering matches the DiskType enum.
 
 	// Unofficial MIME types.
@@ -247,9 +250,9 @@ const char *const CBMDOSPrivate::mimeTypes[] = {
 	"application/x-c64-rawdisk",	// G64
 
 	nullptr
-};
+}};
 const RomDataInfo CBMDOSPrivate::romDataInfo = {
-	"CBMDOS", exts, mimeTypes
+	"CBMDOS", exts.data(), mimeTypes.data()
 };
 
 // U+FFFD: Unicode replacement character
@@ -264,16 +267,10 @@ CBMDOSPrivate::CBMDOSPrivate(const IRpFilePtr &file)
 	, GCR_track_cache_number(0)
 	, err_bytes_count(0)
 	, err_bytes_offset(0)
-	, GCR_track_buffer(nullptr)
 	, GCR_track_size(0)
 {
 	// Clear the ROM header struct.
 	memset(&diskHeader, 0, sizeof(diskHeader));
-}
-
-CBMDOSPrivate::~CBMDOSPrivate()
-{
-	delete GCR_track_buffer;
 }
 
 /**
@@ -462,11 +459,11 @@ void CBMDOSPrivate::init_track_offsets_G64(const cbmdos_G64_header_t *header)
 	if (header->magic[6] == '7') {
 		// GCR-1571: Up to 84 tracks (168 half-tracks)
 		assert(header->track_count <= 168U);
-		track_count = std::min((uint8_t)168U, header->track_count);
+		track_count = std::min(static_cast<uint8_t>(168U), header->track_count);
 	} else /*if (header->magic[6] == '4')*/ {
 		// GCR-1541: Up to 42 tracks (84 half-tracks)
 		assert(header->track_count <= 84U);
-		track_count = std::min((uint8_t)84U, header->track_count);
+		track_count = std::min(static_cast<uint8_t>(84U), header->track_count);
 	}
 	track_count = (track_count / 2) + (track_count % 2);
 	track_offsets.reserve(track_count);
@@ -562,11 +559,11 @@ int CBMDOSPrivate::decode_GCR_bytes(uint8_t *data, const uint8_t *gcr)
 	}};
 
 	// Combine five GCR bytes into a uint64_t.
-	uint64_t gcr_data = ((uint64_t)gcr[0] << 32) |
-	                    ((uint64_t)gcr[1] << 24) |
-	                    ((uint64_t)gcr[2] << 16) |
-	                    ((uint64_t)gcr[3] <<  8) |
-	                     (uint64_t)gcr[4];
+	uint64_t gcr_data = (static_cast<uint64_t>(gcr[0]) << 32) |
+	                    (static_cast<uint64_t>(gcr[1]) << 24) |
+	                    (static_cast<uint64_t>(gcr[2]) << 16) |
+	                    (static_cast<uint64_t>(gcr[3]) <<  8) |
+	                     static_cast<uint64_t>(gcr[4]);
 
 	// Decode GCR quintets into nybbles, backwards.
 	for (int i = 3; i >= 0; i--) {
@@ -604,9 +601,9 @@ int CBMDOSPrivate::read_GCR_track(uint8_t track)
 
 	// Read the GCR track. (usually 7,928; we'll allow up to 8,192)
 	assert(GCR_track_size > 0);
-	assert(GCR_track_size <= GCR_MAX_TRACK_SIZE);
-	array<uint8_t, GCR_MAX_TRACK_SIZE> gcr_buf;
-	size_t gcr_len = file->seekAndRead(this_track.start_offset, gcr_buf.data(), std::min((size_t)GCR_track_size, gcr_buf.size()));
+	assert(GCR_track_size <= CBMDOSPrivate::GCR_MAX_TRACK_SIZE);
+	array<uint8_t, CBMDOSPrivate::GCR_MAX_TRACK_SIZE> gcr_buf;
+	size_t gcr_len = file->seekAndRead(this_track.start_offset, gcr_buf.data(), std::min(static_cast<size_t>(GCR_track_size), gcr_buf.size()));
 	if (gcr_len == 0) {
 		// Unable to read any GCR data...
 		return -EIO;
@@ -614,7 +611,7 @@ int CBMDOSPrivate::read_GCR_track(uint8_t track)
 
 	// Make sure the GCR track buffer is allocated.
 	if (!GCR_track_buffer) {
-		GCR_track_buffer = new GCR_track_buffer_t;
+		GCR_track_buffer.reset(new GCR_track_buffer_t);
 	}
 
 	// NOTE: C1541 normally writes 40 '1' bits (FF FF FF FF FF),
@@ -633,11 +630,12 @@ int CBMDOSPrivate::read_GCR_track(uint8_t track)
 
 		// Find the header sync. (at least 16 '1' bits, FF FF)
 		uint8_t sync_count = 0;
-		for (; sync_count < 2 && p < p_end; p++) {
-			if (*p == 0xFF)
+		for (; sync_count < 2 && p < p_end; ++p) {
+			if (*p == 0xFF) {
 				sync_count++;
-			else
+			} else {
 				sync_count = 0;
+			}
 		}
 		if (sync_count < 2) {
 			// Out of sync...
@@ -647,9 +645,10 @@ int CBMDOSPrivate::read_GCR_track(uint8_t track)
 
 		// Find the sector header. (10 GCR bytes, starts with $52 encoded)
 		bool found_header = false;
-		for (; p + 10 < p_end; p++) {
-			if (*p != 0x52)
+		for (; p + 10 < p_end; ++p) {
+			if (*p != 0x52) {
 				continue;
+			}
 
 			// Found the sector header.
 			// TODO: Decode and verify?
@@ -669,11 +668,12 @@ int CBMDOSPrivate::read_GCR_track(uint8_t track)
 
 		// Find the data sync. (at least 16 '1' bits, FF FF)
 		sync_count = 0;
-		for (; sync_count < 2 && p < p_end; p++) {
-			if (*p == 0xFF)
+		for (; sync_count < 2 && p < p_end; ++p) {
+			if (*p == 0xFF) {
 				sync_count++;
-			else
+			} else {
 				sync_count = 0;
+			}
 		}
 		if (sync_count < 2) {
 			// Out of sync...
@@ -683,9 +683,10 @@ int CBMDOSPrivate::read_GCR_track(uint8_t track)
 
 		// Find the data block. (325 GCR bytes decodes to 260 data bytes, starts with $55 encoded)
 		bool found_data = false;
-		for (; p + 325 < p_end; p++) {
-			if (*p != 0x55)
+		for (; p + 325 < p_end; ++p) {
+			if (*p != 0x55) {
 				continue;
+			}
 
 			// Found the data header.
 			// Decode the GCR data.
@@ -787,7 +788,7 @@ size_t CBMDOSPrivate::remove_A0_padding(const char *buf, size_t siz)
 
 	buf += (siz - 1);
 	for (; siz > 0; buf--, siz--) {
-		if ((uint8_t)*buf != 0xA0)
+		if (static_cast<uint8_t>(*buf) != 0xA0)
 			break;
 	}
 
@@ -1008,7 +1009,7 @@ CBMDOS::CBMDOS(const IRpFilePtr &file)
 			// TODO: Save g64_header?
 
 			d->GCR_track_size = le16_to_cpu(g64_header.track_size);
-			if (d->GCR_track_size == 0 || d->GCR_track_size > GCR_MAX_TRACK_SIZE) {
+			if (d->GCR_track_size == 0 || d->GCR_track_size > CBMDOSPrivate::GCR_MAX_TRACK_SIZE) {
 				// Track size is out of range.
 				d->file.reset();
 				return;
@@ -1029,7 +1030,7 @@ CBMDOS::CBMDOS(const IRpFilePtr &file)
 	}
 
 	// This is avalid CBM DOS disk image.
-	d->mimeType = d->mimeTypes[(int)d->diskType];
+	d->mimeType = d->mimeTypes[static_cast<int>(d->diskType)];
 	d->isValid = true;
 }
 
@@ -1115,21 +1116,21 @@ const char *CBMDOS::systemName(unsigned int type) const
 		"CBMDOS::systemName() array index optimization needs to be updated.");
 
 	// TODO: More types.
-	static const char *const sysNames[8][4] = {
-		{"Commodore 1541", "C1541", "C1541", nullptr},
-		{"Commodore 1571", "C1571", "C1571", nullptr},
-		{"Commodore 8050", "C8050", "C8050", nullptr},
-		{"Commodore 8250", "C8250", "C8250", nullptr},
-		{"Commodore 1581", "C1581", "C1581", nullptr},
-		{"Commodore 2040", "C2040", "C2040", nullptr},
+	static const array<array<const char*, 4>, 8> sysNames = {{
+		{{"Commodore 1541", "C1541", "C1541", nullptr}},
+		{{"Commodore 1571", "C1571", "C1571", nullptr}},
+		{{"Commodore 8050", "C8050", "C8050", nullptr}},
+		{{"Commodore 8250", "C8250", "C8250", nullptr}},
+		{{"Commodore 1581", "C1581", "C1581", nullptr}},
+		{{"Commodore 2040", "C2040", "C2040", nullptr}},
 
-		{"Commodore 1541 (GCR)", "C1541 (GCR)", "C1541 (GCR)", nullptr},
-		{"Commodore 1571 (GCR)", "C1571 (GCR)", "C1571 (GCR)", nullptr},
-	};
+		{{"Commodore 1541 (GCR)", "C1541 (GCR)", "C1541 (GCR)", nullptr}},
+		{{"Commodore 1571 (GCR)", "C1571 (GCR)", "C1571 (GCR)", nullptr}},
+	}};
 
 	unsigned int sysID = 0;
-	if ((int)d->diskType >= 0 && d->diskType < CBMDOSPrivate::DiskType::Max) {
-		sysID = (int)d->diskType;
+	if (static_cast<int>(d->diskType) >= 0 && d->diskType < CBMDOSPrivate::DiskType::Max) {
+		sysID = static_cast<unsigned int>(d->diskType);
 	}
 	return sysNames[sysID][type & SYSNAME_TYPE_MASK];
 }
@@ -1210,8 +1211,8 @@ int CBMDOS::loadFieldData(void)
 	const uint8_t max_file_type = (d->diskType == CBMDOSPrivate::DiskType::D81) ? 6 : 5;
 
 	// Make sure the directory track number is valid.
-	assert((size_t)d->dir_track-1 < d->track_offsets.size());
-	if ((size_t)d->dir_track-1 >= d->track_offsets.size()) {
+	assert(static_cast<size_t>(d->dir_track) - 1 < d->track_offsets.size());
+	if (static_cast<size_t>(d->dir_track) - 1 >= d->track_offsets.size()) {
 		// Unable to read the directory track...
 		// TODO: Show an error?
 		return static_cast<int>(d->fields.count());
@@ -1222,8 +1223,8 @@ int CBMDOS::loadFieldData(void)
 	// since it might be incorrect. Assuming dir_track/dir_first_sector.
 	bitset<64> sectors_read(1);	// Sector 0 is not allowed here, so mark it as 'read'.
 
-	vector<vector<string> > *const vv_dir = new vector<vector<string> >();
-	auto vv_icons = new RomFields::ListDataIcons_t;	// for GEOS files only
+	auto *const vv_dir = new vector<vector<string> >();
+	auto *const vv_icons = new RomFields::ListDataIcons_t;	// for GEOS files only
 	bool has_icons = false;
 
 	const unsigned int sector_count = d->track_offsets[d->dir_track-1].sector_count;
@@ -1272,16 +1273,14 @@ int CBMDOS::loadFieldData(void)
 			}
 
 			// # of blocks (filesize)
-			char filesize[16];
-			snprintf(filesize, sizeof(filesize), "%u", le16_to_cpu(p_dir->sector_count));
-			p_list.emplace_back(filesize);
+			p_list.push_back(fmt::to_string(le16_to_cpu(p_dir->sector_count)));
 
 			// Filename
-			const int filename_len = (int)d->remove_A0_padding(p_dir->filename, sizeof(p_dir->filename));
+			const int filename_len = static_cast<int>(d->remove_A0_padding(p_dir->filename, sizeof(p_dir->filename)));
 			if (unlikely(is_geos_file)) {
 				// GEOS file: The filename is encoded as ASCII.
 				// NOTE: Using Latin-1...
-				p_list.emplace_back(latin1_to_utf8(p_dir->filename, filename_len));
+				p_list.push_back(latin1_to_utf8(p_dir->filename, filename_len));
 			} else {
 				string s_filename = cpN_to_utf8(codepage, p_dir->filename, filename_len);
 				if (codepage == CP_RP_PETSCII_Unshifted && s_filename.find(d->uFFFD) != string::npos) {
@@ -1290,7 +1289,7 @@ int CBMDOS::loadFieldData(void)
 					codepage = CP_RP_PETSCII_Shifted;
 					s_filename = cpN_to_utf8(codepage, p_dir->filename, filename_len);
 				}
-				p_list.emplace_back(std::move(s_filename));
+				p_list.push_back(std::move(s_filename));
 			}
 
 			// File type
@@ -1310,9 +1309,7 @@ int CBMDOS::loadFieldData(void)
 				s_file_type += file_type_tbl[file_type];
 			} else {
 				// Print the numeric value instead.
-				char buf[16];
-				snprintf(buf, sizeof(buf), "%u", file_type);
-				s_file_type += buf;
+				s_file_type += fmt::to_string(file_type);
 			}
 
 			// Append the other flags, if set.
@@ -1322,7 +1319,7 @@ int CBMDOS::loadFieldData(void)
 			if (p_dir->file_type & CBMDOS_FileType_Locked) {
 				s_file_type += '>';
 			}
-			p_list.emplace_back(std::move(s_file_type));
+			p_list.push_back(std::move(s_file_type));
 
 			// If this is a GEOS file, get the icon.
 			rp_image_ptr icon;
@@ -1341,19 +1338,18 @@ int CBMDOS::loadFieldData(void)
 			if (icon) {
 				has_icons = true;
 			}
-			vv_icons->emplace_back(std::move(icon));
+			vv_icons->push_back(std::move(icon));
 		}
 	}
 
-	static const char *const dir_headers[] = {
+	static const array<const char*, 3> dir_headers = {{
 		NOP_C_("CBMDOS|Directory", "Blocks"),
 		NOP_C_("CBMDOS|Directory", "Filename"),
 		NOP_C_("CBMDOS|Directory", "Type"),
-	};
-	vector<string> *const v_dir_headers = RomFields::strArrayToVector_i18n(
-		"CBMDOS|Directory", dir_headers, ARRAY_SIZE(dir_headers));
+	}};
+	vector<string> *const v_dir_headers = RomFields::strArrayToVector_i18n("CBMDOS|Directory", dir_headers);
 
-	RomFields::AFLD_PARAMS params(has_icons ? (unsigned int)RomFields::RFT_LISTDATA_ICONS : 0, 8);
+	RomFields::AFLD_PARAMS params(has_icons ? static_cast<unsigned int>(RomFields::RFT_LISTDATA_ICONS) : 0U, 8);
 	params.headers = v_dir_headers;
 	params.data.single = vv_dir;
 	params.col_attrs.align_headers	= AFLD_ALIGN3(TXA_D, TXA_D, TXA_D);
@@ -1407,7 +1403,7 @@ int CBMDOS::loadFieldData(void)
 			// Track/sector to load from
 			if (autoboot.addl_sectors.track != 0 && autoboot.addl_sectors.sector != 0) {
 				d->fields.addField_string(C_("CBMDOS", "C128 boot T/S"),
-					rp_sprintf("%u/%u", autoboot.addl_sectors.track, autoboot.addl_sectors.sector));
+					fmt::format(FSTR("{:d}/{:d}"), autoboot.addl_sectors.track, autoboot.addl_sectors.sector));
 				// Bank
 				d->fields.addField_string_numeric(C_("CBMDOS", "C128 boot bank"), autoboot.bank);
 				// Load count
@@ -1444,7 +1440,7 @@ int CBMDOS::loadFieldData(void)
 int CBMDOS::loadMetaData(void)
 {
 	RP_D(CBMDOS);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -1455,19 +1451,16 @@ int CBMDOS::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
 	// ROM header is read in the constructor.
 	//const auto *diskHeader = &d->diskHeader;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Title (disk name)
 	// TODO: Specify a codepage?
-	d->metaData->addMetaData_string(Property::Title, d->getDiskName());
+	d->metaData.addMetaData_string(Property::Title, d->getDiskName());
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

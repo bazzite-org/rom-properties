@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * BCSTM.cpp: Nintendo 3DS BCSTM and Nintendo Wii U BFSTM audio reader.    *
  *                                                                         *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -24,7 +24,7 @@ namespace LibRomData {
 class BCSTMPrivate final : public RomDataPrivate
 {
 public:
-	BCSTMPrivate(const IRpFilePtr &file);
+	explicit BCSTMPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -32,8 +32,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 3+1> exts;
+	static const array<const char*, 3+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -87,14 +87,14 @@ ROMDATA_IMPL(BCSTM)
 /** BCSTMPrivate **/
 
 /* RomDataInfo */
-const char *const BCSTMPrivate::exts[] = {
+const array<const char*, 3+1> BCSTMPrivate::exts = {{
 	".bcstm",
 	".bfstm",
 	".bcwav",
 
 	nullptr
-};
-const char *const BCSTMPrivate::mimeTypes[] = {
+}};
+const array<const char*, 3+1> BCSTMPrivate::mimeTypes = {{
 	// NOTE: Ordering matches AudioFormat.
 
 	// Unofficial MIME types.
@@ -104,9 +104,9 @@ const char *const BCSTMPrivate::mimeTypes[] = {
 	"audio/x-bcwav",
 
 	nullptr
-};
+}};
 const RomDataInfo BCSTMPrivate::romDataInfo = {
-	"BCSTM", exts, mimeTypes
+	"BCSTM", exts.data(), mimeTypes.data()
 };
 
 BCSTMPrivate::BCSTMPrivate(const IRpFilePtr &file)
@@ -161,11 +161,11 @@ BCSTM::BCSTM(const IRpFilePtr &file)
 	};
 	d->audioFormat = static_cast<BCSTMPrivate::AudioFormat>(isRomSupported_static(&info));
 
-	if ((int)d->audioFormat < 0) {
+	if (static_cast<int>(d->audioFormat) < 0) {
 		d->file.reset();
 		return;
-	} else if ((int)d->audioFormat < ARRAY_SIZE_I(d->mimeTypes)-1) {
-		d->mimeType = d->mimeTypes[(int)d->audioFormat];
+	} else if (static_cast<int>(d->audioFormat) < ARRAY_SIZE_I(d->mimeTypes)-1) {
+		d->mimeType = d->mimeTypes[static_cast<int>(d->audioFormat)];
 	}
 
 	// Is byteswapping needed?
@@ -343,9 +343,9 @@ const char *BCSTM::systemName(unsigned int type) const
 		case BCSTMPrivate::AudioFormat::BCSTM:
 		case BCSTMPrivate::AudioFormat::BCWAV: {
 			// Nintendo 3DS
-			static const char *const sysNames_3DS[4] = {
+			static const array<const char*, 4> sysNames_3DS = {{
 				"Nintendo 3DS", "Nintendo 3DS", "3DS", nullptr
-			};
+			}};
 			return sysNames_3DS[type & SYSNAME_TYPE_MASK];
 		}
 
@@ -353,15 +353,15 @@ const char *BCSTM::systemName(unsigned int type) const
 			// Wii U and/or Switch
 			if (d->bcstmHeader.bom == cpu_to_be16(BCSTM_BOM_HOST)) {
 				// Big-Endian
-				static const char *const sysNames_WiiU[4] = {
+				static const array<const char*, 4> sysNames_WiiU = {{
 					"Nintendo Wii U", "Wii U", "Wii U", nullptr
-				};
+				}};
 				return sysNames_WiiU[type & SYSNAME_TYPE_MASK];
 			} else /*if (d->bcstmHeader.bom == cpu_to_le16(BCSTM_BOM_HOST))*/ {
 				// Little-Endian
-				static const char *const sysNames_Switch[4] = {
+				static const array<const char*, 4> sysNames_Switch = {{
 					"Nintendo Switch", "Switch", "NSW", nullptr
-				};
+				}};
 				return sysNames_Switch[type & SYSNAME_TYPE_MASK];
 			}
 		}
@@ -405,12 +405,12 @@ int BCSTM::loadFieldData(void)
 	};
 	const char *const type_title = C_("RomData", "Type");
 	if (d->audioFormat > BCSTMPrivate::AudioFormat::Unknown &&
-	    (int)d->audioFormat < ARRAY_SIZE_I(type_tbl))
+	    static_cast<int>(d->audioFormat) < ARRAY_SIZE_I(type_tbl))
 	{
-		d->fields.addField_string(type_title, type_tbl[(int)d->audioFormat]);
+		d->fields.addField_string(type_title, type_tbl[static_cast<int>(d->audioFormat)]);
 	} else {
 		d->fields.addField_string(type_title,
-			rp_sprintf(C_("RomData", "Unknown (%d)"), (int)d->audioFormat));
+			fmt::format(FRUN(C_("RomData", "Unknown ({:d})")), static_cast<int>(d->audioFormat)));
 	}
 
 	// TODO: Show the version field?
@@ -477,16 +477,15 @@ int BCSTM::loadFieldData(void)
 			pgettext_expr("BCSTM|Codec", codec_tbl[codec]));
 	} else {
 		d->fields.addField_string(codec_title,
-			rp_sprintf(C_("RomData", "Unknown (%u)"), codec));
+			fmt::format(FRUN(C_("RomData", "Unknown ({:d})")), codec));
 	}
 
 	// Number of channels
 	d->fields.addField_string_numeric(C_("RomData|Audio", "Channels"), channel_count);
 
 	// Sample rate
-	// NOTE: Using ostringstream for localized numeric formatting.
 	d->fields.addField_string(C_("RomData|Audio", "Sample Rate"),
-		rp_sprintf(C_("RomData", "%u Hz"), sample_rate));
+		fmt::format(FRUN(C_("RomData", "{:Ld} Hz")), sample_rate));
 
 	// Length (non-looping)
 	// TODO: Figure this out for BCWAV.
@@ -520,7 +519,7 @@ int BCSTM::loadFieldData(void)
 int BCSTM::loadMetaData(void)
 {
 	RP_D(BCSTM);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -531,9 +530,7 @@ int BCSTM::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(3);	// Maximum of 3 metadata properties.
+	d->metaData.reserve(3);	// Maximum of 3 metadata properties.
 
 	// Get stream info data.
 	uint8_t channel_count;
@@ -568,20 +565,20 @@ int BCSTM::loadMetaData(void)
 	}
 
 	// Number of channels
-	d->metaData->addMetaData_integer(Property::Channels, channel_count);
+	d->metaData.addMetaData_integer(Property::Channels, channel_count);
 
 	// Sample rate
-	d->metaData->addMetaData_integer(Property::SampleRate, sample_rate);
+	d->metaData.addMetaData_integer(Property::SampleRate, sample_rate);
 
 	// Length, in milliseconds (non-looping)
 	// TODO: Figure this out for BCWAV.
 	if (d->audioFormat != BCSTMPrivate::AudioFormat::BCWAV) {
-		d->metaData->addMetaData_integer(Property::Duration,
+		d->metaData.addMetaData_integer(Property::Duration,
 			convSampleToMs(sample_count, sample_rate));
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * ISO.cpp: ISO-9660 disc image parser.                                    *
  *                                                                         *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * Copyright (c) 2020 by Egor.                                             *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
@@ -31,7 +31,7 @@ namespace LibRomData {
 class ISOPrivate final : public RomDataPrivate
 {
 public:
-	ISOPrivate(const IRpFilePtr &file);
+	explicit ISOPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -39,8 +39,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 5+1> exts;
+	static const array<const char*, 3+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -167,7 +167,7 @@ public:
 	 * @param lm16 LSB/MSB 16-bit value.
 	 * @return Host-endian value.
 	 */
-	inline uint16_t host16(const uint16_lsb_msb_t &lm16)
+	inline uint16_t host16(uint16_lsb_msb_t lm16) const
 	{
 		return (likely(discType != DiscType::CDi) ? lm16.he : be16_to_cpu(lm16.be));
 	}
@@ -177,7 +177,7 @@ public:
 	 * @param lm32 LSB/MSB 32-bit value.
 	 * @return Host-endian value.
 	 */
-	inline uint32_t host32(const uint32_lsb_msb_t &lm32)
+	inline uint32_t host32(uint32_lsb_msb_t lm32) const
 	{
 		return (likely(discType != DiscType::CDi) ? lm32.he : be16_to_cpu(lm32.be));
 	}
@@ -188,7 +188,7 @@ ROMDATA_IMPL(ISO)
 /** ISOPrivate **/
 
 /* RomDataInfo */
-const char *const ISOPrivate::exts[] = {
+const array<const char*, 5+1> ISOPrivate::exts = {{
 	".iso",		// ISO
 	".iso9660",	// ISO (listed in shared-mime-info)
 	".bin",		// BIN (2352-byte)
@@ -198,8 +198,8 @@ const char *const ISOPrivate::exts[] = {
 	// TODO: Is there a separate extension for High Sierra or CD-i?
 
 	nullptr
-};
-const char *const ISOPrivate::mimeTypes[] = {
+}};
+const array<const char*, 3+1> ISOPrivate::mimeTypes = {{
 	// Vendor-specific MIME types from FreeDesktop.org.
 	"application/vnd.efi.iso",
 
@@ -210,9 +210,9 @@ const char *const ISOPrivate::mimeTypes[] = {
 	// TODO: BIN (2352)?
 	// TODO: Is there a separate MIME for High Sierra or CD-i?
 	nullptr
-};
+}};
 const RomDataInfo ISOPrivate::romDataInfo = {
-	"ISO", exts, mimeTypes
+	"ISO", exts.data(), mimeTypes.data()
 };
 
 ISOPrivate::ISOPrivate(const IRpFilePtr &file)
@@ -455,7 +455,7 @@ void ISOPrivate::addPVDCommon(const T *pvd)
 		const char *const disc_number_title = C_("RomData", "Disc #");
 		fields.addField_string(disc_number_title,
 			// tr: Disc X of Y (for multi-disc games)
-			rp_sprintf_p(C_("RomData|Disc", "%1$u of %2$u"),
+			fmt::format(FRUN(C_("RomData|Disc", "{0:d} of {1:d}")),
 				volume_seq_number, volume_set_size));
 	}
 
@@ -714,7 +714,7 @@ int ISO::isRomSupported_static(const DetectInfo *info)
 		return -1;
 	}
 
-	for (const char *const *ext = ISOPrivate::exts;
+	for (const char *const *ext = ISOPrivate::exts.data();
 	     *ext != nullptr; ext++)
 	{
 		if (!strcasecmp(info->ext, *ext)) {
@@ -745,15 +745,15 @@ const char *ISO::systemName(unsigned int type) const
 		"ISO::systemName() array index optimization needs to be updated.");
 
 	// TODO: UDF, HFS, others?
-	static const char *const sysNames[3][4] = {
-		{"ISO-9660", "ISO", "ISO", nullptr},
-		{"High Sierra Format", "High Sierra", "HSF", nullptr},
-		{"Compact Disc Interactive", "CD-i", "CD-i", nullptr},
-	};
+	static const array<array<const char*, 4>, 3> sysNames = {{
+		{{"ISO-9660", "ISO", "ISO", nullptr}},
+		{{"High Sierra Format", "High Sierra", "HSF", nullptr}},
+		{{"Compact Disc Interactive", "CD-i", "CD-i", nullptr}},
+	}};
 
 	unsigned int sysID = 0;
-	if ((int)d->discType >= 0 && d->discType < ISOPrivate::DiscType::Max) {
-		sysID = (int)d->discType;
+	if (static_cast<int>(d->discType) >= 0 && d->discType < ISOPrivate::DiscType::Max) {
+		sysID = static_cast<unsigned int>(d->discType);
 	}
 	return sysNames[sysID][type & SYSNAME_TYPE_MASK];
 }
@@ -806,11 +806,10 @@ int ISO::loadFieldData(void)
 				// TODO: More comprehensive boot catalog.
 				// For now, only showing boot platforms, and
 				// only if a boot catalog is present.
-				static const char *const boot_platforms_names[] = {
+				static const array<const char*, 2> boot_platforms_names = {{
 					"x86", "EFI"
-				};
-				vector<string> *const v_boot_platforms_names = RomFields::strArrayToVector(
-					boot_platforms_names, ARRAY_SIZE(boot_platforms_names));
+				}};
+				vector<string> *const v_boot_platforms_names = RomFields::strArrayToVector(boot_platforms_names);
 				d->fields.addField_bitfield(C_("ISO", "Boot Platforms"),
 					v_boot_platforms_names, 0, d->boot_platforms);
 
@@ -871,17 +870,15 @@ int ISO::loadFieldData(void)
 int ISO::loadMetaData(void)
 {
 	RP_D(ISO);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
-	} else if (!d->isValid || (int)d->discType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->discType) < 0) {
 		// Unknown disc image type.
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(3);	// Maximum of 3 metadata properties.
+	d->metaData.reserve(3);	// Maximum of 3 metadata properties.
 
 	switch (d->discType) {
 		default:
@@ -891,18 +888,18 @@ int ISO::loadMetaData(void)
 
 		case ISOPrivate::DiscType::ISO9660:
 		case ISOPrivate::DiscType::CDi:
-			d->addPVDCommon_metaData(d->metaData, &d->pvd.iso);
-			d->addPVDTimestamps_metaData(d->metaData, &d->pvd.iso);
+			d->addPVDCommon_metaData(&d->metaData, &d->pvd.iso);
+			d->addPVDTimestamps_metaData(&d->metaData, &d->pvd.iso);
 			break;
 
 		case ISOPrivate::DiscType::HighSierra:
-			d->addPVDCommon_metaData(d->metaData, &d->pvd.hsfs);
-			d->addPVDTimestamps_metaData(d->metaData, &d->pvd.hsfs);
+			d->addPVDCommon_metaData(&d->metaData, &d->pvd.hsfs);
+			d->addPVDTimestamps_metaData(&d->metaData, &d->pvd.hsfs);
 			break;
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -930,4 +927,4 @@ int ISO::checkViewedAchievements(void) const
 	return ret;
 }
 
-}
+} // namespace LibRomData

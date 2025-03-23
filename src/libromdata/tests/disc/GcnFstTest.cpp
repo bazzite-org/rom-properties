@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata/tests)                 *
  * GcnFstTest.cpp: GameCube/Wii FST test.                                  *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -21,7 +21,6 @@
 // Other rom-properties libraries
 #include "librpfile/FileSystem.hpp"
 #include "librptext/conversion.hpp"
-#include "librptext/printf.hpp"
 using namespace LibRpText;
 
 // libromdata
@@ -56,6 +55,22 @@ using std::vector;
 
 // Uninitialized vector class
 #include "uvector.h"
+
+#ifdef _MSC_VER
+// MSVC: Exception handling for /DELAYLOAD.
+#  include "libwin32common/DelayLoadHelper.h"
+#endif /* _MSC_VER */
+
+#ifdef _MSC_VER
+// DelayLoad test implementations
+#  ifdef ZLIB_IS_DLL
+DELAYLOAD_TEST_FUNCTION_IMPL0(get_crc_table);
+#  endif /* ZLIB_IS_DLL */
+#  ifdef MINIZIP_IS_DLL
+// unzClose() can safely take nullptr; it won't do anything.
+DELAYLOAD_TEST_FUNCTION_IMPL1(unzClose, nullptr);
+#  endif /* MINIZIP_IS_DLL */
+#endif /* _MSC_VER */
 
 namespace LibRomData { namespace Tests {
 
@@ -172,7 +187,7 @@ void GcnFstTest::SetUp(void)
 			zip_filename = "Wii.fst.bin.zip";
 			break;
 		default:
-			ASSERT_TRUE(false) << "offsetShift is " << (int)mode.offsetShift << "; should be either 0 or 2.";
+			ASSERT_TRUE(false) << "offsetShift is " << static_cast<int>(mode.offsetShift) << "; should be either 0 or 2.";
 	}
 
 	ASSERT_GT(getFileFromZip(zip_filename, mode.fst_filename.c_str(), m_fst_buf, MAX_GCN_FST_BIN_FILESIZE), 0);
@@ -180,12 +195,13 @@ void GcnFstTest::SetUp(void)
 	// Check for NKit FST recovery data.
 	// These FSTs have an extra header at the top, indicating what
 	// disc the FST belongs to.
+	static const off64_t NKIT_FST_HEADER_SIZE = 0x50;
 	unsigned int fst_start_offset = 0;
 	static constexpr array<uint8_t, 10> root_dir_data = {{1,0,0,0,0,0,0,0,0,0}};
 	if (m_fst_buf.size() >= 0x60) {
-		if (!memcmp(&m_fst_buf[0x50], root_dir_data.data(), root_dir_data.size())) {
+		if (!memcmp(&m_fst_buf[NKIT_FST_HEADER_SIZE], root_dir_data.data(), root_dir_data.size())) {
 			// Found an NKit FST.
-			fst_start_offset = 0x50;
+			fst_start_offset = NKIT_FST_HEADER_SIZE;
 		}
 	}
 
@@ -417,7 +433,7 @@ TEST_P(GcnFstTest, FstPrint)
 			zip_filename = "Wii.fst.txt.zip";
 			break;
 		default:
-			ASSERT_TRUE(false) << "offsetShift is " << (int)mode.offsetShift << "; should be either 0 or 2.";
+			ASSERT_TRUE(false) << "offsetShift is " << static_cast<int>(mode.offsetShift) << "; should be either 0 or 2.";
 	}
 
 	// Replace ".bin" in the FST filename with ".txt".
@@ -444,8 +460,8 @@ TEST_P(GcnFstTest, FstPrint)
 	// NOTE: Only Unix line endings are supported.
 	char line_buf_actual[1024], line_buf_expected[1024];
 	for (int line_num = 1; /* condition is defined in the loop */; line_num++) {
-		bool ok_actual = (bool)fst_text_actual.getline(line_buf_actual, sizeof(line_buf_actual), '\n');
-		bool ok_expected = (bool)fst_text_expected.getline(line_buf_expected, sizeof(line_buf_expected), '\n');
+		bool ok_actual = static_cast<bool>(fst_text_actual.getline(line_buf_actual, sizeof(line_buf_actual), '\n'));
+		bool ok_expected = static_cast<bool>(fst_text_expected.getline(line_buf_expected, sizeof(line_buf_expected), '\n'));
 		if (!ok_actual && !ok_expected) {
 			// End of both files.
 			break;
@@ -494,7 +510,7 @@ std::vector<GcnFstTest_mode> GcnFstTest::ReadTestCasesFromDisk(uint8_t offsetShi
 			zip_filename = "Wii.fst.bin.zip";
 			break;
 		default:
-			EXPECT_TRUE(false) << "offsetShift is " << (int)offsetShift << "; should be either 0 or 2.";
+			EXPECT_TRUE(false) << "offsetShift is " << static_cast<int>(offsetShift) << "; should be either 0 or 2.";
 			return files;
 	}
 
@@ -540,7 +556,7 @@ std::vector<GcnFstTest_mode> GcnFstTest::ReadTestCasesFromDisk(uint8_t offsetShi
 			// NOTE: Filename might not be NULL-terminated,
 			// so use the explicit length.
 			GcnFstTest_mode mode(string(filename, file_info.size_filename), offsetShift);
-			files.emplace_back(std::move(mode));
+			files.push_back(std::move(mode));
 		}
 
 		// Next file.
@@ -586,11 +602,44 @@ INSTANTIATE_TEST_SUITE_P(Wii, GcnFstTest,
 
 extern "C" int gtest_main(int argc, TCHAR *argv[])
 {
-	fprintf(stderr, "LibRomData test suite: GcnFst tests.\n\n");
+	fputs("LibRomData test suite: GcnFst tests.\n\n", stderr);
 	fflush(nullptr);
 
-	// Make sure the CRC32 table is initialized.
+#ifdef _MSC_VER
+#  ifdef NDEBUG
+#    define DEBUG_SUFFIX ""
+#  else
+#    define DEBUG_SUFFIX "d"
+#  endif
+#else
+#  define DEBUG_SUFFIX ""
+#endif
+
+#ifdef _MSC_VER
+	// Delay load verification.
+	// TODO: Only if linked with /DELAYLOAD?
+#  ifdef ZLIB_IS_DLL
+	// Only if zlib is a DLL.
+	if (DelayLoad_test_get_crc_table() != 0) {
+		// Delay load failed.
+		fputs("*** ERROR: zlib1" DEBUG_SUFFIX ".dll not found. Cannot run tests.", stderr);
+		return EXIT_FAILURE;
+	}
+#  else /* !ZLIB_IS_DLL */
+	// zlib isn't in a DLL, but we need to ensure that the
+	// CRC table is initialized anyway.
 	get_crc_table();
+#  endif /* ZLIB_IS_DLL */
+
+#  ifdef MINIZIP_IS_DLL
+	// Only if MiniZip is a DLL.
+	if (DelayLoad_test_unzClose() != 0) {
+		// Delay load failed.
+		fputs("*** ERROR: minizip" DEBUG_SUFFIX ".dll not found. Cannot run tests.", stderr);
+		return EXIT_FAILURE;
+	}
+#  endif /* MINIZIP_IS_DLL */
+#endif /* _MSC_VER */
 
 #ifdef _WIN32
 	// Check for the fst_data directory and chdir() into it.

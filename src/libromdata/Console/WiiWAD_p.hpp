@@ -46,7 +46,6 @@ class WiiWADPrivate final : public LibRpBase::RomDataPrivate
 {
 public:
 	WiiWADPrivate(const LibRpFile::IRpFilePtr &file);
-	~WiiWADPrivate() final = default;
 
 private:
 	typedef RomDataPrivate super;
@@ -54,8 +53,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const std::array<const char*, 3+1> exts;
+	static const std::array<const char*, 3+1> mimeTypes;
 	static const LibRpBase::RomDataInfo romDataInfo;
 
 public:
@@ -111,7 +110,7 @@ public:
 	LibRpBase::RomDataPtr mainContent;	// WiiWIBN or NintendoDS
 
 	// Decrypted title key
-	uint8_t dec_title_key[16];
+	std::array<uint8_t, 16> dec_title_key;
 
 	// Main data headers
 	Wii_IMET_t imet;	// NOTE: May be WIBN.
@@ -138,4 +137,4 @@ public:
 #endif /* ENABLE_DECRYPTION */
 };
 
-}
+} // namespace LibRomData

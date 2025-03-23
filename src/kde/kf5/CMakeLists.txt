@@ -12,8 +12,9 @@ IF(SERVICES_INSTALL_DIR MATCHES "kde4")
 	SET(SERVICES_INSTALL_DIR "share/kservices5")
 ENDIF()
 
-# Disable anything deprecated as of Qt 5.15.
-ADD_DEFINITIONS(-DQT_DISABLE_DEPRECATED_UP_TO=0x050F00)
+# Disable deprecated Qt and KDE functionality in debug builds.
+SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DQT_DISABLE_DEPRECATED_BEFORE=0x050F00 -DQT_DEPRECATED_WARNINGS_SINCE=0x060000")
+SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DKF_DISABLE_DEPRECATED_BEFORE_AND_AT=0x055200 -DKF_DEPRECATED_WARNINGS_SINCE=0x060000")
 
 # Write the config.h file.
 CONFIGURE_FILE("${CMAKE_CURRENT_SOURCE_DIR}/config.kf5.h.in" "${CMAKE_CURRENT_BINARY_DIR}/config.kf5.h")
@@ -45,16 +46,18 @@ IF(Qt5Core_FOUND)
 		)
 ENDIF(Qt5Core_FOUND)
 IF(HAVE_QtDBus)
-	QT5_ADD_DBUS_INTERFACES(${PROJECT_NAME}_DBUS_IFACE_SRCS
-		"${CMAKE_CURRENT_SOURCE_DIR}/../../dbus/org.freedesktop.NetworkManager.xml"
-		)
 	IF(HAVE_QtDBus_NOTIFY)
 		STRING(REGEX REPLACE "([^;]+)" "../\\1" ${PROJECT_NAME}-notify_SRCS "${rom-properties-kde-notify_SRCS}")
 		STRING(REGEX REPLACE "([^;]+)" "../\\1" ${PROJECT_NAME}-notify_H    "${rom-properties-kde-notify_H}")
-		QT5_ADD_DBUS_INTERFACES(${PROJECT_NAME}_DBUS_IFACE_SRCS_2
+		QT5_ADD_DBUS_INTERFACES(${PROJECT_NAME}_DBUS_IFACE_NOTIFY_SRCS
 			"${CMAKE_CURRENT_SOURCE_DIR}/../../dbus/org.freedesktop.Notifications.xml"
 			)
 	ENDIF(HAVE_QtDBus_NOTIFY)
+	IF(ENABLE_NETWORKING)
+		QT5_ADD_DBUS_INTERFACES(${PROJECT_NAME}_DBUS_IFACE_NM_SRCS
+			"${CMAKE_CURRENT_SOURCE_DIR}/../../dbus/org.freedesktop.NetworkManager.xml"
+			)
+	ENDIF(ENABLE_NETWORKING)
 ENDIF(HAVE_QtDBus)
 
 # Main plugin
@@ -64,8 +67,8 @@ SET(${PROJECT_NAME}_SRCS
 	${${PROJECT_NAME}_RomThumbCreator_SRCS}
 	${rom-properties-kio5_SRCS}
 	${${PROJECT_NAME}-notify_SRCS}
-	${${PROJECT_NAME}_DBUS_IFACE_SRCS}
-	${${PROJECT_NAME}_DBUS_IFACE_SRCS_2}
+	${${PROJECT_NAME}_DBUS_IFACE_NM_SRCS}
+	${${PROJECT_NAME}_DBUS_IFACE_NOTIFY_SRCS}
 	${${PROJECT_NAME}_RCC_O}
 	PluginFactoryKF5.cpp
 	)
@@ -118,11 +121,16 @@ IF(BUILD_KF5)
 			$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/../..>	# src
 		)
 	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE romdata)
-	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE KF5::CoreAddons KF5::KIOWidgets KF5::KIOCore KF5::WidgetsAddons KF5::FileMetaData)
+	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE KF5::CoreAddons KF5::KIOWidgets KF5::KIOCore KF5::WidgetsAddons KF5::FileMetaData KF5::Crash)
 	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PUBLIC Qt5::Widgets Qt5::Gui Qt5::Core)
 	IF(HAVE_QtDBus)
 		TARGET_LINK_LIBRARIES(${PROJECT_NAME} PUBLIC Qt5::DBus)
 	ENDIF(HAVE_QtDBus)
+
+	# libfmt
+	IF(Fmt_FOUND)
+		TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE ${Fmt_LIBRARY})
+	ENDIF(Fmt_FOUND)
 
 	### ThumbnailCreator plugin (KF5 5.100 and later) ###
 	IF(HAVE_KIOGUI_KIO_THUMBNAILCREATOR_H)
@@ -142,6 +150,9 @@ IF(BUILD_KF5)
 		../RpQImageBackend.hpp
 		../RpQUrl.hpp
 		../RpQt.hpp
+
+		# NetworkManager D-Bus interface
+		${${PROJECT_NAME}_DBUS_IFACE_NM_SRCS}
 		)
 	# TODO: Enable PCH?
 	#IF(ENABLE_PCH)
@@ -197,6 +208,11 @@ IF(BUILD_KF5)
 	TARGET_LINK_LIBRARIES(${XATTRVIEW_NAME} PRIVATE KF5::KIOWidgets KF5::KIOCore)
 	TARGET_LINK_LIBRARIES(${XATTRVIEW_NAME} PUBLIC Qt5::Widgets Qt5::Gui Qt5::Core)
 
+	# libfmt
+	IF(Fmt_FOUND)
+		TARGET_LINK_LIBRARIES(${XATTRVIEW_NAME} PRIVATE ${Fmt_LIBRARY})
+	ENDIF(Fmt_FOUND)
+
 	### Additional Plugins ###
 
 	# ExtractorPlugin
@@ -223,6 +239,11 @@ IF(BUILD_KF5)
 	# NOTE: Technically, only Qt5::Core is needed, but stdafx.h usage
 	# requires other libraries for include paths.
 	TARGET_LINK_LIBRARIES(kfilemetadata_${PROJECT_NAME} PRIVATE Qt5::Widgets Qt5::Core)
+
+	# libfmt
+	IF(Fmt_FOUND)
+		TARGET_LINK_LIBRARIES(kfilemetadata_${PROJECT_NAME} PRIVATE ${Fmt_LIBRARY})
+	ENDIF(Fmt_FOUND)
 
 	# OverlayIconPlugin
 	# TODO: Use kcoreaddons_add_plugin() for the JSON?
@@ -251,6 +272,11 @@ IF(BUILD_KF5)
 	# NOTE: Technically, only Qt5::Core is needed, but stdafx.h usage
 	# requires other libraries for include paths.
 	TARGET_LINK_LIBRARIES(overlayiconplugin_${PROJECT_NAME} PRIVATE Qt5::Widgets Qt5::Core)
+
+	# libfmt
+	IF(Fmt_FOUND)
+		TARGET_LINK_LIBRARIES(overlayiconplugin_${PROJECT_NAME} PRIVATE ${Fmt_LIBRARY})
+	ENDIF(Fmt_FOUND)
 ENDIF(BUILD_KF5)
 
 #######################

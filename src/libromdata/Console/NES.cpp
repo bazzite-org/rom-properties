@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * NES.cpp: Nintendo Entertainment System/Famicom ROM reader.              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * Copyright (c) 2016-2022 by Egor.                                        *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
@@ -28,7 +28,7 @@ namespace LibRomData {
 class NESPrivate final : public RomDataPrivate
 {
 public:
-	NESPrivate(const IRpFilePtr &file);
+	explicit NESPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -36,8 +36,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 5+1> exts;
+	static const array<const char*, 2+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -143,7 +143,7 @@ ROMDATA_IMPL(NES)
 /** NESPrivate **/
 
 /* RomDataInfo */
-const char *const NESPrivate::exts[] = {
+const array<const char*, 5+1> NESPrivate::exts = {{
 	// NOTE: .fds is missing block checksums.
 	// .qd has block checksums, as does .tds (which is basically
 	// a 16-byte header, FDS BIOS, and a .qd file).
@@ -159,16 +159,16 @@ const char *const NESPrivate::exts[] = {
 	".tds",	// FDS (3DS Virtual Console)
 
 	nullptr
-};
-const char *const NESPrivate::mimeTypes[] = {
+}};
+const array<const char*, 2+1> NESPrivate::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	"application/x-nes-rom",
 	"application/x-fds-disk",
 
 	nullptr
-};
+}};
 const RomDataInfo NESPrivate::romDataInfo = {
-	"NES", exts, mimeTypes
+	"NES", exts.data(), mimeTypes.data()
 };
 
 // Internal footer: PRG ROM sizes (as powers of two)
@@ -716,6 +716,13 @@ NES::NES(const IRpFilePtr &file)
 	}
 
 	d->isValid = true;
+
+	// Is PAL?
+	if (d->romType == NESPrivate::ROM_FORMAT_NES2 &&
+	    (d->header.ines.nes2.tv_mode & 3) == NES2_F12_PAL)
+	{
+		d->isPAL = true;
+	}
 }
 
 /** ROM detection functions. **/
@@ -914,22 +921,16 @@ const char *NES::systemName(unsigned int type) const
 	switch (d->romType & NESPrivate::ROM_SYSTEM_MASK) {
 		case NESPrivate::ROM_SYSTEM_NES:
 		default: {
-			static const char *const sysNames_NES[3][4] = {
+			static const array<array<const char*, 4>, 3> sysNames_NES = {{
 				// NES (International)
-				{"Nintendo Entertainment System",
-				 "Nintendo Entertainment System",
-				 "NES", nullptr},
+				{{"Nintendo Entertainment System", "Nintendo Entertainment System", "NES", nullptr}},
 
 				// Famicom (Japan)
-				{"Nintendo Famicom",
-				 "Famicom",
-				 "FC", nullptr},
+				{{"Nintendo Famicom", "Famicom", "FC", nullptr}},
 
 				// Hyundai Comboy (South Korea)
-				{"Hyundai Comboy",
-				 "Comboy",
-				 "CB", nullptr},
-			};
+				{{"Hyundai Comboy", "Comboy", "CB", nullptr}},
+			}};
 
 			if ((type & SYSNAME_REGION_MASK) == SYSNAME_REGION_GENERIC) {
 				// Use the international name.
@@ -948,29 +949,23 @@ const char *NES::systemName(unsigned int type) const
 		}
 
 		case NESPrivate::ROM_SYSTEM_FDS: {
-			static const char *const sysNames_FDS[] = {
-				"Nintendo Famicom Disk System",
-				"Famicom Disk System",
-				"FDS", nullptr
-			};
+			static const array<const char*, 4> sysNames_FDS = {{
+				"Nintendo Famicom Disk System", "Famicom Disk System", "FDS", nullptr
+			}};
 			return sysNames_FDS[idx];
 		}
 
 		case NESPrivate::ROM_SYSTEM_VS: {
-			static const char *const sysNames_VS[] = {
-				"Nintendo VS. System",
-				"VS. System",
-				"VS", nullptr
-			};
+			static const array<const char*, 4> sysNames_VS = {{
+				"Nintendo VS. System", "VS. System", "VS", nullptr
+			}};
 			return sysNames_VS[idx];
 		}
 
 		case NESPrivate::ROM_SYSTEM_PC10: {
-			static const char *const sysNames_PC10[] = {
-				"Nintendo PlayChoice-10",
-				"PlayChoice-10",
-				"PC10", nullptr
-			};
+			static const array<const char*, 4> sysNames_PC10 = {{
+				"Nintendo PlayChoice-10", "PlayChoice-10", "PC10", nullptr
+			}};
 			return sysNames_PC10[idx];
 		}
 	};
@@ -1008,6 +1003,8 @@ int NES::loadFieldData(void)
 	// iNES, Internal Footer
 	d->fields.reserveTabs(2);
 
+	const auto *const header = &d->header;
+
 	// Determine stuff based on the ROM format.
 	// Default tab name and ROM format name is "iNES", since it's the most common.
 	const char *tabName = "iNES";
@@ -1029,33 +1026,33 @@ int NES::loadFieldData(void)
 	switch (d->romType & NESPrivate::ROM_FORMAT_MASK) {
 		case NESPrivate::ROM_FORMAT_OLD_INES:
 			rom_format = C_("NES|Format", "Archaic iNES");
-			has_trainer = !!(d->header.ines.mapper_lo & INES_F6_TRAINER);
+			has_trainer = !!(header->ines.mapper_lo & INES_F6_TRAINER);
 			if (chr_rom_size == 0) {
 				chr_ram_size = 8192;
 			}
-			if (d->header.ines.mapper_lo & INES_F6_BATTERY) {
+			if (header->ines.mapper_lo & INES_F6_BATTERY) {
 				prg_ram_battery_size = 8192;
 			}
 			break;
 
 		case NESPrivate::ROM_FORMAT_INES:
-			has_trainer = !!(d->header.ines.mapper_lo & INES_F6_TRAINER);
+			has_trainer = !!(header->ines.mapper_lo & INES_F6_TRAINER);
 			// NOTE: Very few iNES ROMs have this set correctly,
 			// so we're ignoring it for now.
-			//tv_mode = (d->header.ines.ines.tv_mode & 1);
+			//tv_mode = (header->ines.ines.tv_mode & 1);
 			if (chr_rom_size == 0) {
 				chr_ram_size = 8192;
 			}
-			if (d->header.ines.mapper_lo & INES_F6_BATTERY) {
-				if (d->header.ines.ines.prg_ram_size == 0) {
+			if (header->ines.mapper_lo & INES_F6_BATTERY) {
+				if (header->ines.ines.prg_ram_size == 0) {
 					prg_ram_battery_size = 8192;
 				} else {
-					prg_ram_battery_size = d->header.ines.ines.prg_ram_size * INES_PRG_RAM_BANK_SIZE;
+					prg_ram_battery_size = header->ines.ines.prg_ram_size * INES_PRG_RAM_BANK_SIZE;
 				}
 			} else {
 				// FIXME: Is this correct?
-				if (d->header.ines.ines.prg_ram_size > 0) {
-					prg_ram_size = d->header.ines.ines.prg_ram_size * INES_PRG_RAM_BANK_SIZE;
+				if (header->ines.ines.prg_ram_size > 0) {
+					prg_ram_size = header->ines.ines.prg_ram_size * INES_PRG_RAM_BANK_SIZE;
 				}
 			}
 			break;
@@ -1063,32 +1060,32 @@ int NES::loadFieldData(void)
 		case NESPrivate::ROM_FORMAT_NES2:
 			tabName = "NES 2.0";	// NOT translatable!
 			rom_format = "NES 2.0";	// NOT translatable!
-			submapper = (d->header.ines.nes2.mapper_hi2 >> 4);
-			has_trainer = !!(d->header.ines.mapper_lo & INES_F6_TRAINER);
-			tv_mode = (d->header.ines.nes2.tv_mode & 3);
+			submapper = (header->ines.nes2.mapper_hi2 >> 4);
+			has_trainer = !!(header->ines.mapper_lo & INES_F6_TRAINER);
+			tv_mode = (header->ines.nes2.tv_mode & 3);
 			// CHR RAM size. (TODO: Needs testing.)
-			if (d->header.ines.nes2.vram_size & 0x0F) {
-				chr_ram_size = 128 << ((d->header.ines.nes2.vram_size & 0x0F) - 1);
+			if (header->ines.nes2.vram_size & 0x0F) {
+				chr_ram_size = 128 << ((header->ines.nes2.vram_size & 0x0F) - 1);
 			}
-			if ((d->header.ines.mapper_lo & INES_F6_BATTERY) &&
-			    (d->header.ines.nes2.vram_size & 0xF0))
+			if ((header->ines.mapper_lo & INES_F6_BATTERY) &&
+			    (header->ines.nes2.vram_size & 0xF0))
 			{
-				chr_ram_battery_size = 128 << ((d->header.ines.nes2.vram_size >> 4) - 1);
+				chr_ram_battery_size = 128 << ((header->ines.nes2.vram_size >> 4) - 1);
 			}
 			// PRG RAM size (TODO: Needs testing.)
-			if (d->header.ines.nes2.prg_ram_size & 0x0F) {
-				prg_ram_size = 128 << ((d->header.ines.nes2.prg_ram_size & 0x0F) - 1);
+			if (header->ines.nes2.prg_ram_size & 0x0F) {
+				prg_ram_size = 128 << ((header->ines.nes2.prg_ram_size & 0x0F) - 1);
 			}
 			// TODO: Require INES_F6_BATTERY?
-			if (d->header.ines.nes2.prg_ram_size & 0xF0) {
-				prg_ram_battery_size = 128 << ((d->header.ines.nes2.prg_ram_size >> 4) - 1);
+			if (header->ines.nes2.prg_ram_size & 0xF0) {
+				prg_ram_battery_size = 128 << ((header->ines.nes2.prg_ram_size >> 4) - 1);
 			}
 			break;
 
 		case NESPrivate::ROM_FORMAT_TNES:
 			tabName = "TNES";	// NOT translatable!
 			rom_format = C_("NES|Format", "TNES (Nintendo 3DS Virtual Console)");
-			tnes_mapper = d->header.tnes.mapper;
+			tnes_mapper = header->tnes.mapper;
 			// FIXME: Check Zelda TNES to see where 8K CHR RAM is.
 			break;
 
@@ -1126,7 +1123,7 @@ int NES::loadFieldData(void)
 		{
 			d->fields.addField_string(format_title,
 				// tr: ROM format, e.g. iNES or FDS disk image.
-				rp_sprintf(C_("NES|Format", "%s (Wii U Virtual Console)"), rom_format));
+				fmt::format(FRUN(C_("NES|Format", "{:s} (Wii U Virtual Console)")), rom_format));
 		} else {
 			d->fields.addField_string(format_title, rom_format);
 		}
@@ -1148,11 +1145,11 @@ int NES::loadFieldData(void)
 		const char *const mapper_name = NESMappers::lookup_ines(mapper);
 		if (mapper_name) {
 			// tr: Print the mapper ID followed by the mapper name.
-			s_mapper = rp_sprintf_p(C_("NES|Mapper", "%1$u - %2$s"),
+			s_mapper = fmt::format(FRUN(C_("NES|Mapper", "{0:d} - {1:s}")),
 				static_cast<unsigned int>(mapper), mapper_name);
 		} else {
 			// tr: Print only the mapper ID.
-			s_mapper = rp_sprintf("%u", static_cast<unsigned int>(mapper));
+			s_mapper = fmt::to_string(static_cast<unsigned int>(mapper));
 		}
 		d->fields.addField_string(mapper_title, s_mapper);
 	} else {
@@ -1175,11 +1172,11 @@ int NES::loadFieldData(void)
 		const char *const submapper_name = NESMappers::lookup_nes2_submapper(mapper, submapper);
 		if (submapper_name) {
 			// tr: Print the submapper ID followed by the submapper name.
-			s_submapper = rp_sprintf_p(C_("NES|Mapper", "%1$u - %2$s"),
+			s_submapper = fmt::format(FRUN(C_("NES|Mapper", "{0:d} - {1:s}")),
 				static_cast<unsigned int>(submapper), submapper_name);
 		} else {
 			// tr: Print only the submapper ID.
-			s_submapper = rp_sprintf("%u", static_cast<unsigned int>(submapper));
+			s_submapper = fmt::to_string(static_cast<unsigned int>(submapper));
 		}
 		d->fields.addField_string(C_("NES", "Submapper"), s_submapper);
 	}
@@ -1250,28 +1247,31 @@ int NES::loadFieldData(void)
 	if ((d->romType & NESPrivate::ROM_SYSTEM_MASK) == NESPrivate::ROM_SYSTEM_FDS) {
 		// Game ID
 		// TODO: Check for invalid characters?
+		char game_id[4];
+		memcpy(game_id, header->fds.game_id, 3);
+		game_id[3] = '\0';
 		d->fields.addField_string(C_("RomData", "Game ID"),
-			rp_sprintf("%s-%.3s",
-				(d->header.fds.disk_type == FDS_DTYPE_FSC ? "FSC" : "FMC"),
-				d->header.fds.game_id));
+			fmt::format(FSTR("{:s}-{:s}"),
+				(header->fds.disk_type == FDS_DTYPE_FSC ? "FSC" : "FMC"),
+				game_id));
 
 		// Publisher
 		const char *const publisher_title = C_("RomData", "Publisher");
 		const char *const publisher =
-			NintendoPublishers::lookup_fds(d->header.fds.publisher_code);
+			NintendoPublishers::lookup_fds(header->fds.publisher_code);
 		if (publisher) {
 			d->fields.addField_string(publisher_title, publisher);
 		} else {
 			d->fields.addField_string(publisher_title,
-				rp_sprintf(C_("RomData", "Unknown (0x%02X)"), d->header.fds.publisher_code));
+				fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), header->fds.publisher_code));
 		}
 
 		// Revision
 		d->fields.addField_string_numeric(C_("RomData", "Revision"),
-			d->header.fds.revision, RomFields::Base::Dec, 2);
+			header->fds.revision, RomFields::Base::Dec, 2);
 
 		// Manufacturing Date.
-		const time_t mfr_date = d->fds_bcd_datestamp_to_unix_time(&d->header.fds.mfr_date);
+		const time_t mfr_date = d->fds_bcd_datestamp_to_unix_time(&header->fds.mfr_date);
 		d->fields.addField_dateTime(C_("NES", "Manufacturing Date"), mfr_date,
 			RomFields::RFT_DATETIME_HAS_DATE |
 			RomFields::RFT_DATETIME_IS_UTC  // Date only.
@@ -1292,8 +1292,8 @@ int NES::loadFieldData(void)
 			case NESPrivate::ROM_FORMAT_NES2:
 				// Mirroring
 				s_mirroring = NESMappers::lookup_ines_mirroring(mapper, submapper == -1 ? 0 : submapper,
-					d->header.ines.mapper_lo & INES_F6_MIRROR_VERT,
-					d->header.ines.mapper_lo & INES_F6_MIRROR_FOUR);
+					header->ines.mapper_lo & INES_F6_MIRROR_VERT,
+					header->ines.mapper_lo & INES_F6_MIRROR_FOUR);
 
 				// Check for NES 2.0 extended console types, including VS hardware.
 				if ((d->romType & (NESPrivate::ROM_SYSTEM_MASK | NESPrivate::ROM_FORMAT_MASK)) ==
@@ -1310,7 +1310,7 @@ int NES::loadFieldData(void)
 						"RP2C05-03",   "RP2C05-04",
 						"RP2C05-05"
 					};
-					const unsigned int vs_ppu = (d->header.ines.nes2.vs_hw & 0x0F);
+					const unsigned int vs_ppu = (header->ines.nes2.vs_hw & 0x0F);
 					if (vs_ppu < ARRAY_SIZE(vs_ppu_types)) {
 						s_vs_ppu = vs_ppu_types[vs_ppu];
 					}
@@ -1326,7 +1326,7 @@ int NES::loadFieldData(void)
 						"Vs. Dualsystem",
 						"Vs. Dualsystem (Raid on Bungeling Bay)",
 					}};
-					const unsigned int vs_hw = (d->header.ines.nes2.vs_hw >> 4);
+					const unsigned int vs_hw = (header->ines.nes2.vs_hw >> 4);
 					if (vs_hw < vs_hw_types.size()) {
 						s_vs_hw = vs_hw_types[vs_hw];
 					}
@@ -1334,9 +1334,9 @@ int NES::loadFieldData(void)
 
 				// Other NES 2.0 fields.
 				if ((d->romType & NESPrivate::ROM_FORMAT_MASK) == NESPrivate::ROM_FORMAT_NES2) {
-					if ((d->header.ines.mapper_hi & INES_F7_SYSTEM_MASK) == INES_F7_SYSTEM_EXTD) {
+					if ((header->ines.mapper_hi & INES_F7_SYSTEM_MASK) == INES_F7_SYSTEM_EXTD) {
 						// NES 2.0 Extended Console Type
-						static constexpr const char *const ext_hw_types[] = {
+						static const array<const char*, 12> ext_hw_types = {{
 							"NES/Famicom/Dendy",	// Not normally used.
 							"Nintendo VS. System",	// Not normally used.
 							"PlayChoice-10",	// Not normally used.
@@ -1349,19 +1349,19 @@ int NES::loadFieldData(void)
 							"V.R. Technology VT32",
 							"V.R. Technology VT369",
 							"UMC UM6578",
-						};
+						}};
 
-						const unsigned int extd_ct = (d->header.ines.nes2.vs_hw & 0x0F);
-						if (extd_ct < ARRAY_SIZE(ext_hw_types)) {
+						const unsigned int extd_ct = (header->ines.nes2.vs_hw & 0x0F);
+						if (extd_ct < ext_hw_types.size()) {
 							s_extd_ct = ext_hw_types[extd_ct];
 						}
 					}
 
 					// Miscellaneous ROM count.
-					misc_roms = d->header.ines.nes2.misc_roms & 3;
+					misc_roms = header->ines.nes2.misc_roms & 3;
 
 					// Default expansion hardware.
-					static constexpr const char *const exp_hw_tbl[] = {
+					static const array<const char*, 48> exp_hw_tbl = {{
 						// 0x00
 						NOP_C_("NES|Expansion", "Unspecified"),
 						NOP_C_("NES|Expansion", "NES/Famicom Controllers"),
@@ -1415,10 +1415,10 @@ int NES::loadFieldData(void)
 						NOP_C_("NES|Expansion", "U-Force"),
 						NOP_C_("NES|Expansion", "R.O.B. Stack-Up"),
 						NOP_C_("NES|Expansion", "City Patrolman Lightgun"),
-					};
+					}};
 
-					const unsigned int exp_hw = (d->header.ines.nes2.expansion & 0x3F);
-					if (exp_hw < ARRAY_SIZE(exp_hw_tbl)) {
+					const unsigned int exp_hw = (header->ines.nes2.expansion & 0x3F);
+					if (exp_hw < exp_hw_tbl.size()) {
 						s_exp_hw = pgettext_expr("NES|Expansion", exp_hw_tbl[exp_hw]);
 					}
 				}
@@ -1426,7 +1426,7 @@ int NES::loadFieldData(void)
 
 			case NESPrivate::ROM_FORMAT_TNES:
 				// Mirroring
-				switch (d->header.tnes.mirroring) {
+				switch (header->tnes.mirroring) {
 					case TNES_MIRRORING_PROGRAMMABLE:
 						// For all mappers except AxROM, this is programmable.
 						// For AxROM, this is One Screen.
@@ -1513,7 +1513,7 @@ int NES::loadFieldData(void)
 			if (prg_size > 0) {
 				s_prg_size = formatFileSizeKiB(prg_size);
 			} else {
-				s_prg_size = rp_sprintf(C_("RomData", "Unknown (0x%02X)"), prg_sz_idx);
+				s_prg_size = fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), prg_sz_idx);
 			}
 			d->fields.addField_string(C_("NES", "PRG ROM Size"), s_prg_size);
 
@@ -1523,7 +1523,7 @@ int NES::loadFieldData(void)
 			if (chr_size > 0) {
 				s_chr_size = formatFileSizeKiB(chr_size);
 			} else {
-				s_chr_size = rp_sprintf(C_("RomData", "Unknown (0x%02X)"), chr_sz_idx);
+				s_chr_size = fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), chr_sz_idx);
 			}
 			if (likely(!b_chr_ram)) {
 				d->fields.addField_string(C_("NES", "CHR ROM Size"), s_chr_size);
@@ -1552,11 +1552,11 @@ int NES::loadFieldData(void)
 			string s_footer_mapper;
 			if (footer_mapper < ARRAY_SIZE(footer_mapper_tbl)) {
 				// tr: Print the mapper ID followed by the mapper name.
-				s_footer_mapper = rp_sprintf_p(C_("NES|Mapper", "%1$u - %2$s"),
+				s_footer_mapper = fmt::format(FRUN(C_("NES|Mapper", "{0:d} - {1:s}")),
 					footer_mapper, footer_mapper_tbl[footer_mapper]);
 			} else {
 				// tr: Print only the mapper ID.
-				s_footer_mapper = rp_sprintf("%u", footer_mapper);
+				s_footer_mapper = fmt::to_string(static_cast<unsigned int>(footer_mapper));
 			}
 			d->fields.addField_string(C_("NES", "Board Type"), s_footer_mapper);
 
@@ -1568,7 +1568,7 @@ int NES::loadFieldData(void)
 				d->fields.addField_string(publisher_title, publisher);
 			} else {
 				d->fields.addField_string(publisher_title,
-					rp_sprintf(C_("RomData", "Unknown (0x%02X)"), footer.publisher_code));
+					fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), footer.publisher_code));
 			}
 		}
 	}
@@ -1577,4 +1577,4 @@ int NES::loadFieldData(void)
 	return static_cast<int>(d->fields.count());
 }
 
-}
+} // namespace LibRomData

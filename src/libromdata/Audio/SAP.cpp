@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * SAP.cpp: Atari 8-bit SAP audio reader.                                  *
  *                                                                         *
- * Copyright (c) 2018-2024 by David Korth.                                 *
+ * Copyright (c) 2018-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -29,7 +29,7 @@ namespace LibRomData {
 class SAPPrivate final : public RomDataPrivate
 {
 public:
-	SAPPrivate(const IRpFilePtr &file);
+	explicit SAPPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -37,8 +37,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -96,19 +96,19 @@ ROMDATA_IMPL(SAP)
 /** SAPPrivate **/
 
 /* RomDataInfo */
-const char *const SAPPrivate::exts[] = {
+const array<const char*, 1+1> SAPPrivate::exts = {{
 	".sap",
 
 	nullptr
-};
-const char *const SAPPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> SAPPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	"audio/x-sap",
 
 	nullptr
-};
+}};
 const RomDataInfo SAPPrivate::romDataInfo = {
-	"SAP", exts, mimeTypes
+	"SAP", exts.data(), mimeTypes.data()
 };
 
 SAPPrivate::SAPPrivate(const IRpFilePtr &file)
@@ -535,9 +535,9 @@ const char *SAP::systemName(unsigned int type) const
 		"SAP::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Atari 8-bit SAP Audio", "SAP", "SAP", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -595,13 +595,12 @@ int SAP::loadFieldData(void)
 	}
 
 	// Flags: NTSC/PAL, Stereo
-	static const char *const flags_names[] = {
+	static const array<const char*, 2> flags_names = {{
 		// tr: PAL is default; if set, the file is for NTSC.
 		"NTSC",
 		NOP_C_("SAP|Flags", "Stereo"),
-	};
-	vector<string> *const v_flags_names = RomFields::strArrayToVector_i18n(
-		"SAP|Flags", flags_names, ARRAY_SIZE(flags_names));
+	}};
+	vector<string> *const v_flags_names = RomFields::strArrayToVector_i18n("SAP|Flags", flags_names);
 	// TODO: Use a bitfield in tags?
 	uint32_t flags = 0;
 	if (tags.ntsc)   flags |= (1U << 0);
@@ -617,7 +616,7 @@ int SAP::loadFieldData(void)
 		d->fields.addField_string(type_title, s_tag_type);
 	} else {
 		d->fields.addField_string(type_title,
-			rp_sprintf("0x%02X", static_cast<unsigned int>(tags.type)),
+			fmt::format(FSTR("0x{:0>2X}"), static_cast<unsigned int>(tags.type)),
 			RomFields::STRF_MONOSPACE);
 	}
 
@@ -666,7 +665,7 @@ int SAP::loadFieldData(void)
 		const char *const s_no = C_("RomData", "No");
 
 		unsigned int song_num = 0;
-		auto song_list = new RomFields::ListData_t(tags.durations.size());
+		auto *const song_list = new RomFields::ListData_t(tags.durations.size());
 		auto src_iter = tags.durations.cbegin();
 		auto dest_iter = song_list->begin();
 		const auto song_list_end = song_list->end();
@@ -680,18 +679,17 @@ int SAP::loadFieldData(void)
 			const uint32_t min = (duration / 1000) / 60;
 			const uint32_t sec = (duration / 1000) % 60;
 			const uint32_t ms =  (duration % 1000);
-			data_row.emplace_back(rp_sprintf("%u", song_num));
-			data_row.emplace_back(rp_sprintf("%u:%02u.%03u", min, sec, ms));
+			data_row.push_back(fmt::to_string(song_num));
+			data_row.push_back(fmt::format(FSTR("{:d}:{:0>2d}.{:0>3d}"), min, sec, ms));
 			data_row.emplace_back(src_iter->second ? s_yes : s_no);
 		}
 
-		static const char *const song_list_hdr[3] = {
+		static const array<const char*, 3> song_list_hdr = {{
 			NOP_C_("SAP|SongList", "#"),
 			NOP_C_("RomData|Audio", "Duration"),
 			NOP_C_("SAP|SongList", "Looping"),
-		};
-		vector<string> *const v_song_list_hdr = RomFields::strArrayToVector_i18n(
-			"SAP|SongList", song_list_hdr, ARRAY_SIZE(song_list_hdr));
+		}};
+		vector<string> *const v_song_list_hdr = RomFields::strArrayToVector_i18n("SAP|SongList", song_list_hdr);
 
 		RomFields::AFLD_PARAMS params;
 		params.headers = v_song_list_hdr;
@@ -711,7 +709,7 @@ int SAP::loadFieldData(void)
 int SAP::loadMetaData(void)
 {
 	RP_D(SAP);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -729,24 +727,22 @@ int SAP::loadMetaData(void)
 		return 0;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(4);	// Maximum of 4 metadata properties.
+	d->metaData.reserve(4);	// Maximum of 4 metadata properties.
 
 	// Composer
 	if (!tags.author.empty()) {
-		d->metaData->addMetaData_string(Property::Composer, tags.author);
+		d->metaData.addMetaData_string(Property::Composer, tags.author);
 	}
 
 	// Song title
 	if (!tags.name.empty()) {
-		d->metaData->addMetaData_string(Property::Title, tags.name);
+		d->metaData.addMetaData_string(Property::Title, tags.name);
 	}
 
 	// TODO: Date
 
 	// Number of channels
-	d->metaData->addMetaData_integer(Property::Channels, (tags.stereo ? 2 : 1));
+	d->metaData.addMetaData_integer(Property::Channels, (tags.stereo ? 2 : 1));
 
 	// NOTE: Including all songs in the duration.
 	const uint32_t duration = std::accumulate(tags.durations.cbegin(), tags.durations.cend(), 0U,
@@ -755,11 +751,11 @@ int SAP::loadMetaData(void)
 		}
 	);
 	if (duration > 0) {
-		d->metaData->addMetaData_integer(Property::Duration, static_cast<int>(duration));
+		d->metaData.addMetaData_integer(Property::Duration, static_cast<int>(duration));
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

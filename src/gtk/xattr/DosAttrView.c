@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (GTK+ common)                      *
  * DosAttrView.c: MS-DOS file system attribute viewer widget.              *
  *                                                                         *
- * Copyright (c) 2017-2024 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -18,6 +18,7 @@ typedef enum {
 	PROP_0,
 
 	PROP_ATTRS,
+	PROP_VALID_ATTRS,
 
 	PROP_LAST
 } RpDosAttrViewPropID;
@@ -42,16 +43,16 @@ static GParamSpec *props[PROP_LAST];
 
 static GQuark DosAttrView_value_quark;
 
-#if GTK_CHECK_VERSION(3,0,0)
+#if GTK_CHECK_VERSION(3, 0, 0)
 typedef GtkBoxClass superclass;
 typedef GtkBox super;
 #define GTK_TYPE_SUPER GTK_TYPE_BOX
 #define USE_GTK_GRID 1	// Use GtkGrid instead of GtkTable.
-#else /* !GTK_CHECK_VERSION(3,0,0) */
+#else /* !GTK_CHECK_VERSION(3, 0, 0) */
 typedef GtkVBoxClass superclass;
 typedef GtkVBox super;
 #define GTK_TYPE_SUPER GTK_TYPE_VBOX
-#endif /* GTK_CHECK_VERSION(3,0,0) */
+#endif /* GTK_CHECK_VERSION(3, 0, 0) */
 
 // DosAttrView class
 struct _RpDosAttrViewClass {
@@ -63,6 +64,7 @@ struct _RpDosAttrView {
 	super __parent__;
 
 	unsigned int attrs;
+	unsigned int validAttrs;
 
 	// Inhibit checkbox toggling while updating.
 	gboolean inhibit_checkbox_no_toggle;
@@ -106,6 +108,11 @@ rp_dos_attr_view_class_init(RpDosAttrViewClass *klass)
 		0U, ~0U, 0U,
 		(GParamFlags)(G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY));
 
+	props[PROP_VALID_ATTRS] = g_param_spec_uint(
+		"valid-attrs", "valid-attrs", "Valid MS-DOS file attributes",
+		0U, ~0U, 0U,
+		(GParamFlags)(G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY));
+
 	// Install the properties.
 	g_object_class_install_properties(gobject_class, PROP_LAST, props);
 }
@@ -113,10 +120,10 @@ rp_dos_attr_view_class_init(RpDosAttrViewClass *klass)
 static void
 rp_dos_attr_view_init(RpDosAttrView *widget)
 {
-#if GTK_CHECK_VERSION(3,0,0)
+#if GTK_CHECK_VERSION(3, 0, 0)
 	// Make this a VBox.
 	gtk_orientable_set_orientation(GTK_ORIENTABLE(widget), GTK_ORIENTATION_VERTICAL);
-#endif /* GTK_CHECK_VERSION(3,0,0) */
+#endif /* GTK_CHECK_VERSION(3, 0, 0) */
 
 	// Checkboxes: DOS attributes
 	GtkWidget *const hboxDOSAttrs = rp_gtk_hbox_new(4);
@@ -131,20 +138,20 @@ rp_dos_attr_view_init(RpDosAttrView *widget)
 	widget->chkSystem = rp_gtk_check_button_new_with_mnemonic(C_("DosAttrView", "&System"));
 	gtk_widget_set_name(widget->chkSystem, "chkSystem");
 
-#if GTK_CHECK_VERSION(4,0,0)
+#if GTK_CHECK_VERSION(4, 0, 0)
 	gtk_box_append(GTK_BOX(hboxDOSAttrs), widget->chkReadOnly);
 	gtk_box_append(GTK_BOX(hboxDOSAttrs), widget->chkHidden);
 	gtk_box_append(GTK_BOX(hboxDOSAttrs), widget->chkArchive);
 	gtk_box_append(GTK_BOX(hboxDOSAttrs), widget->chkSystem);
 	gtk_box_append(GTK_BOX(widget), hboxDOSAttrs);
-#else /* !GTK_CHECK_VERSION(4,0,0) */
+#else /* !GTK_CHECK_VERSION(4, 0, 0) */
 	gtk_box_pack_start(GTK_BOX(hboxDOSAttrs), widget->chkReadOnly, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(hboxDOSAttrs), widget->chkHidden, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(hboxDOSAttrs), widget->chkArchive, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(hboxDOSAttrs), widget->chkSystem, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(widget), hboxDOSAttrs, FALSE, FALSE, 0);
 	gtk_widget_show_all(hboxDOSAttrs);
-#endif /* GTK_CHECK_VERSION(4,0,0) */
+#endif /* GTK_CHECK_VERSION(4, 0, 0) */
 
 	// Checkboxes: NTFS attributes
 	GtkWidget *const hboxNTFSAttrs = rp_gtk_hbox_new(4);
@@ -155,16 +162,16 @@ rp_dos_attr_view_init(RpDosAttrView *widget)
 	widget->chkEncrypted = rp_gtk_check_button_new_with_mnemonic(C_("DosAttrView", "&Encrypted"));
 	gtk_widget_set_name(widget->chkEncrypted, "chkEncrypted");
 
-#if GTK_CHECK_VERSION(4,0,0)
+#if GTK_CHECK_VERSION(4, 0, 0)
 	gtk_box_append(GTK_BOX(hboxNTFSAttrs), widget->chkCompressed);
 	gtk_box_append(GTK_BOX(hboxNTFSAttrs), widget->chkEncrypted);
 	gtk_box_append(GTK_BOX(widget), hboxNTFSAttrs);
-#else /* !GTK_CHECK_VERSION(4,0,0) */
+#else /* !GTK_CHECK_VERSION(4, 0, 0) */
 	gtk_box_pack_start(GTK_BOX(hboxNTFSAttrs), widget->chkCompressed, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(hboxNTFSAttrs), widget->chkEncrypted, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(widget), hboxNTFSAttrs, FALSE, FALSE, 0);
 	gtk_widget_show_all(hboxNTFSAttrs);
-#endif /* GTK_CHECK_VERSION(4,0,0) */
+#endif /* GTK_CHECK_VERSION(4, 0, 0) */
 
 	// Disable user modifications.
 	// NOTE: Unlike Qt, both the "clicked" and "toggled" signals are
@@ -178,7 +185,7 @@ rp_dos_attr_view_init(RpDosAttrView *widget)
 GtkWidget*
 rp_dos_attr_view_new(void)
 {
-	return (GtkWidget*)g_object_new(RP_TYPE_DOS_ATTR_VIEW, NULL);
+	return g_object_new(RP_TYPE_DOS_ATTR_VIEW, NULL);
 }
 
 /** Properties **/
@@ -194,6 +201,10 @@ rp_dos_attr_view_set_property(GObject		*object,
 	switch (prop_id) {
 		case PROP_ATTRS:
 			rp_dos_attr_view_set_attrs(widget, g_value_get_uint(value));
+			break;
+
+		case PROP_VALID_ATTRS:
+			rp_dos_attr_view_set_valid_attrs(widget, g_value_get_uint(value));
 			break;
 
 		default:
@@ -213,6 +224,10 @@ rp_dos_attr_view_get_property(GObject		*object,
 	switch (prop_id) {
 		case PROP_ATTRS:
 			g_value_set_uint(value, widget->attrs);
+			break;
+
+		case PROP_VALID_ATTRS:
+			g_value_set_uint(value, widget->validAttrs);
 			break;
 
 		default:
@@ -241,7 +256,9 @@ rp_dos_attr_view_update_attrs_display(RpDosAttrView *widget)
 
 	for (size_t i = 0; i < ARRAY_SIZE(widget->checkBoxes); i++) {
 		gboolean val = !!(widget->attrs & (1U << flag_order[i]));
+		gboolean enable = !!(widget->validAttrs & (1U << flag_order[i]));
 		gtk_check_button_set_active(GTK_CHECK_BUTTON(widget->checkBoxes[i]), val);
+		gtk_widget_set_sensitive(widget->checkBoxes[i], enable);
 		g_object_set_qdata(G_OBJECT(widget->checkBoxes[i]), DosAttrView_value_quark, GUINT_TO_POINTER((guint)val));
 	}
 
@@ -287,10 +304,83 @@ void
 rp_dos_attr_view_clear_attrs(RpDosAttrView *widget)
 {
 	g_return_if_fail(RP_IS_DOS_ATTR_VIEW(widget));
+
 	if (widget->attrs != 0) {
 		widget->attrs = 0;
 		rp_dos_attr_view_update_attrs_display(widget);
 		g_object_notify_by_pspec(G_OBJECT(widget), props[PROP_ATTRS]);
+	}
+}
+
+/**
+ * Set the valid MS-DOS attributes.
+ * @param widget DosAttrView
+ * @param attrs Valid MS-DOS attributes
+ */
+void
+rp_dos_attr_view_set_valid_attrs(RpDosAttrView *widget, unsigned int validAttrs)
+{
+	g_return_if_fail(RP_IS_DOS_ATTR_VIEW(widget));
+
+	if (widget->validAttrs != validAttrs) {
+		widget->validAttrs = validAttrs;
+		rp_dos_attr_view_update_attrs_display(widget);
+		g_object_notify_by_pspec(G_OBJECT(widget), props[PROP_VALID_ATTRS]);
+	}
+}
+
+/**
+ * Get the valid MS-DOS attributes.
+ * @param widget DosAttrView
+ * @return Valid MS-DOS attributes
+ */
+unsigned int
+rp_dos_attr_view_get_valid_attrs(RpDosAttrView *widget)
+{
+	g_return_val_if_fail(RP_IS_DOS_ATTR_VIEW(widget), 0);
+	return widget->validAttrs;
+}
+
+/**
+ * Clear the valid MS-DOS attributes.
+ * @param widget DosAttrView
+ */
+void
+rp_dos_attr_view_clear_valid_attrs(RpDosAttrView *widget)
+{
+	g_return_if_fail(RP_IS_DOS_ATTR_VIEW(widget));
+
+	if (widget->validAttrs != 0) {
+		widget->validAttrs = 0;
+		rp_dos_attr_view_update_attrs_display(widget);
+		g_object_notify_by_pspec(G_OBJECT(widget), props[PROP_VALID_ATTRS]);
+	}
+}
+
+/**
+ * Set the current *and* valid MS-DOS attributes at the same time.
+ * @param attrs MS-DOS attributes
+ * @param validAttrs Valid MS-DOS attributes
+ */
+void
+rp_dos_attr_view_set_current_and_valid_attrs(RpDosAttrView *widget, unsigned int attrs, unsigned int validAttrs)
+{
+	g_return_if_fail(RP_IS_DOS_ATTR_VIEW(widget));
+
+	bool update = false;
+	if (widget->attrs != attrs) {
+		widget->attrs = attrs;
+		update = true;
+		g_object_notify_by_pspec(G_OBJECT(widget), props[PROP_ATTRS]);
+	}
+	if (widget->validAttrs != validAttrs) {
+		widget->validAttrs = validAttrs;
+		update = true;
+		g_object_notify_by_pspec(G_OBJECT(widget), props[PROP_VALID_ATTRS]);
+	}
+
+	if (update) {
+		rp_dos_attr_view_update_attrs_display(widget);
 	}
 }
 

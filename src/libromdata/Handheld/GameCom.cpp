@@ -27,8 +27,7 @@ namespace LibRomData {
 class GameComPrivate final : public RomDataPrivate
 {
 public:
-	GameComPrivate(const IRpFilePtr &file);
-	~GameComPrivate() final = default;
+	explicit GameComPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -36,8 +35,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 2+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -87,21 +86,21 @@ ROMDATA_IMPL(GameCom)
 /** GameComPrivate **/
 
 /* RomDataInfo */
-const char *const GameComPrivate::exts[] = {
+const array<const char*, 2+1> GameComPrivate::exts = {{
 	".bin",	// Most common (only one supported by the official emulator)
 	".tgc",	// Less common
 
 	nullptr
-};
-const char *const GameComPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> GameComPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-game-com-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo GameComPrivate::romDataInfo = {
-	"GameCom", exts, mimeTypes
+	"GameCom", exts.data(), mimeTypes.data()
 };
 
 // Palette
@@ -198,7 +197,7 @@ rp_image_const_ptr GameComPrivate::loadIcon(void)
 
 	// Create the icon.
 	// TODO: Split into an ImageDecoder function?
-	const rp_image_ptr tmp_icon = std::make_shared<rp_image>(GCOM_ICON_W, GCOM_ICON_H, rp_image::Format::CI8);
+	rp_image_ptr tmp_icon = std::make_shared<rp_image>(GCOM_ICON_W, GCOM_ICON_H, rp_image::Format::CI8);
 
 	uint32_t *const palette = tmp_icon->palette();
 	assert(palette != nullptr);
@@ -433,7 +432,7 @@ rp_image_const_ptr GameComPrivate::loadIconRLE(void)
 
 	// Create the icon.
 	// TODO: Split into an ImageDecoder function?
-	const rp_image_ptr tmp_icon = std::make_shared<rp_image>(GCOM_ICON_W, GCOM_ICON_H, rp_image::Format::CI8);
+	rp_image_ptr tmp_icon = std::make_shared<rp_image>(GCOM_ICON_W, GCOM_ICON_H, rp_image::Format::CI8);
 
 	uint32_t *const palette = tmp_icon->palette();
 	assert(palette != nullptr);
@@ -590,12 +589,9 @@ const char *GameCom::systemName(unsigned int type) const
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"GameCom::systemName() array index optimization needs to be updated.");
 
-	static const char *const sysNames[4] = {
-		"Tiger game.com",
-		"game.com",
-		"game.com",
-		nullptr
-	};
+	static const array<const char*, 4> sysNames = {{
+		"Tiger game.com", "game.com", "game.com", nullptr
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -740,7 +736,7 @@ int GameCom::loadFieldData(void)
 int GameCom::loadMetaData(void)
 {
 	RP_D(GameCom);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -751,20 +747,17 @@ int GameCom::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
-	// game.com ROM header.
+	// game.com ROM header
 	const Gcom_RomHeader *const romHeader = &d->romHeader;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
-	// Game title.
-	d->metaData->addMetaData_string(Property::Title,
+	// Game title
+	d->metaData.addMetaData_string(Property::Title,
 		latin1_to_utf8(romHeader->title, sizeof(romHeader->title)),
 		RomMetaData::STRF_TRIM_END);
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -798,7 +791,7 @@ int GameCom::loadInternalImage(ImageType imageType, rp_image_const_ptr &pImage)
 	}
 
 	pImage = d->loadIcon();
-	return ((bool)pImage ? 0 : -EIO);
+	return (pImage) ? 0 : -EIO;
 }
 
-}
+} // namespace LibRomData

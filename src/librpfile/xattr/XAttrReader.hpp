@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpfile)                        *
  * XAttrReader.hpp: Extended Attribute reader                              *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2024 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -12,8 +12,8 @@
 #include "common.h"
 #include "dll-macros.h"	// for RP_LIBROMDATA_PUBLIC
 
-// C includes
-#include <stdint.h>
+// C includes (C++ namespace)
+#include <cstdint>
 
 // C++ includes
 #include <map>
@@ -85,9 +85,16 @@ class RP_LIBROMDATA_PUBLIC XAttrReader
 
 		/**
 		 * Get this file's MS-DOS attributes.
-		 * @return MS-DOS attributes.
+		 * @return MS-DOS attributes
 		 */
 		unsigned int dosAttributes(void) const;
+
+		/**
+		 * Get the valid MS-DOS attributes for this file.
+		 * Compressed and Encrypted are available on NTFS but not FAT.
+		 * @return Valid MS-DOS attributes
+		 */
+		unsigned int validDosAttributes(void) const;
 
 		/**
 		 * Does this file have generic extended attributes?

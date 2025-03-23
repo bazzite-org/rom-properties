@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * ELF.cpp: Executable and Linkable Format reader.                         *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -45,7 +45,7 @@ namespace LibRomData {
 class ELFPrivate final : public RomDataPrivate
 {
 public:
-	ELFPrivate(const IRpFilePtr &file);
+	explicit ELFPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -53,8 +53,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 7+1> exts;
+	static const array<const char*, 4+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -223,7 +223,7 @@ ROMDATA_IMPL(ELF)
 /** ELFPrivate **/
 
 /* RomDataInfo */
-const char *const ELFPrivate::exts[] = {
+const array<const char*, 7+1> ELFPrivate::exts = {{
 	//".",		// FIXME: Does this work for files with no extension?
 	".elf",		// Common for Wii homebrew.
 	".so",		// Shared libraries. (TODO: Versioned .so files.)
@@ -236,8 +236,8 @@ const char *const ELFPrivate::exts[] = {
 	".rpl",		// Cafe OS library
 
 	nullptr
-};
-const char *const ELFPrivate::mimeTypes[] = {
+}};
+const array<const char*, 4+1> ELFPrivate::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	"application/x-object",
 	"application/x-executable",
@@ -245,9 +245,9 @@ const char *const ELFPrivate::mimeTypes[] = {
 	"application/x-core",
 
 	nullptr
-};
+}};
 const RomDataInfo ELFPrivate::romDataInfo = {
-	"ELF", exts, mimeTypes
+	"ELF", exts.data(), mimeTypes.data()
 };
 
 ELFPrivate::ELFPrivate(const IRpFilePtr &file)
@@ -591,15 +591,15 @@ int ELFPrivate::checkSectionHeaders(void)
 						// Header is too small...
 						break;
 					}
-					osVersion = rp_sprintf("SuSE Linux %u.%u", pData[0], pData[1]);
+					osVersion = fmt::format(FSTR("SuSE Linux {:d}.{:d}"), pData[0], pData[1]);
 				} else if (nhdr->n_namesz == 4 && !strcmp(pName, ELF_NOTE_GNU)) {
 					// GNU system
 					if (nhdr->n_descsz < sizeof(uint32_t)*4) {
 						// Header is too small...
 						break;
 					}
-					uint32_t desc[4];
-					memcpy(desc, pData, sizeof(desc));
+					array<uint32_t, 4> desc;
+					memcpy(desc.data(), pData, desc.size() * sizeof(uint32_t));
 
 					const uint32_t os_id = elf32_to_cpu(desc[0]);
 					static constexpr char os_tbl[][12] = {
@@ -613,7 +613,7 @@ int ELFPrivate::checkSectionHeaders(void)
 						s_os = "<unknown>";
 					}
 
-					osVersion = rp_sprintf("GNU/%s %u.%u.%u",
+					osVersion = fmt::format(FSTR("GNU/{:s} {:d}.{:d}.{:d}"),
 						s_os, elf32_to_cpu(desc[1]),
 						elf32_to_cpu(desc[2]), elf32_to_cpu(desc[3]));
 				} else if (nhdr->n_namesz == 7 && !strcmp(pName, "NetBSD")) {
@@ -634,9 +634,9 @@ int ELFPrivate::checkSectionHeaders(void)
 						uint32_t ver_rel = (desc / 10000) % 100;
 						const uint32_t ver_min = (desc / 1000000) % 100;
 						const uint32_t ver_maj = desc / 100000000;
-						osVersion = rp_sprintf("NetBSD %u.%u", ver_maj, ver_min);
+						osVersion = fmt::format(FSTR("NetBSD {:d}.{:d}"), ver_maj, ver_min);
 						if (ver_rel == 0 && ver_patch != 0) {
-							osVersion += rp_sprintf(".%u", ver_patch);
+							osVersion += fmt::format(FSTR(".{:d}"), ver_patch);
 						} else if (ver_rel != 0) {
 							while (ver_rel > 26) {
 								osVersion += 'Z';
@@ -661,29 +661,30 @@ int ELFPrivate::checkSectionHeaders(void)
 					if (desc == 460002) {
 						osVersion = "FreeBSD 4.6.2";
 					} else if (desc < 460100) {
-						osVersion = rp_sprintf("FreeBSD %u.%u",
+						osVersion = fmt::format(FSTR("FreeBSD {:d}.{:d}"),
 							desc / 100000, desc / 10000 % 10);
 						if (desc / 1000 % 10 > 0) {
-							osVersion += rp_sprintf(".%u", desc / 1000 % 10);
+							osVersion += fmt::format(FSTR(".{:d}"), desc / 1000 % 10);
 						}
 						if ((desc % 1000 > 0) || (desc % 100000 == 0)) {
-							osVersion += rp_sprintf(" (%u)", desc);
+							osVersion += fmt::format(FSTR(" ({:d})"), desc);
 						}
 					} else if (desc < 500000) {
-						osVersion = rp_sprintf("FreeBSD %u.%u",
+						// FIXME: This doesn't look quite right...
+						osVersion = fmt::format(FSTR("FreeBSD {:d}.{:d}"),
 							desc / 100000, desc / 10000 % 10 + desc / 1000 % 10);
 						if (desc / 100 % 10 > 0) {
-							osVersion += rp_sprintf(" (%u)", desc);
+							osVersion += fmt::format(FSTR(" ({:d})"), desc);
 						} else if (desc / 10 % 10 > 0) {
-							osVersion += rp_sprintf(".%u", desc / 10 % 10);
+							osVersion += fmt::format(FSTR(".{:d}"), desc / 10 % 10);
 						}
 					} else {
-						osVersion = rp_sprintf("FreeBSD %u.%u",
+						osVersion = fmt::format(FSTR("FreeBSD {:d}.{:d}"),
 							desc / 100000, desc / 1000 % 100);
 						if ((desc / 100 % 10 > 0) || (desc % 100000 / 100 == 0)) {
-							osVersion += rp_sprintf(" (%u)", desc);
+							osVersion += fmt::format(FSTR(" ({:d})"), desc);
 						} else if (desc / 10 % 10 > 0) {
-							osVersion += rp_sprintf(".%u", desc / 10 % 10);
+							osVersion += fmt::format(FSTR(".{:d}"), desc / 10 % 10);
 						}
 					}
 				} else if (nhdr->n_namesz == 8 && !strcmp(pName, "OpenBSD")) {
@@ -698,7 +699,7 @@ int ELFPrivate::checkSectionHeaders(void)
 					memcpy(&desc, pData, sizeof(desc));
 					desc = elf32_to_cpu(desc);
 
-					osVersion = rp_sprintf("DragonFlyBSD %u.%u.%u",
+					osVersion = fmt::format(FSTR("DragonFlyBSD {:d}.{:d}.{:d}"),
 						desc / 100000, desc / 10000 % 10, desc % 10000);
 				}
 				break;
@@ -709,7 +710,7 @@ int ELFPrivate::checkSectionHeaders(void)
 					break;
 				}
 
-				// Build ID.
+				// Build ID
 				switch (nhdr->n_descsz) {
 					case 8:
 						build_id_type = "xxHash";
@@ -719,6 +720,9 @@ int ELFPrivate::checkSectionHeaders(void)
 						break;
 					case 20:
 						build_id_type = "sha1";
+						break;
+					case 32:
+						build_id_type = "sha256";
 						break;
 					default:
 						build_id_type = nullptr;
@@ -753,9 +757,10 @@ int ELFPrivate::readDataAtVA(uint64_t vaddr, rp::uvector<uint8_t> &out)
 		[](uint64_t lhs, const Elf64_Phdr &rhs) noexcept -> bool {
 			return lhs < (uint64_t)rhs.p_vaddr;
 		});
-	if (it == pt_load.begin())
+	if (it == pt_load.begin()) {
 		return -ENOENT;
-	it--;
+	}
+	--it;
 
 	// Check the bounds
 	const uint64_t sstart = it->p_vaddr;
@@ -805,10 +810,13 @@ int ELFPrivate::addPtDynamicFields(void)
 	// Process headers.
 	// NOTE: Separate loops for 32-bit vs. 64-bit.
 	vector<uint64_t> needed;
-	uint64_t val_dtag[DT_NUM] = {0};
+	array<uint64_t, DT_NUM> val_dtag;
 	uint64_t val_flags1 = 0;
-	bool has_dtag[DT_NUM] = {0};
+	array<bool, DT_NUM> has_dtag;
 	bool has_flags1 = false;
+
+	val_dtag.fill(0);
+	has_dtag.fill(false);
 
 	// Returns true when needs to break out of the loop
 	auto process_dtag = [&](uint64_t d_tag, uint64_t d_val) -> bool {
@@ -838,19 +846,30 @@ int ELFPrivate::addPtDynamicFields(void)
 	};
 
 	if (Elf_Header.primary.e_class == ELFCLASS64) {
-		for (auto &dyn : reinterpret_span<const Elf64_Dyn>(pt_dyn_buf))
-			if (process_dtag(elf64_to_cpu(dyn.d_tag), elf64_to_cpu(dyn.d_un.d_val)))
+		for (const auto &dyn : reinterpret_span<const Elf64_Dyn>(pt_dyn_buf)) {
+			if (process_dtag(elf64_to_cpu(dyn.d_tag), elf64_to_cpu(dyn.d_un.d_val))) {
 				break;
+			}
+		}
 	} else {
-		for (auto &dyn : reinterpret_span<const Elf32_Dyn>(pt_dyn_buf))
-			if (process_dtag(elf32_to_cpu(dyn.d_tag), elf32_to_cpu(dyn.d_un.d_val)))
+		for (const auto &dyn : reinterpret_span<const Elf32_Dyn>(pt_dyn_buf)) {
+			if (process_dtag(elf32_to_cpu(dyn.d_tag), elf32_to_cpu(dyn.d_un.d_val))) {
 				break;
+			}
+		}
 	}
 
+	// TODO: Instead of loading the entire strtab, just load each string?
+	// May need some extra tweaking for NULL-terminated string handling.
 	rp::uvector<uint8_t> strtab_buf;
 	span<const char> strtab;
-	assert(val_dtag[DT_STRSZ] < 1*1024*1024);
-	if (has_dtag[DT_STRTAB] && has_dtag[DT_STRSZ] && val_dtag[DT_STRSZ] < 1*1024*1024) {
+	// NOTE: Larger string tables than expected on some executables on Ubuntu 18.04:
+	// - /usr/bin/clang (6.0.0-1ubuntu2) has >1MB.
+	// - /usr/bin/containerd has >2MB. (~4.5 MB)
+	// - /usr/bin/dockerd has >8MB. (~9.4 MB)
+	static constexpr uint64_t MAX_STRTAB_SIZE = 16*1024*1024U;
+	assert(val_dtag[DT_STRSZ] < MAX_STRTAB_SIZE);
+	if (has_dtag[DT_STRTAB] && has_dtag[DT_STRSZ] && val_dtag[DT_STRSZ] < MAX_STRTAB_SIZE) {
 		strtab_buf.resize(static_cast<size_t>(val_dtag[DT_STRSZ]));
 		if (readDataAtVA(val_dtag[DT_STRTAB], strtab_buf) == 0) {
 			// The first the last byte of the string table MUST be zero.
@@ -869,14 +888,13 @@ int ELFPrivate::addPtDynamicFields(void)
 
 		if (has_dtag[DT_FLAGS]) {
 			// DT_FLAGS
-			static const char *const dt_flags_names[] = {
+			static const array<const char*, 5> dt_flags_names = {{
 				// 0x00000000
 				"ORIGIN", "SYMBOLIC", "TEXTREL", "BIND_NOW",
 				// 0x00000010
 				"STATIC_TLS",
-			};
-			vector<string> *const v_dt_flags_names = RomFields::strArrayToVector(
-				dt_flags_names, ARRAY_SIZE(dt_flags_names));
+			}};
+			vector<string> *const v_dt_flags_names = RomFields::strArrayToVector(dt_flags_names);
 			fields.addField_bitfield("DT_FLAGS",
 				v_dt_flags_names, 3, static_cast<uint32_t>(val_dtag[DT_FLAGS]));
 		}
@@ -884,7 +902,7 @@ int ELFPrivate::addPtDynamicFields(void)
 		if (has_flags1) {
 			// DT_FLAGS_1
 			// NOTE: Internal-use symbols are left as nullptr.
-			static const char *const dt_flags_1_names[] = {
+			static const array<const char*, 28> dt_flags_1_names = {{
 				// 0x00000000
 				"Now", "Global", "Group", "NoDelete",
 				// 0x00000010
@@ -899,9 +917,8 @@ int ELFPrivate::addPtDynamicFields(void)
 				nullptr /*"NoHdr"*/, "Edited", nullptr /*"NoReloc"*/, "SymIntpose",
 				// 0x01000000
 				"GlobAudit", "Singleton", "Stub", "PIE"
-			};
-			vector<string> *const v_dt_flags_1_names = RomFields::strArrayToVector(
-				dt_flags_1_names, ARRAY_SIZE(dt_flags_1_names));
+			}};
+			vector<string> *const v_dt_flags_1_names = RomFields::strArrayToVector(dt_flags_1_names);
 			fields.addField_bitfield("DT_FLAGS_1",
 				v_dt_flags_1_names, 3, static_cast<uint32_t>(val_flags1));
 		}
@@ -918,21 +935,20 @@ int ELFPrivate::addPtDynamicFields(void)
 			fields.addField_string("DT_RUNPATH", &strtab[val_dtag[DT_RUNPATH]]);
 
 		if (strtab.size() != 0 && needed.size() != 0) {
-			auto vv_data = new RomFields::ListData_t();
+			auto *const vv_data = new RomFields::ListData_t();
 			for (const auto offset : needed) {
 				assert(offset < strtab.size());
 				if (offset >= strtab.size())
 					continue;
 				vector<string> row;
 				row.emplace_back(&strtab[offset]);
-				vv_data->emplace_back(std::move(row));
+				vv_data->push_back(std::move(row));
 			}
 
-			static const char *const field_names[] = {
+			static const array<const char*, 1> field_names = {{
 				NOP_C_("ELF", "Name"),
-			};
-			vector<string> *const v_field_names = RomFields::strArrayToVector_i18n(
-				"ELF", field_names, ARRAY_SIZE(field_names));
+			}};
+			vector<string> *const v_field_names = RomFields::strArrayToVector_i18n("ELF", field_names);
 
 			RomFields::AFLD_PARAMS params;
 			params.flags = 0;
@@ -1036,7 +1052,7 @@ int ELFPrivate::addSymbolFields(span<const char> dynsym_strtab)
 		const char *const elf_sym_absolute = C_("ELF|Symbol", "(Absolute)");
 		const char *const elf_sym_common = C_("ELF|Symbol", "(COMMON)");
 
-		auto vv_data = new RomFields::ListData_t();
+		auto *const vv_data = new RomFields::ListData_t();
 		for (const auto &sym : tab) {
 			assert(sym.st_name < strtab.size());
 			if (sym.st_name >= strtab.size()) {
@@ -1070,17 +1086,18 @@ int ELFPrivate::addSymbolFields(span<const char> dynsym_strtab)
 			row.emplace_back(types[ELF64_ST_TYPE(sym.st_info)]);
 			row.emplace_back(visibilities[ELF64_ST_VISIBILITY(sym.st_other)]);
 			// TODO: output section name if possible
-			if (sym.st_shndx == SHN_UNDEF)
+			if (sym.st_shndx == SHN_UNDEF) {
 				row.emplace_back(elf_sym_undefined);
-			else if (sym.st_shndx == SHN_ABS)
+			} else if (sym.st_shndx == SHN_ABS) {
 				row.emplace_back(elf_sym_absolute);
-			else if (sym.st_shndx == SHN_COMMON)
+			} else if (sym.st_shndx == SHN_COMMON) {
 				row.emplace_back(elf_sym_common);
-			else
-				row.emplace_back(rp_sprintf("%d", sym.st_shndx));
-			row.emplace_back(rp_sprintf("0x%08" PRIX64, sym.st_value));
-			row.emplace_back(rp_sprintf("0x%08" PRIX64, sym.st_size));
-			vv_data->emplace_back(std::move(row));
+			} else {
+				row.push_back(fmt::to_string(sym.st_shndx));
+			}
+			row.push_back(fmt::format(FSTR("0x{:0>8X}"), sym.st_value));
+			row.push_back(fmt::format(FSTR("0x{:0>8X}"), sym.st_size));
+			vv_data->push_back(std::move(row));
 		}
 		if (vv_data->empty()) {
 			delete vv_data;
@@ -1094,7 +1111,7 @@ int ELFPrivate::addSymbolFields(span<const char> dynsym_strtab)
 
 		fields.addTab(name);
 
-		static const char *const field_names[] = {
+		static const array<const char*, 7> field_names = {{
 			NOP_C_("ELF|Symbol", "Name"),
 			NOP_C_("ELF|Symbol", "Binding"),
 			NOP_C_("ELF|Symbol", "Type"),
@@ -1102,9 +1119,8 @@ int ELFPrivate::addSymbolFields(span<const char> dynsym_strtab)
 			NOP_C_("ELF|Symbol", "Section"),
 			NOP_C_("ELF|Symbol", "Value"),
 			NOP_C_("ELF|Symbol", "Size"),
-		};
-		vector<string> *const v_field_names = RomFields::strArrayToVector_i18n(
-			"ELF|Symbol", field_names, ARRAY_SIZE(field_names));
+		}};
+		vector<string> *const v_field_names = RomFields::strArrayToVector_i18n("ELF|Symbol", field_names);
 
 		RomFields::AFLD_PARAMS params;
 		params.flags = RomFields::RFT_LISTDATA_SEPARATE_ROW;
@@ -1439,16 +1455,16 @@ const char *ELF::systemName(unsigned int type) const
 
 	if (d->isWiiU) {
 		// This is a Wii U RPX/RPL executable.
-		static const char *const sysNames_WiiU[4] = {
+		static const array<const char*, 4> sysNames_WiiU = {{
 			"Nintendo Wii U", "Wii U", "Wii U", nullptr
-		};
+		}};
 		return sysNames_WiiU[type];
 	}
 
 	// Standard ELF executable.
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Executable and Linkable Format", "ELF", "ELF", nullptr
-	};
+	}};
 
 	return sysNames[type];
 }
@@ -1509,7 +1525,7 @@ int ELF::loadFieldData(void)
 		d->fields.addField_string(cpu_title, cpu);
 	} else {
 		d->fields.addField_string(cpu_title,
-			rp_sprintf(C_("RomData", "Unknown (0x%04X)"), primary->e_machine));
+			fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>4X})")), primary->e_machine));
 	}
 
 	// CPU flags.
@@ -1554,17 +1570,17 @@ int ELF::loadFieldData(void)
 
 		case EM_SPARC32PLUS:
 		case EM_SPARCV9: {
-			// Verify bitness.
+			// Verify bitness
 			if (primary->e_machine == EM_SPARC32PLUS &&
 			    primary->e_class != ELFCLASS32)
 			{
-				// SPARC32PLUS must be 32-bit.
+				// SPARC32PLUS must be 32-bit
 				break;
 			}
 			else if (primary->e_machine == EM_SPARCV9 &&
 				 primary->e_class != ELFCLASS64)
 			{
-				// SPARCV9 must be 64-bit.
+				// SPARCV9 must be 64-bit
 				break;
 			}
 
@@ -1579,7 +1595,7 @@ int ELF::loadFieldData(void)
 				pgettext_expr("ELF|SPARC_MM", sparc_mm[e_flags & 3]));
 
 			// SPARC CPU flags. (rshifted by 8)
-			static const char *const sparc_flags_names[] = {
+			static const array<const char*, 16> sparc_flags_names = {{
 				// 0x100-0x800
 				"SPARC V8+", "UltraSPARC I", "HaL R1", "UltraSPARC III",
 				// 0x1000-0x8000
@@ -1590,9 +1606,8 @@ int ELF::loadFieldData(void)
 				nullptr, nullptr, nullptr,
 				// tr: Little-Endian Data
 				NOP_C_("ELF|SPARCFlags", "LE Data")
-			};
-			vector<string> *const v_sparc_flags_names = RomFields::strArrayToVector_i18n(
-				"ELF|SPARCFlags", sparc_flags_names, ARRAY_SIZE(sparc_flags_names));
+			}};
+			vector<string> *const v_sparc_flags_names = RomFields::strArrayToVector_i18n("ELF|SPARCFlags", sparc_flags_names);
 			d->fields.addField_bitfield(C_("ELF", "CPU Flags"),
 				v_sparc_flags_names, 4, (e_flags >> 8));
 			break;
@@ -1606,7 +1621,7 @@ int ELF::loadFieldData(void)
 					(e_flags & 0x20) ? "N32" : "O32");
 			}
 
-			// MIPS architecture level.
+			// MIPS architecture level
 			static constexpr char mips_levels[][12] = {
 				"MIPS-I", "MIPS-II", "MIPS-III", "MIPS-IV",
 				"MIPS-V", "MIPS32", "MIPS64", "MIPS32 rel2",
@@ -1618,13 +1633,13 @@ int ELF::loadFieldData(void)
 				d->fields.addField_string(cpu_level_title, mips_levels[level]);
 			} else {
 				d->fields.addField_string(cpu_level_title,
-					rp_sprintf(C_("RomData", "Unknown (0x%02X)"), level));
+					fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), level));
 			}
 
-			// MIPS CPU flags.
+			// MIPS CPU flags
 			// NOTE: Shifting ASE flags from bits 24-27 to bits 12-15.
 			const unsigned int mips_cpu_flags = (e_flags & 0xFFF) | ((e_flags >> 12) & 0xF000);
-			static const char *const mips_flags_names[] = {
+			static const array<const char*, 16> mips_flags_names = {{
 				// 0x1-0x8
 				NOP_C_("ELF|MIPSFlags", "No Reorder"),
 				"PIC", "CPIC", "XGOT",
@@ -1636,9 +1651,8 @@ int ELF::loadFieldData(void)
 				nullptr,
 				// 0x1000-0x8000 (shifted from 0x01000000-0x08000000)
 				nullptr, "MicroMIPS", "MIPS-16", "MDMX",
-			};
-			vector<string> *const v_mips_flags_names = RomFields::strArrayToVector_i18n(
-				"ELF|MIPSFlags", mips_flags_names, ARRAY_SIZE(mips_flags_names));
+			}};
+			vector<string> *const v_mips_flags_names = RomFields::strArrayToVector_i18n("ELF|MIPSFlags", mips_flags_names);
 			d->fields.addField_bitfield(C_("ELF", "CPU Flags"),
 				v_mips_flags_names, 4, mips_cpu_flags);
 			break;
@@ -1647,7 +1661,7 @@ int ELF::loadFieldData(void)
 		case EM_PARISC: {
 			// binutils: include/elf/hppa.h
 
-			// PA-RISC version.
+			// PA-RISC version
 			string parisc_version;
 			parisc_version.reserve(12);
 			switch (e_flags & 0xFFFF) {
@@ -1667,8 +1681,8 @@ int ELF::loadFieldData(void)
 			}
 			d->fields.addField_string(C_("ELF", "PA-RISC Version"), parisc_version);
 
-			// PA-RISC CPU flags.
-			static const char *const parisc_flags_names[] = {
+			// PA-RISC CPU flags
+			static const array<const char*, 7> parisc_flags_names = {{
 				// 0x1-0x8
 				NOP_C_("ELF|PARISCFlags", "Trap NULL"),
 				"EXT", "LSB",
@@ -1677,9 +1691,8 @@ int ELF::loadFieldData(void)
 				NOP_C_("ELF|PARISCFlags", "No KABP"),
 				nullptr,
 				NOP_C_("ELF|PARISCFlags", "Lazy Swap"),
-			};
-			vector<string> *const v_parisc_flags_names = RomFields::strArrayToVector_i18n(
-				"ELF|PARISCFlags", parisc_flags_names, ARRAY_SIZE(parisc_flags_names));
+			}};
+			vector<string> *const v_parisc_flags_names = RomFields::strArrayToVector_i18n("ELF|PARISCFlags", parisc_flags_names);
 			d->fields.addField_bitfield(C_("ELF", "CPU Flags"),
 				v_parisc_flags_names, 4, ((e_flags >> 16) & 0x7F));
 			break;
@@ -1687,7 +1700,7 @@ int ELF::loadFieldData(void)
 
 		case EM_ARM: {
 			if (primary->e_class != ELFCLASS32) {
-				// 32-bit only.
+				// 32-bit only
 				break;
 			}
 
@@ -1707,14 +1720,13 @@ int ELF::loadFieldData(void)
 			}
 
 			// ARM EABI
-			char arm_eabi[32];
-			snprintf(arm_eabi, sizeof(arm_eabi), "EABI%u%s",
-				(e_flags >> 24), arm_byteorder);
-			d->fields.addField_string(C_("ELF", "ARM EABI"), arm_eabi);
+			d->fields.addField_string(C_("ELF", "ARM EABI"),
+				fmt::format(FSTR("EABI{:d}{:s}"),
+					(e_flags >> 24), arm_byteorder));
 
-			// ARM CPU flags.
+			// ARM CPU flags
 			// NOTE: Most of these are deprecated. (pre-EABI)
-			static const char *const arm_flags_names[] = {
+			static const array<const char*, 12> arm_flags_names = {{
 				// 0x1-0x8
 				"RelExec", nullptr, "Interwork", "APCS 26",
 				// 0x10-0x80
@@ -1727,9 +1739,8 @@ int ELF::loadFieldData(void)
 				NOP_C_("ELF|ARMFlags", "Soft Float"),
 				NOP_C_("ELF|ARMFlags", "VFP Float"),
 				NOP_C_("ELF|ARMFlags", "Maverick Float"),
-			};
-			vector<string> *const v_arm_flags_names = RomFields::strArrayToVector_i18n(
-				"ELF|ARMFlags", arm_flags_names, ARRAY_SIZE(arm_flags_names));
+			}};
+			vector<string> *const v_arm_flags_names = RomFields::strArrayToVector_i18n("ELF|ARMFlags", arm_flags_names);
 			d->fields.addField_bitfield(C_("ELF", "CPU Flags"),
 				v_arm_flags_names, 4, (e_flags & 0xFFF));
 			break;
@@ -1740,13 +1751,12 @@ int ELF::loadFieldData(void)
 			// binutils: include/elf/alpha.h
 
 			// Alpha CPU flags.
-			static const char *const alpha_flags_names[] = {
+			static const array<const char*, 2> alpha_flags_names = {{
 				// 0x1-0x2
 				NOP_C_("ELF|AlphaFlags", "Addresses <= 2GB"),
 				NOP_C_("ELF|AlphaFlags", "Relaxed Code Movement"),
-			};
-			vector<string> *const v_alpha_flags_names = RomFields::strArrayToVector_i18n(
-				"ELF|AlphaFlags", alpha_flags_names, ARRAY_SIZE(alpha_flags_names));
+			}};
+			vector<string> *const v_alpha_flags_names = RomFields::strArrayToVector_i18n("ELF|AlphaFlags", alpha_flags_names);
 			d->fields.addField_bitfield(C_("ELF", "CPU Flags"),
 				v_alpha_flags_names, 2, (e_flags & 0x03));
 			break;
@@ -1777,16 +1787,15 @@ int ELF::loadFieldData(void)
 				d->fields.addField_string(C_("ELF", "CPU Subtype"), s_cpu_subtype);
 			}
 
-			// SuperH CPU flags. (rshifted by 8)
-			static const char *const superh_flags_names[] = {
+			// SuperH CPU flags (rshifted by 8)
+			static const array<const char*, 8> superh_flags_names = {{
 				// 0x100-0x800
 				"PIC", nullptr, nullptr, nullptr,
 
 				// 0x1000-0x8000
 				nullptr, nullptr, nullptr, "FDPIC",
-			};
-			vector<string> *const v_superh_flags_names = RomFields::strArrayToVector(
-				superh_flags_names, ARRAY_SIZE(superh_flags_names));
+			}};
+			vector<string> *const v_superh_flags_names = RomFields::strArrayToVector(superh_flags_names);
 			d->fields.addField_bitfield(C_("ELF", "CPU Flags"),
 				v_superh_flags_names, 2, (e_flags >> 8));
 			break;
@@ -1796,7 +1805,7 @@ int ELF::loadFieldData(void)
 			// binutils: include/elf/arc.h
 			// TODO: Other ARC variants?
 
-			// CPU subtypes.
+			// CPU subtypes
 			static constexpr char arc_cpu_subtypes[][8] = {
 				"", "", "ARC600", "ARC700",
 				"ARC601", "ARCv2EM", "ARCv2HS",
@@ -1812,20 +1821,19 @@ int ELF::loadFieldData(void)
 				d->fields.addField_string(C_("ELF", "CPU Subtype"), s_cpu_subtype);
 			}
 
-			// ARC Linux specific ABIs.
+			// ARC Linux specific ABIs
 			const uint8_t arc_linux_osabi = (e_flags >> 8) & 0x0F;
 			if (arc_linux_osabi != 1 && arc_linux_osabi <= 4) {
 				d->fields.addField_string(C_("ELF", "Linux OSABI"),
-					rp_sprintf("ARC Linux OSABI v%u", arc_linux_osabi));
+					fmt::format(FSTR("ARC Linux OSABI v{:d}"), arc_linux_osabi));
 			}
 
-			// ARC CPU flags. (rshifted by 8)
-			static const char *const arc_flags_names[] = {
+			// ARC CPU flags (rshifted by 8)
+			static const array<const char*, 1> arc_flags_names = {{
 				// 0x100
 				"PIC",
-			};
-			vector<string> *const v_arc_flags_names = RomFields::strArrayToVector(
-				arc_flags_names, ARRAY_SIZE(arc_flags_names));
+			}};
+			vector<string> *const v_arc_flags_names = RomFields::strArrayToVector(arc_flags_names);
 			d->fields.addField_bitfield(C_("ELF", "CPU Flags"),
 				v_arc_flags_names, 1, ((e_flags >> 8) & 1));
 			break;
@@ -1895,23 +1903,20 @@ int ELF::loadFieldData(void)
 		case EM_AVR:
 		case EM_AVR_OLD: {
 			// NOTE: Using a heuristic instead of a lookup table.
-			char s_avr_subtype[16];
+			string s_avr_subtype;
 			const uint8_t avr_subtype = (e_flags & 0xFF);
 			if (avr_subtype < 10) {
-				snprintf(s_avr_subtype, sizeof(s_avr_subtype), "AVR%u", avr_subtype);
+				s_avr_subtype = fmt::format(FSTR("AVR{:d}"), avr_subtype);
 			} else if (avr_subtype < 100) {
-				snprintf(s_avr_subtype, sizeof(s_avr_subtype), "AVR%u.%u",
+				s_avr_subtype = fmt::format(FSTR("AVR{:d}.{:d}"),
 					avr_subtype / 10, avr_subtype % 10);
 			} else if (avr_subtype == 100) {
-				strcpy(s_avr_subtype, "AVR Tiny");
+				s_avr_subtype = "AVR Tiny";
 			} else if (avr_subtype < 110) {
-				snprintf(s_avr_subtype, sizeof(s_avr_subtype), "XMEGA%u",
-					(avr_subtype % 100));
-			} else {
-				s_avr_subtype[0] = '\0';
+				s_avr_subtype = fmt::format(FSTR("XMEGA{:d}"), (avr_subtype % 100));
 			}
 
-			if (s_avr_subtype[0] != '\0') {
+			if (!s_avr_subtype.empty()) {
 				d->fields.addField_string(C_("ELF", "CPU Subtype"), s_avr_subtype);
 			}
 			break;
@@ -1930,12 +1935,11 @@ int ELF::loadFieldData(void)
 			}
 
 			// M32R new instructions field.
-			static const char *const m32r_flags_names[] = {
+			static const array<const char*, 4> m32r_flags_names = {{
 				// 0x1-0x8
 				"Parallel", "m32rx", "Bit Insns", "FP Insns",
-			};
-			vector<string> *const v_m32r_flags_names = RomFields::strArrayToVector_i18n(
-				"ELF|M32RFlags", m32r_flags_names, ARRAY_SIZE(m32r_flags_names));
+			}};
+			vector<string> *const v_m32r_flags_names = RomFields::strArrayToVector_i18n("ELF|M32RFlags", m32r_flags_names);
 			d->fields.addField_bitfield(C_("ELF", "M32R New Insns"),
 				v_m32r_flags_names, 4, ((e_flags >> 16) & 0x0FFF));
 
@@ -1946,19 +1950,17 @@ int ELF::loadFieldData(void)
 		case EM_MSP430: {
 			// binutils: include/elf/msp430.h
 			// NOTE: Using a heuristic instead of a lookup table.
-			char s_msp430_subtype[16];
+			string s_msp430_subtype;
 			const uint8_t msp430_subtype = (e_flags & 0xFF);
 			if (msp430_subtype == 45) {
-				strcpy(s_msp430_subtype, "MSP430X");
+				s_msp430_subtype = "MSP430X";
 			} else if (msp430_subtype == 110) {
-				strcpy(s_msp430_subtype, "MSP430x11x1");
+				s_msp430_subtype = "MSP430x11x1";
 			} else if (msp430_subtype <= 54) {
-				snprintf(s_msp430_subtype, sizeof(s_msp430_subtype), "MSP430x%u", msp430_subtype);
-			} else {
-				s_msp430_subtype[0] = '\0';
+				s_msp430_subtype = fmt::format(FSTR("MSP430x{:d}"), msp430_subtype);
 			}
 
-			if (s_msp430_subtype[0] != '\0') {
+			if (!s_msp430_subtype.empty()) {
 				d->fields.addField_string(C_("ELF", "CPU Subtype"), s_msp430_subtype);
 			}
 			break;
@@ -1968,15 +1970,14 @@ int ELF::loadFieldData(void)
 			// binutils: include/elf/bfin.h
 
 			// Blackfin CPU flags.
-			static const char *const blackfin_flags_names[] = {
+			static const array<const char*, 6> blackfin_flags_names = {{
 				// 0x1-0x8
 				"PIC", "FDPIC", nullptr, nullptr,
 				// 0x10-0x20
 				NOP_C_("ELF|BlackfinFlags", "Code in L1"),
 				NOP_C_("ELF|BlackfinFlags", "Data in L1"),
-			};
-			vector<string> *const v_blackfin_flags_names = RomFields::strArrayToVector_i18n(
-				"ELF|BlackfinFlags", blackfin_flags_names, ARRAY_SIZE(blackfin_flags_names));
+			}};
+			vector<string> *const v_blackfin_flags_names = RomFields::strArrayToVector_i18n("ELF|BlackfinFlags", blackfin_flags_names);
 			d->fields.addField_bitfield(C_("ELF", "CPU Flags"),
 				v_blackfin_flags_names, 2, (e_flags & 0x33));
 			break;
@@ -2039,12 +2040,11 @@ int ELF::loadFieldData(void)
 				pgettext_expr("ELF|RISCVFPABI", riscv_fpabi_tbl[((e_flags & 0x0006) >> 1)]));
 
 			// RISC-V CPU flags
-			static const char *const riscv_flags_names[] = {
+			static const array<const char*, 4> riscv_flags_names = {{
 				// 0x1-0x8
 				"RVC", nullptr, nullptr, "RV32E",
-			};
-			vector<string> *const v_riscv_flags_names = RomFields::strArrayToVector(
-				riscv_flags_names, ARRAY_SIZE(riscv_flags_names));
+			}};
+			vector<string> *const v_riscv_flags_names = RomFields::strArrayToVector(riscv_flags_names);
 			d->fields.addField_bitfield(C_("ELF", "CPU Flags"),
 				v_riscv_flags_names, 2, (e_flags & 0x0F));
 			break;
@@ -2062,7 +2062,7 @@ int ELF::loadFieldData(void)
 		d->fields.addField_string(osabi_title, osabi);
 	} else {
 		d->fields.addField_string(osabi_title,
-			rp_sprintf(C_("RomData", "Unknown (%u)"), primary->e_osabi));
+			fmt::format(FRUN(C_("RomData", "Unknown ({:d})")), primary->e_osabi));
 	}
 
 	// ABI version.
@@ -2096,14 +2096,13 @@ int ELF::loadFieldData(void)
 	if (d->fileType == FileType::Executable) {
 		string entry_point;
 		if (primary->e_class == ELFCLASS64) {
-			entry_point = rp_sprintf("0x%08" PRIX64, d->Elf_Header.elf64.e_entry);
+			entry_point = fmt::format(FSTR("0x{:0>8X}"), d->Elf_Header.elf64.e_entry);
 		} else {
-			entry_point = rp_sprintf("0x%08X", d->Elf_Header.elf32.e_entry);
+			entry_point = fmt::format(FSTR("0x{:0>8X}"), d->Elf_Header.elf32.e_entry);
 		}
 		if (d->isPie) {
 			// tr: Entry point, then "Position-Independent".
-			entry_point = rp_sprintf(C_("ELF", "%s (Position-Independent)"),
-				entry_point.c_str());
+			entry_point = fmt::format(FRUN(C_("ELF", "{:s} (Position-Independent)")), entry_point);
 		}
 		d->fields.addField_string(C_("RomData", "Entry Point"), entry_point);
 	}
@@ -2112,7 +2111,8 @@ int ELF::loadFieldData(void)
 	if (!d->build_id.empty()) {
 		// TODO: Put the build ID type in the field itself.
 		// Using field name for now.
-		const string fieldName = rp_sprintf("BuildID[%s]", (d->build_id_type ? d->build_id_type : "unknown"));
+		const string fieldName = fmt::format(FSTR("BuildID[{:s}]"),
+			(d->build_id_type ? d->build_id_type : "unknown"));
 		d->fields.addField_string_hexdump(fieldName.c_str(),
 			d->build_id.data(), d->build_id.size(),
 			RomFields::STRF_HEX_LOWER | RomFields::STRF_HEXDUMP_NO_SPACES | RomFields::STRF_MONOSPACE);
@@ -2130,4 +2130,4 @@ int ELF::loadFieldData(void)
 	return static_cast<int>(d->fields.count());
 }
 
-}
+} // namespace LibRomData

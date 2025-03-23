@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * PokemonMini.cpp: Pokémon Mini ROM reader.                               *
  *                                                                         *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -25,7 +25,7 @@ namespace LibRomData {
 class PokemonMiniPrivate final : public RomDataPrivate
 {
 public:
-	PokemonMiniPrivate(const IRpFilePtr &file);
+	explicit PokemonMiniPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -33,8 +33,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -47,20 +47,20 @@ ROMDATA_IMPL(PokemonMini)
 /** PokemonMiniPrivate **/
 
 /* RomDataInfo */
-const char *const PokemonMiniPrivate::exts[] = {
+const array<const char*, 1+1> PokemonMiniPrivate::exts = {{
 	".min",
 
 	nullptr
-};
-const char *const PokemonMiniPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> PokemonMiniPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-pokemon-mini-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo PokemonMiniPrivate::romDataInfo = {
-	"PokemonMini", exts, mimeTypes
+	"PokemonMini", exts.data(), mimeTypes.data()
 };
 
 PokemonMiniPrivate::PokemonMiniPrivate(const IRpFilePtr &file)
@@ -114,7 +114,11 @@ PokemonMini::PokemonMini(const IRpFilePtr &file)
 
 	if (!d->isValid) {
 		d->file.reset();
+		return;
 	}
+
+	// Is PAL?
+	d->isPAL = (d->romHeader.game_id[3] == 'P');
 }
 
 /**
@@ -176,12 +180,9 @@ const char *PokemonMini::systemName(unsigned int type) const
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"PokemonMini::systemName() array index optimization needs to be updated.");
 
-	static const char *const sysNames[4] = {
-		"Pok\xC3\xA9mon Mini",
-		"Pok\xC3\xA9mon Mini",
-		"Pkmn Mini",
-		nullptr
-	};
+	static const array<const char*, 4> sysNames = {{
+		"Pok\xC3\xA9mon Mini", "Pok\xC3\xA9mon Mini", "Pkmn Mini", nullptr
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -281,14 +282,14 @@ int PokemonMini::loadFieldData(void)
 	static constexpr array<uint8_t, 6> vec_empty_ff = {{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}};
 	static constexpr array<uint8_t, 6> vec_empty_00 = {{0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
 
-	auto vv_vectors = new RomFields::ListData_t(ARRAY_SIZE(vectors_names));
+	auto *const vv_vectors = new RomFields::ListData_t(ARRAY_SIZE(vectors_names));
 	uint32_t pc = 0x2100 + offsetof(PokemonMini_RomHeader, irqs);
 	for (unsigned int i = 0; i < vectors_names.size(); i++, pc += 6) {
 		auto &data_row = vv_vectors->at(i);
 		data_row.reserve(3);
 
 		// # (decimal)
-		data_row.emplace_back(rp_sprintf("%u", i));
+		data_row.push_back(fmt::to_string(i));
 
 		// Vector name
 		data_row.emplace_back(vectors_names[i]);
@@ -299,13 +300,13 @@ int PokemonMini::loadFieldData(void)
 			// Standard vector jump opcode.
 			uint32_t offset = (romHeader->irqs[i][5] << 8) | romHeader->irqs[i][4];
 			offset += pc + 3 + 3 - 1;
-			s_address = rp_sprintf("0x%04X", offset);
+			s_address = fmt::format(FSTR("0x{:0>4X}"), offset);
 		} else if (romHeader->irqs[i][0] == 0xF3) {
 			// JMPW without MOV U.
 			// Seen in some homebrew.
 			uint32_t offset = (romHeader->irqs[i][2] << 8) | romHeader->irqs[i][1];
 			offset += pc + 3 - 1;
-			s_address = rp_sprintf("0x%04X", offset);
+			s_address = fmt::format(FSTR("0x{:0>4X}"), offset);
 		} else if (!memcmp(&romHeader->irqs[i][0], vec_empty_ff.data(), vec_empty_ff.size()) ||
 			   !memcmp(&romHeader->irqs[i][0], vec_empty_00.data(), vec_empty_00.size())) {
 			// Empty vector.
@@ -313,21 +314,20 @@ int PokemonMini::loadFieldData(void)
 		} else {
 			// Not a standard jump opcode.
 			// Show the hexdump.
-			s_address = rp_sprintf("%02X %02X %02X %02X %02X %02X",
+			s_address = fmt::format(FSTR("{:0>2X} {:0>2X} {:0>2X} {:0>2X} {:0>2X} {:0>2X}"),
 				romHeader->irqs[i][0], romHeader->irqs[i][1],
 				romHeader->irqs[i][2], romHeader->irqs[i][3],
 				romHeader->irqs[i][4], romHeader->irqs[i][5]);
 		}
-		data_row.emplace_back(std::move(s_address));
+		data_row.push_back(std::move(s_address));
 	}
 
-	static const char *const vectors_headers[] = {
+	static const array<const char*, 3> vectors_headers = {{
 		NOP_C_("RomData|VectorTable", "#"),
 		NOP_C_("RomData|VectorTable", "Vector"),
 		NOP_C_("RomData|VectorTable", "Address"),
-	};
-	vector<string> *const v_vectors_headers = RomFields::strArrayToVector_i18n(
-		"RomData|VectorTable", vectors_headers, ARRAY_SIZE(vectors_headers));
+	}};
+	vector<string> *const v_vectors_headers = RomFields::strArrayToVector_i18n("RomData|VectorTable", vectors_headers);
 
 	RomFields::AFLD_PARAMS params(RomFields::RFT_LISTDATA_SEPARATE_ROW, 8);
 	params.headers = v_vectors_headers;
@@ -346,7 +346,7 @@ int PokemonMini::loadFieldData(void)
 int PokemonMini::loadMetaData(void)
 {
 	RP_D(PokemonMini);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -357,14 +357,11 @@ int PokemonMini::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
 	// Pokémon Mini ROM header.
 	const PokemonMini_RomHeader *const romHeader = &d->romHeader;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
-	// Title.
+	// Title
 	string title;
 	if (romHeader->game_id[3] == 'J') {
 		// Japanese title. Assume it's Shift-JIS.
@@ -374,10 +371,10 @@ int PokemonMini::loadMetaData(void)
 		// Assume other regions are cp1252.
 		title = cp1252_to_utf8(romHeader->title, sizeof(romHeader->title));
 	}
-	d->metaData->addMetaData_string(Property::Title, title, RomMetaData::STRF_TRIM_END);
+	d->metaData.addMetaData_string(Property::Title, title, RomMetaData::STRF_TRIM_END);
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

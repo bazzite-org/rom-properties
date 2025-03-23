@@ -31,7 +31,7 @@ namespace LibRpTexture {
 rp_image_ptr rp_image::dup(void) const
 {
 	RP_D(const rp_image);
-	const rp_image_backend *const backend = d->backend;
+	const rp_image_backend *const backend = d->backend.get();
 
 	const int width = backend->width;
 	const int height = backend->height;
@@ -39,7 +39,7 @@ rp_image_ptr rp_image::dup(void) const
 	assert(width > 0);
 	assert(height > 0);
 
-	const rp_image_ptr img = std::make_shared<rp_image>(width, height, format);
+	rp_image_ptr img = std::make_shared<rp_image>(width, height, format);
 	if (!img->isValid()) {
 		// Image is invalid. Return it immediately.
 		return img;
@@ -90,7 +90,7 @@ rp_image_ptr rp_image::dup(void) const
 rp_image_ptr rp_image::dup_ARGB32(void) const
 {
 	RP_D(const rp_image);
-	const rp_image_backend *const backend = d->backend;
+	const rp_image_backend *const backend = d->backend.get();
 
 	if (backend->format == Format::ARGB32) {
 		// Already in ARGB32.
@@ -172,7 +172,7 @@ rp_image_ptr rp_image::squared(void) const
 	// Add extra transparent columns/rows before
 	// converting to HBITMAP.
 	RP_D(const rp_image);
-	const rp_image_backend *const backend = d->backend;
+	const rp_image_backend *const backend = d->backend.get();
 
 	const int width = backend->width;
 	const int height = backend->height;
@@ -218,7 +218,7 @@ rp_image_ptr rp_image::squared(void) const
 		src_row_bytes = this->row_bytes();
 	} else {
 		// Using a temporary image.
-		const rp_image_backend *const tmp_backend = tmp_rp_image->d_ptr->backend;
+		const rp_image_backend *const tmp_backend = tmp_rp_image->d_ptr->backend.get();
 		src = static_cast<const uint8_t*>(tmp_backend->data());
 		src_stride = tmp_backend->stride;
 		src_row_bytes = tmp_rp_image->row_bytes();
@@ -312,7 +312,7 @@ rp_image_ptr rp_image::resized(int width, int height, Alignment alignment, uint3
 	}
 
 	RP_D(const rp_image);
-	const rp_image_backend *const backend = d->backend;
+	const rp_image_backend *const backend = d->backend.get();
 
 	const int orig_width = backend->width;
 	const int orig_height = backend->height;
@@ -514,7 +514,7 @@ rp_image_ptr rp_image::resized(int width, int height, Alignment alignment, uint3
 int rp_image::apply_chroma_key_cpp(uint32_t key)
 {
 	RP_D(rp_image);
-	rp_image_backend *const backend = d->backend;
+	rp_image_backend *const backend = d->backend.get();
 
 	assert(backend->format == Format::ARGB32);
 	if (backend->format != Format::ARGB32) {
@@ -580,7 +580,7 @@ rp_image_ptr rp_image::flip(FlipOp op) const
 	}
 
 	RP_D(const rp_image);
-	rp_image_backend *const backend = d->backend;
+	rp_image_backend *const backend = d->backend.get();
 
 	const int width = backend->width;
 	const int height = backend->height;
@@ -711,7 +711,7 @@ int rp_image::swizzle_cpp(const char *swz_spec)
 {
 	// TODO: Improve C performance.
 	RP_D(rp_image);
-	rp_image_backend *const backend = d->backend;
+	rp_image_backend *const backend = d->backend.get();
 	assert(backend->format == rp_image::Format::ARGB32);
 	if (backend->format != rp_image::Format::ARGB32) {
 		// ARGB32 is required.
@@ -737,10 +737,18 @@ int rp_image::swizzle_cpp(const char *swz_spec)
 #if SYS_BYTEORDER == SYS_LIL_ENDIAN
 	// LE: Rotate 8-bits right
 	swz_ch.u32 = (swz_ch.u32 >> 24) | (swz_ch.u32 <<  8);
+	swz_ch.u32 = be32_to_cpu(swz_ch.u32);
 #else /* SYS_BYTEORDER == SYS_BIG_ENDIAN */
 	// BE: Rotate 8-bits left
 	swz_ch.u32 = (swz_ch.u32 >>  8) | (swz_ch.u32 << 24);
 #endif /* SYS_BYTEORDER == SYS_LIL_ENDIAN */
+
+	// Channel indexes
+	// FIXME: Reverse for big-endian?
+	static constexpr unsigned int SWZ_CH_B = 0U;
+	static constexpr unsigned int SWZ_CH_G = 1U;
+	static constexpr unsigned int SWZ_CH_R = 2U;
+	static constexpr unsigned int SWZ_CH_A = 3U;
 
 	uint32_t *bits = static_cast<uint32_t*>(backend->data());
 	const unsigned int stride_diff = (backend->stride - this->row_bytes()) / sizeof(uint32_t);
@@ -749,11 +757,6 @@ int rp_image::swizzle_cpp(const char *swz_spec)
 		for (int x = width; x > 0; x--, bits++) {
 			u8_32 cur, swz;
 			cur.u32 = *bits;
-
-#define SWZ_CH_B 3
-#define SWZ_CH_G 2
-#define SWZ_CH_R 1
-#define SWZ_CH_A 0
 
 #define SWIZZLE_CHANNEL(n) do { \
 				switch (swz_ch.u8[n]) { \
@@ -826,7 +829,7 @@ int rp_image::unswizzle_YCoCg(void)
 {
 	// TODO: SSE-optimized version.
 	RP_D(rp_image);
-	rp_image_backend *const backend = d->backend;
+	rp_image_backend *const backend = d->backend.get();
 	assert(backend->format == rp_image::Format::ARGB32);
 	if (backend->format != rp_image::Format::ARGB32) {
 		// ARGB32 is required.
@@ -878,7 +881,7 @@ int rp_image::unswizzle_YCoCg_scaled(void)
 {
 	// TODO: SSE-optimized version.
 	RP_D(rp_image);
-	rp_image_backend *const backend = d->backend;
+	rp_image_backend *const backend = d->backend.get();
 	assert(backend->format == rp_image::Format::ARGB32);
 	if (backend->format != rp_image::Format::ARGB32) {
 		// ARGB32 is required.
@@ -937,7 +940,7 @@ int rp_image::unswizzle_AExp(void)
 {
 	// TODO: SSE-optimized version.
 	RP_D(rp_image);
-	rp_image_backend *const backend = d->backend;
+	rp_image_backend *const backend = d->backend.get();
 	assert(backend->format == rp_image::Format::ARGB32);
 	if (backend->format != rp_image::Format::ARGB32) {
 		// ARGB32 is required.

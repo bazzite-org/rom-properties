@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE4/KF5)                         *
  * RpQUrl.cpp: QUrl utility functions                                      *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -18,11 +18,11 @@ using LibRpBase::Config;
 using namespace LibRpFile;
 
 // Qt includes
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 #  include <QtCore/QStandardPaths>
-#else /* QT_VERSION < QT_VERSION_CHECK(5,0,0) */
+#else /* QT_VERSION < QT_VERSION_CHECK(5, 0, 0) */
 #  include <QtGui/QDesktopServices>
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,0,0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) */
 
 // C++ STL classes
 using std::string;
@@ -73,9 +73,9 @@ QUrl localizeQUrl(const QUrl &url)
 		if (!url_path.isEmpty() && url_path.at(0) == QChar(L'/')) {
 			url_path.remove(0, 1);
 		}
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 		const QString qs_local_filename = QStandardPaths::locate(QStandardPaths::DesktopLocation, url_path);
-#else /* QT_VERSION < QT_VERSION_CHECK(5,0,0) */
+#else /* QT_VERSION < QT_VERSION_CHECK(5, 0, 0) */
 		QString qs_local_filename = QDesktopServices::storageLocation(QDesktopServices::DesktopLocation);
 		if (!qs_local_filename.isEmpty()) {
 			if (qs_local_filename.at(qs_local_filename.size()-1) != QChar(L'/')) {
@@ -83,7 +83,7 @@ QUrl localizeQUrl(const QUrl &url)
 			}
 			qs_local_filename += url_path;
 		}
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,0,0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) */
 		return QUrl::fromLocalFile(qs_local_filename);
 	}
 
@@ -126,13 +126,13 @@ IRpFilePtr openQUrl(const QUrl &url, bool isThumbnail)
 
 	if (url.isEmpty()) {
 		// Empty URL. Nothing to do here.
-		return nullptr;
+		return {};
 	}
 
 	const QUrl localUrl = localizeQUrl(url);
 	if (localUrl.isEmpty()) {
 		// Unable to localize the URL.
-		return nullptr;
+		return {};
 	}
 
 	string s_local_filename;
@@ -148,15 +148,15 @@ IRpFilePtr openQUrl(const QUrl &url, bool isThumbnail)
 		const bool enableThumbnailOnNetworkFS = config->getBoolConfigOption(Config::BoolConfig::Options_EnableThumbnailOnNetworkFS);
 		if (!s_local_filename.empty()) {
 			// This is a local file. Check if it's on a "bad" file system.
-			if (FileSystem::isOnBadFS(s_local_filename.c_str(), enableThumbnailOnNetworkFS)) {
+			if (FileSystem::isOnBadFS(s_local_filename, enableThumbnailOnNetworkFS)) {
 				// This file is on a "bad" file system.
-				return nullptr;
+				return {};
 			}
 		} else {
 			// This is a remote file. Assume it's a "bad" file system.
 			if (!enableThumbnailOnNetworkFS) {
 				// Thumbnailing on network file systems is disabled.
-				return nullptr;
+				return {};
 			}
 		}
 	}
@@ -172,7 +172,7 @@ IRpFilePtr openQUrl(const QUrl &url, bool isThumbnail)
 		file = std::make_shared<RpFileKio>(url);
 #else /* !HAVE_RPFILE_KIO */
 		// Not supported...
-		return nullptr;
+		return {};
 #endif
 	}
 
@@ -183,5 +183,5 @@ IRpFilePtr openQUrl(const QUrl &url, bool isThumbnail)
 
 	// Unable to open the file...
 	// TODO: Return an error code?
-	return nullptr;
+	return {};
 }

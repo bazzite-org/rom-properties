@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE)                              *
  * AchievementsTab.cpp: Achievements tab for rp-config.                    *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -82,9 +82,9 @@ void AchievementsTab::reset(void)
 	treeWidget->setIconSize(QSize(iconSize, iconSize));
 
 	const Achievements *const pAch = Achievements::instance();
-	for (int i = 0; i < (int)Achievements::ID::Max; i++) {
+	for (int i = 0; i < static_cast<int>(Achievements::ID::Max); i++) {
 		// Is the achievement unlocked?
-		const Achievements::ID id = (Achievements::ID)i;
+		const Achievements::ID id = static_cast<Achievements::ID>(i);
 		const time_t timestamp = pAch->isUnlocked(id);
 		const bool unlocked = (timestamp != -1);
 
@@ -102,18 +102,18 @@ void AchievementsTab::reset(void)
 		treeWidgetItem->setData(1, Qt::DisplayRole, s_ach);
 		treeWidgetItem->setData(1, Qt::UserRole, unlocked);
 		if (unlocked) {
-			treeWidgetItem->setData(2, Qt::DisplayRole, QDateTime::fromMSecsSinceEpoch(timestamp * 1000));
+			treeWidgetItem->setData(2, Qt::DisplayRole, unixTimeToQDateTime(timestamp, false));
 		}
 	}
 
 	// Set column stretch modes.
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 	QHeaderView *const pHeader = treeWidget->header();
 	pHeader->setStretchLastSection(false);
 	pHeader->setSectionResizeMode(0, QHeaderView::ResizeToContents);
 	pHeader->setSectionResizeMode(1, QHeaderView::Stretch);
 	pHeader->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-#else /* QT_VERSION <= QT_VERSION_CHECK(5,0,0) */
+#else /* QT_VERSION <= QT_VERSION_CHECK(5, 0, 0) */
 	// Qt 4 doesn't have QHeaderView::setSectionResizeMode().
 	// We'll run a manual resize on each column initially.
 	for (int i = 0; i < 3; i++) {

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * EXE_p.hpp: DOS/Windows executable reader. (Private class)               *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -35,7 +35,6 @@ class EXEPrivate final : public LibRpBase::RomDataPrivate
 {
 public:
 	EXEPrivate(const LibRpFile::IRpFilePtr &file);
-	~EXEPrivate() final = default;
 
 private:
 	typedef RomDataPrivate super;
@@ -43,8 +42,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const std::array<const char*, (8*2)+1> exts;
+	static const std::array<const char*, 5+1> mimeTypes;
 	static const LibRpBase::RomDataInfo romDataInfo;
 
 public:
@@ -89,6 +88,14 @@ public:
 	} hdr;
 	#pragma pack()
 
+	// IMAGE_LOAD_CONFIG_DIRECTORY (PE)
+	union ImageLoadConfigDirectory {
+		uint32_t Size;
+		IMAGE_LOAD_CONFIG_DIRECTORY32 ilcd32;
+		IMAGE_LOAD_CONFIG_DIRECTORY64 ilcd64;
+	};
+	std::unique_ptr<ImageLoadConfigDirectory> ilcd;
+
 	// Resource reader
 	IResourceReaderPtr rsrcReader;
 
@@ -117,14 +124,13 @@ public:
 	static const std::array<const char*, 6> NE_TargetOSes;
 
 	/**
-	 * Load the redisent portion of NE header
+	 * Load the resident portion of NE header.
 	 * @return 0 on success; negative POSIX error code on error.
 	 */
 	int loadNEResident(void);
 
 	// Resident portion of NE header (up to the end of entry table)
 	rp::uvector<uint8_t> ne_resident;
-	bool ne_resident_loaded = false;
 	vhvc::span<const NE_Segment> ne_segment_table;
 	vhvc::span<const uint8_t> ne_resource_table;
 	vhvc::span<const char> ne_resident_name_table;
@@ -140,7 +146,6 @@ public:
 
 	// Contents of the non-resident name table (NE)
 	rp::uvector<char> ne_nonresident_name_table;
-	bool ne_nonresident_name_table_loaded = false;
 
 	/**
 	 * Load the NE resource table.
@@ -252,8 +257,6 @@ private:
 	std::vector<IMAGE_IMPORT_DIRECTORY> peImportDir;
 	// PE Import DLL Names (same order as the directory)
 	std::vector<std::string> peImportNames;
-	// Whether peImportDir and peImportNames were already loaded.
-	bool peImportDirLoaded = false;
 
 	/**
 	 * Read PE Import Directory (peImportDir) and DLL names (peImportNames).
@@ -321,12 +324,25 @@ public:
 	 */
 	int addFields_PE_Import(void);
 
+private:
+	/**
+	 * Load the IMAGE_LOAD_CONFIG_DIRECTORY.
+	 * @return 0 on success; negative POSIX error code on error. (-ENOENT if not found)
+	 */
+	int loadPEImageLoadConfigDirectory(void);
+
 public:
 	/**
 	 * Get the hybrid metadata pointer, if present.
 	 * @return Hybrid metadata pointer, or 0 if not present.
 	 */
 	uint64_t getHybridMetadataPointer(void);
+
+	/**
+	 * Get the Dependent Load Flags, if present.
+	 * @return Dependent Load Flags, or 0 if not present.
+	 */
+	uint16_t getDependentLoadFlags(void);
 };
 
-}
+} // namespace LibRomData

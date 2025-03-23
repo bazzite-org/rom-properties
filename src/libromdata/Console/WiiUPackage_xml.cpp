@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * WiiUPackage_xml.cpp: Wii U NUS Package reader. (XML parsing)            *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -63,9 +63,8 @@ extern int DelayLoad_test_TinyXML2(void);
 int WiiUPackagePrivate::loadSystemXml(XMLDocument &doc, const char *filename, const char *rootNode)
 {
 	assert(this->isValid);
-	assert(this->fst != nullptr);
 	assert(rootNode != nullptr);	// not checking in release builds
-	if (!this->isValid || !this->fst) {
+	if (!this->isValid) {
 		// Can't load the XML file.
 		return -EIO;
 	}
@@ -161,17 +160,20 @@ unsigned int WiiUPackagePrivate::parseUnsignedInt(const XMLElement *rootNode, co
 		return 0;
 
 	const char *attr = elem->Attribute("type");
-	if (!attr || strcmp(attr, "unsignedInt") != 0)
+	if (!attr || strcmp(attr, "unsignedInt") != 0) {
 		return 0;
+	}
 
 	attr = elem->Attribute("length");
-	assert(strcmp(attr, "4") == 0);
-	if (!attr || strcmp(attr, "4") != 0)
+	assert(attr && strcmp(attr, "4") == 0);
+	if (!attr || strcmp(attr, "4") != 0) {
 		return 0;
+	}
 
 	const char *const text = elem->GetText();
-	if (!text)
+	if (!text) {
 		return 0;
+	}
 
 	// Parse the value as an unsigned int.
 	char *endptr;
@@ -188,25 +190,30 @@ unsigned int WiiUPackagePrivate::parseUnsignedInt(const XMLElement *rootNode, co
  */
 uint64_t WiiUPackagePrivate::parseHexBinary(const XMLElement *rootNode, const char *name)
 {
-	if (!rootNode)
+	if (!rootNode) {
 		return 0;
+	}
 
 	const XMLElement *const elem = rootNode->FirstChildElement(name);
-	if (!elem)
+	if (!elem) {
 		return 0;
+	}
 
 	const char *attr = elem->Attribute("type");
-	if (!attr || strcmp(attr, "hexBinary") != 0)
+	if (!attr || strcmp(attr, "hexBinary") != 0) {
 		return 0;
+	}
 
 	attr = elem->Attribute("length");
-	assert(strcmp(attr, "4") == 0 || strcmp(attr, "8") == 0);
-	if (!attr || (strcmp(attr, "4") != 0 && strcmp(attr, "8") != 0))
+	assert(attr && (strcmp(attr, "4") == 0 || strcmp(attr, "8") == 0));
+	if (!attr || (strcmp(attr, "4") != 0 && strcmp(attr, "8") != 0)) {
 		return 0;
+	}
 
 	const char *const text = elem->GetText();
-	if (!text)
+	if (!text) {
 		return 0;
+	}
 
 	// Parse the value as a uint64_t.
 	char *endptr;
@@ -279,7 +286,7 @@ int WiiUPackagePrivate::addFields_System_XMLs(void)
 	if (!appRootNode && !cosRootNode && !metaRootNode) {
 		// Missing root elements from all three XMLs.
 		// TODO: Better error code.
-		//return -EIO;
+		return -EIO;
 	}
 
 	// Title (shortname), full title (longname), publisher
@@ -291,7 +298,7 @@ int WiiUPackagePrivate::addFields_System_XMLs(void)
 	// Most Wii U language codes match standard codes,
 	// except for "zht" ('hant') and "zhs" ('hans').
 	// Ordering matches Wii U meta.xml, which is likely the internal ordering.
-#define WiiU_LC_COUNT 12
+	static constexpr size_t WiiU_LC_COUNT = 12U;
 	struct xml_lc_map_t {
 		char xml_lc[4];	// LC in the XML file
 		uint32_t lc;	// Our LC
@@ -312,9 +319,9 @@ int WiiUPackagePrivate::addFields_System_XMLs(void)
 	}};
 
 	if (metaRootNode) {
-		const char *longnames[WiiU_LC_COUNT];
-		const char *shortnames[WiiU_LC_COUNT];
-		const char *publishers[WiiU_LC_COUNT];
+		array<const char*, WiiU_LC_COUNT> longnames;
+		array<const char*, WiiU_LC_COUNT> shortnames;
+		array<const char*, WiiU_LC_COUNT> publishers;
 		string longname_key = "longname_";
 		string shortname_key = "shortname_";
 		string publisher_key = "publisher_";
@@ -342,7 +349,7 @@ int WiiUPackagePrivate::addFields_System_XMLs(void)
 		RomFields::StringMultiMap_t *const pMap_longname = new RomFields::StringMultiMap_t();
 		RomFields::StringMultiMap_t *const pMap_shortname = new RomFields::StringMultiMap_t();
 		RomFields::StringMultiMap_t *const pMap_publisher = new RomFields::StringMultiMap_t();
-		for (int langID = 0; langID < (int)xml_lc_map.size(); langID++) {
+		for (int langID = 0; langID < static_cast<int>(xml_lc_map.size()); langID++) {
 			// Check for empty strings first.
 			if ((!longnames[langID] || longnames[langID][0] == '\0') &&
 			(!shortnames[langID] || shortnames[langID][0] == '\0') &&
@@ -432,10 +439,9 @@ int WiiUPackagePrivate::addFields_System_XMLs(void)
 	if (appRootNode) {
 		const unsigned int sdk_version = parseUnsignedInt(appRootNode, "sdk_version");
 		if (sdk_version != 0) {
-			char s_sdk_version[32];
-			snprintf(s_sdk_version, sizeof(s_sdk_version), "%u.%02u.%02u",
-				sdk_version / 10000, (sdk_version / 100) % 100, sdk_version % 100);
-			fields.addField_string(C_("WiiU", "SDK Version"), s_sdk_version);
+			fields.addField_string(C_("WiiU", "SDK Version"),
+				fmt::format(FSTR("{:d}.{:0>2d}.{:0>2d}"),
+					sdk_version / 10000, (sdk_version / 100) % 100, sdk_version % 100));
 		}
 	}
 
@@ -462,7 +468,7 @@ int WiiUPackagePrivate::addFields_System_XMLs(void)
 		// Maps directly to the region field.
 		const uint32_t region_code = parseHexBinary(metaRootNode, "region");
 
-		static const char *const wiiu_region_bitfield_names[] = {
+		static const array<const char*, 7> wiiu_region_bitfield_names = {{
 			NOP_C_("Region", "Japan"),
 			NOP_C_("Region", "USA"),
 			NOP_C_("Region", "Europe"),
@@ -470,9 +476,9 @@ int WiiUPackagePrivate::addFields_System_XMLs(void)
 			NOP_C_("Region", "China"),
 			NOP_C_("Region", "South Korea"),
 			NOP_C_("Region", "Taiwan"),
-		};
+		}};
 		vector<string> *const v_wiiu_region_bitfield_names = RomFields::strArrayToVector_i18n(
-			"Region", wiiu_region_bitfield_names, ARRAY_SIZE(wiiu_region_bitfield_names));
+			"Region", wiiu_region_bitfield_names);
 		fields.addField_bitfield(C_("RomData", "Region Code"),
 			v_wiiu_region_bitfield_names, 3, region_code);
 
@@ -489,7 +495,7 @@ int WiiUPackagePrivate::addFields_System_XMLs(void)
 			"pc_cob", "pc_grb", "pc_cgsrr", "pc_oflc",
 			/*"pc_reserved0", "pc_reserved1", "pc_reserved2", "pc_reserved3",*/
 		}};
-		static_assert(age_rating_nodes.size() == (int)RomFields::AgeRatingsCountry::MaxAllocated, "age_rating_nodes is out of sync with age_ratings_t");
+		static_assert(age_rating_nodes.size() == static_cast<size_t>(RomFields::AgeRatingsCountry::MaxAllocated), "age_rating_nodes is out of sync with age_ratings_t");
 
 		for (int i = static_cast<int>(age_ratings.size())-1; i >= 0; i--) {
 			if (!(valid_ratings & (1U << i))) {
@@ -547,16 +553,16 @@ int WiiUPackagePrivate::addFields_System_XMLs(void)
 			}
 		}
 
-		static const char *const controllers_bitfield_names[] = {
+		static const array<const char*, 6> controllers_bitfield_names = {{
 			NOP_C_("WiiU|Controller", "Nunchuk"),
 			NOP_C_("WiiU|Controller", "Classic"),
 			NOP_C_("WiiU|Controller", "Pro"),
 			NOP_C_("WiiU|Controller", "Balance Board"),
 			NOP_C_("WiiU|Controller", "USB Keyboard"),
 			NOP_C_("WiiU|Controller", "Gamepad"),
-		};
+		}};
 		vector<string> *const v_controllers_bitfield_names = RomFields::strArrayToVector_i18n(
-			"WiiU|Controller", controllers_bitfield_names, ARRAY_SIZE(controllers_bitfield_names));
+			"WiiU|Controller", controllers_bitfield_names);
 		fields.addField_bitfield(C_("WiiU", "Controllers"),
 			v_controllers_bitfield_names, 3, controllers);
 	}
@@ -598,10 +604,9 @@ int WiiUPackagePrivate::addMetaData_System_XMLs(void)
 	// Get the system language code and see if we have a matching title.
 	// NOTE: Using the same LC for all fields once we find a matching title.
 	string s_def_lc = SystemRegion::lcToString(SystemRegion::getLanguageCode());
-	char nodeName[16];
-	snprintf(nodeName, sizeof(nodeName), "shortname_%s", s_def_lc.c_str());
+	string nodeName = fmt::format(FSTR("shortname_{:s}"), s_def_lc);
 
-	const char *shortname = getText(metaRootNode, nodeName);
+	const char *shortname = getText(metaRootNode, nodeName.c_str());
 	if (!shortname) {
 		// Not valid. Check English.
 		shortname = getText(metaRootNode, "shortname_en");
@@ -625,18 +630,58 @@ int WiiUPackagePrivate::addMetaData_System_XMLs(void)
 	// Title
 	// TODO: Shortname vs. longname?
 	if (shortname) {
-		metaData->addMetaData_string(Property::Title, shortname);
+		metaData.addMetaData_string(Property::Title, shortname);
 	}
 
 	// Publisher
-	snprintf(nodeName, sizeof(nodeName), "publisher_%s", s_def_lc.c_str());
-	const char *const publisher = getText(metaRootNode, nodeName);
+	nodeName = fmt::format(FSTR("publisher_{:s}"), s_def_lc);
+	const char *const publisher = getText(metaRootNode, nodeName.c_str());
 	if (publisher) {
-		metaData->addMetaData_string(Property::Publisher, publisher);
+		metaData.addMetaData_string(Property::Publisher, publisher);
 	}
 
 	// System XML files read successfully.
 	return 0;
+}
+
+/**
+ * Get the product code from meta.xml, and application type from app.xml.
+ * @param pApplType	[out] Pointer to uint32_t for application type
+ * @return Product code, or empty string on error.
+ */
+string WiiUPackagePrivate::getProductCodeAndApplType_xml(uint32_t *pApplType)
+{
+	XMLDocument metaXml;
+	int retMeta = loadSystemXml(metaXml, "/meta/meta.xml", "menu");
+	if (retMeta != 0) {
+		// Unable to load meta.xml.
+		return {};
+	}
+
+	const XMLElement *const metaRootNode = metaXml.FirstChildElement("menu");
+	if (!metaRootNode) {
+		// No root node.
+		return {};
+	}
+
+	const char *const product_code = getText(metaRootNode, "product_code");
+
+	if (pApplType) {
+		// Get the application type.
+		XMLDocument appXml;
+		int retApp = loadSystemXml(appXml, "/code/app.xml", "app");
+		if (retApp == 0) {
+			const XMLElement *const appRootNode = appXml.FirstChildElement("app");
+			if (appRootNode) {
+				*pApplType = parseHexBinary(appRootNode, "app_type");
+			}
+		} else {
+			// Unable to load app.xml.
+			*pApplType = 0;
+		}
+	}
+
+	return (product_code) ? product_code : string();
 }
 
 }

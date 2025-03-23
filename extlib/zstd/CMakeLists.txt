@@ -1,5 +1,5 @@
 # zstd: Fast compression library.
-PROJECT(zstd VERSION 1.5.6 LANGUAGES C ASM)
+PROJECT(zstd VERSION 1.5.7 LANGUAGES C ASM)
 
 # rom-properties: Enable multithreading.
 SET(ZSTD_MULTITHREAD ON)
@@ -187,12 +187,6 @@ IF(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
 		UNSET(DEBUG_FILENAME)
 	ENDIF(INSTALL_DEBUG)
 ENDIF(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
-
-# Unix: Add -fpic/-fPIC in order to use this static library in plugins.
-IF(UNIX AND NOT APPLE)
-	SET(CMAKE_C_FLAGS	"${CMAKE_C_FLAGS} -fpic -fPIC")
-	SET(CMAKE_CXX_FLAGS	"${CMAKE_CXX_FLAGS} -fpic -fPIC")
-ENDIF(UNIX AND NOT APPLE)
 
 # Clang: zstd uses __declspec() regardless of compiler or OS.
 IF(CMAKE_CXX_COMPILER_ID MATCHES "(Apple)?Clang")

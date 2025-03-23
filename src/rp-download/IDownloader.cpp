@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (rp-download)                      *
  * IDownloader.cpp: Downloader interface.                                  *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -182,7 +182,7 @@ struct inih_ctx {
 	const char *field_name;
 	char ret_value[64];
 
-	inih_ctx(const char *field_name = nullptr)
+	explicit inih_ctx(const char *field_name = nullptr)
 		: field_name(field_name)
 	{
 		ret_value[0] = '\0';
@@ -249,10 +249,12 @@ tstring IDownloader::getOSRelease(void)
 	}
 	s_os_release += _T(' ');
 
-	// Version number.
-	TCHAR buf[32];
-	_sntprintf(buf, _countof(buf), _T("%lu.%lu"), osvi.dwMajorVersion, osvi.dwMinorVersion);
-	s_os_release += buf;
+	// Version number
+	if (osvi.dwMajorVersion == 10 && osvi.dwBuildNumber >= 20000) {
+		// Windows 11
+		osvi.dwMajorVersion = 11;
+	}
+	s_os_release += fmt::format(FSTR(_T("{:d}.{:d}")), osvi.dwMajorVersion, osvi.dwMinorVersion);
 
 #  ifdef _WIN64
 	s_os_release += _T("; Win64");
@@ -264,8 +266,8 @@ tstring IDownloader::getOSRelease(void)
 		HMODULE hKernel32 = GetModuleHandle(_T("kernel32.dll"));
 		assert(hKernel32 != nullptr);
 		if (hKernel32) {
-			typedef BOOL (WINAPI *PFNISWOW64PROCESS)(HANDLE hProcess, PBOOL Wow64Process);
-			PFNISWOW64PROCESS pfnIsWow64Process = (PFNISWOW64PROCESS)GetProcAddress(hKernel32, "IsWow64Process");
+			typedef BOOL (WINAPI *pfnIsWow64Process_t)(HANDLE hProcess, PBOOL Wow64Process);
+			pfnIsWow64Process_t pfnIsWow64Process = (pfnIsWow64Process_t)GetProcAddress(hKernel32, "IsWow64Process");
 
 			if (pfnIsWow64Process) {
 				BOOL bIsWow64Process = FALSE;
@@ -307,7 +309,9 @@ tstring IDownloader::getOSRelease(void)
 	}
 	if (!ctx.field_name) {
 		// No field name...
-		fclose(f_in);
+		if (f_in) {
+			fclose(f_in);
+		}
 		return {};
 	}
 
@@ -425,10 +429,8 @@ void IDownloader::createUserAgent(void)
 	Gestalt(gestaltSystemVersionMinor, &minor);
 	//Gestalt(gestaltSystemVersionBugFix, &bugfix);
 
-	char buf[32];
-	snprintf(buf, sizeof(buf), "%d.%d", major, minor);
 	m_userAgent += _T(" (Macintosh; ") _T(MAC_CPU) _T(" Mac OS X ");
-	m_userAgent += buf;
+	m_userAgent += fmt::format(FSTR("{:d}.{:d}"), major, minor);
 	m_userAgent += _T(')');
 #elif defined(__unix__)
 	// Generic UNIX fallback.

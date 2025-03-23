@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpbase)                        *
  * RomData.cpp: ROM data base class.                                       *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth                                  *
+ * Copyright (c) 2016-2025 by David Korth                                  *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -13,6 +13,7 @@
 // Other rom-properties libraries
 #include "libi18n/i18n.h"
 #include "libcachecommon/CacheKeys.hpp"
+#include "librpfile/FileSystem.hpp"
 using namespace LibRpFile;
 using namespace LibRpText;
 using namespace LibRpTexture;
@@ -37,52 +38,44 @@ RomDataPrivate::RomDataPrivate(const IRpFilePtr &file, const RomDataInfo *pRomDa
 	, mimeType(nullptr)
 	, fileType(RomData::FileType::ROM_Image)
 	, isValid(false)
+	, isPAL(false)
 	, isCompressed(false)
 	, file(file)
-	, filename(nullptr)
-#ifdef _WIN32
-	, filenameW(nullptr)
-#endif /* _WIN32 */
-	, metaData(nullptr)
 {
 	assert(pRomDataInfo != nullptr);
 
 	// Initialize i18n.
 	rp_i18n_init();
 
-	if (this->file) {
-		// A file was specified. Copy important information.
-		this->isCompressed = this->file->isCompressed();
+	if (!this->file) {
+		// No file...
+		return;
+	}
+
+	// A file was specified. Copy important information.
+	this->isCompressed = this->file->isCompressed();
 
 #ifdef _WIN32
-		// If this is RpFile, get the UTF-16 filename directly.
-		RpFile *const rpFile = dynamic_cast<RpFile*>(this->file.get());
-		if (rpFile) {
-			const wchar_t *const filenameW = rpFile->filenameW();
-			if (filenameW) {
-				this->filenameW = wcsdup(filenameW);
-			}
+	// If this is RpFile, get the UTF-16 filename directly.
+	RpFile *const rpFile = dynamic_cast<RpFile*>(this->file.get());
+	if (rpFile) {
+		const wchar_t *const filenameW = rpFile->filenameW();
+		if (filenameW) {
+			this->filenameW.assign(filenameW);
 		}
+	}
 #endif /* _WIN32 */
 
-		// TODO: Don't set if filenameW was set?
-		const char *const filename = this->file->filename();
-		if (filename) {
-			this->filename = strdup(filename);
-		}
+	// TODO: Don't set if filenameW was set?
+	const char *const filename = this->file->filename();
+	if (filename) {
+		this->filename.assign(filename);
 	}
 }
 
-RomDataPrivate::~RomDataPrivate()
-{
-	delete metaData;
-	free(filename);
-#ifdef _WIN32
-	free(filenameW);
-#endif /* _WIN32 */
-}
+/** Convenience functions **/
 
-/** Convenience functions. **/
+/** External image URL functions **/
 
 /**
  * Get the GameTDB URL for a given game.
@@ -98,7 +91,7 @@ string RomDataPrivate::getURL_GameTDB(
 	const char *region, const char *gameID,
 	const char *ext)
 {
-	return rp_sprintf("https://art.gametdb.com/%s/%s/%s/%s%s",
+	return fmt::format(FSTR("https://art.gametdb.com/{:s}/{:s}/{:s}/{:s}{:s}"),
 		system, type, region, gameID, ext);
 }
 
@@ -116,7 +109,7 @@ string RomDataPrivate::getCacheKey_GameTDB(
 	const char *region, const char *gameID,
 	const char *ext)
 {
-	return rp_sprintf("%s/%s/%s/%s%s",
+	return fmt::format(FSTR("{:s}/{:s}/{:s}/{:s}{:s}"),
 		system, type, region, gameID, ext);
 }
 
@@ -136,9 +129,9 @@ string RomDataPrivate::getURL_RPDB(
 {
 	// Game ID may need to be urlencoded.
 	const string gameID_urlencode = LibCacheCommon::urlencode(gameID);
-	return rp_sprintf("https://rpdb.gerbilsoft.com/%s/%s/%s%s%s%s",
+	return fmt::format(FSTR("https://rpdb.gerbilsoft.com/{:s}/{:s}/{:s}{:s}{:s}{:s}"),
 		system, type, (region ? region : ""), (region ? "/" : ""),
-		gameID_urlencode.c_str(), ext);
+		gameID_urlencode, ext);
 }
 
 /**
@@ -155,7 +148,7 @@ string RomDataPrivate::getCacheKey_RPDB(
 	const char *region, const char *gameID,
 	const char *ext)
 {
-	return rp_sprintf("%s/%s/%s%s%s%s",
+	return fmt::format(FSTR("{:s}/{:s}/{:s}{:s}{:s}{:s}"),
 		system, type, (region ? region : ""), (region ? "/" : ""),
 		gameID, ext);
 }
@@ -257,6 +250,8 @@ const RomData::ImageSizeDef *RomDataPrivate::selectBestSize(const vector<RomData
 
 	return ret;
 }
+
+/** Time conversion functions **/
 
 /**
  * Convert an ASCII release date in YYYYMMDD format to Unix time_t.
@@ -381,7 +376,7 @@ time_t RomDataPrivate::bcd_to_unix_time(const uint8_t *bcd_tm, size_t size)
  */
 time_t RomDataPrivate::pvd_time_to_unix_time(const char pvd_time[16], int8_t tz_offset)
 {
-	// TODO: Verify tz_offset range? [-48,+52]
+	// TODO: Verify tz_offset range? [-48, +52]
 	assert(pvd_time != nullptr);
 	if (!pvd_time)
 		return -1;
@@ -395,7 +390,7 @@ time_t RomDataPrivate::pvd_time_to_unix_time(const char pvd_time[16], int8_t tz_
 	// - mm: Minute
 	// - ss: Second
 	// - cc: Centisecond (not supported in UNIX time)
-	// - z: (int8) Timezone offset in 15min intervals: [0, 100] -> [-48, 52]
+	// - z: (int8) Timezone offset in 15min intervals: [0, 100] -> [-48, +52]
 	//   - -48: GMT-1200
 	//   -  52: GMT+1300
 
@@ -439,13 +434,103 @@ time_t RomDataPrivate::pvd_time_to_unix_time(const char pvd_time[16], int8_t tz_
 	// Convert to UTC using the timezone offset.
 	// NOTE: Timezone offset is negative for west of GMT,
 	// so we need to subtract it from the UNIX timestamp.
-	// NOTE: Restricting to [-52, 52] as per the Linux kernel's isofs module.
+	// NOTE: Restricting to [-52, +52] as per the Linux kernel's isofs module.
 	// TODO: Return the timezone offset separately.
 	if (-52 <= tz_offset && tz_offset <= 52) {
 		unixtime -= (static_cast<int>(tz_offset) * (15*60));
 	}
 	return unixtime;
 }
+
+/** Functions for RomData subclasses that handle directories **/
+
+/**
+ * Is a directory supported by this class?
+ * This version checks that *all* of the specified files are found.
+ *
+ * @tparam CharType Character type (char for UTF-8; wchar_t for Windows UTF-16)
+ * @param path Directory to check
+ * @param filenames_to_check Array of filenames to check
+ * @param size Size of filenames_to_check
+ * @return True if all of the files are found; false if any files are missing.
+ */
+template<typename CharType>
+bool RomDataPrivate::T_isDirSupported_allFiles_static(const CharType *path, const CharType *const *filenames_to_check, size_t size)
+{
+	assert(path != nullptr);
+	assert(path[0] != '\0');
+	if (!path || path[0] == '\0') {
+		// No path specified.
+		return false;
+	}
+
+	std::basic_string<CharType> s_path(path);
+	s_path += DIR_SEP_CHR;
+	const size_t path_orig_size = s_path.size();
+
+	// Check for the required files.
+	for (; size > 0; filenames_to_check++, size--) {
+		s_path.resize(path_orig_size);
+		s_path += *filenames_to_check;
+
+		if (FileSystem::access(s_path.c_str(), R_OK) != 0) {
+			// File is missing.
+			return false;
+		}
+	}
+
+	// All files are present.
+	return true;
+}
+
+template bool RomDataPrivate::T_isDirSupported_allFiles_static<char>(const char *path, const char *const *filenames_to_check, size_t size);
+#if defined(_WIN32) && defined(_UNICODE)
+template bool RomDataPrivate::T_isDirSupported_allFiles_static<wchar_t>(const wchar_t *path, const wchar_t *const *filenames_to_check, size_t size);
+#endif /* defined(_WIN32) && defined(_UNICODE) */
+
+/**
+ * Is a directory supported by this class?
+ * This version checks that *any* of the specified files are found.
+ *
+ * @tparam CharType Character type (char for UTF-8; wchar_t for Windows UTF-16)
+ * @param path Directory to check
+ * @param filenames_to_check Array of filenames to check
+ * @param size Size of filenames_to_check
+ * @return True if any of the files are found; false if all files are missing.
+ */
+template<typename CharType>
+bool RomDataPrivate::T_isDirSupported_anyFile_static(const CharType *path, const CharType *const *filenames_to_check, size_t size)
+{
+	assert(path != nullptr);
+	assert(path[0] != '\0');
+	if (!path || path[0] == '\0') {
+		// No path specified.
+		return false;
+	}
+
+	std::basic_string<CharType> s_path(path);
+	s_path += DIR_SEP_CHR;
+	const size_t path_orig_size = s_path.size();
+
+	// Check for the required files.
+	for (; size > 0; filenames_to_check++, size--) {
+		s_path.resize(path_orig_size);
+		s_path += *filenames_to_check;
+
+		if (FileSystem::access(s_path.c_str(), R_OK) != 0) {
+			// Found a matching file.
+			return true;
+		}
+	}
+
+	// None of the files were found.
+	return false;
+}
+
+template bool RomDataPrivate::T_isDirSupported_anyFile_static<char>(const char *path, const char *const *filenames_to_check, size_t size);
+#if defined(_WIN32) && defined(_UNICODE)
+template bool RomDataPrivate::T_isDirSupported_anyFile_static<wchar_t>(const wchar_t *path, const wchar_t *const *filenames_to_check, size_t size);
+#endif /* defined(_WIN32) && defined(_UNICODE) */
 
 /** RomData **/
 
@@ -519,7 +604,7 @@ const char *RomData::filename(void) const
 {
 	// TODO: filenameW() variant on Windows?
 	RP_D(const RomData);
-	return (d->filename != nullptr && d->filename[0] != '\0') ? d->filename : nullptr;
+	return (likely(!d->filename.empty())) ? d->filename.c_str() : nullptr;
 }
 
 /**
@@ -566,7 +651,7 @@ const char *RomData::fileType_to_string(FileType fileType)
 		fileType = FileType::Unknown;
 	}
 
-	static const array<const char*, (int)FileType::Max> fileType_names = {{
+	static const array<const char*, static_cast<size_t>(FileType::Max)> fileType_names = {{
 		// FileType::Unknown
 		NOP_C_("RomData|FileType", "(unknown file type)"),
 		// tr: FileType::ROM_Image
@@ -629,7 +714,7 @@ const char *RomData::fileType_to_string(FileType fileType)
 		NOP_C_("RomData|FileType", "Ticket"),
 	}};
  
-	const char *const s_fileType = fileType_names[(int)fileType];
+	const char *const s_fileType = fileType_names[static_cast<size_t>(fileType)];
 	assert(s_fileType != nullptr);
 	return pgettext_expr("RomData|FileType", s_fileType);
 }
@@ -653,6 +738,18 @@ const char *RomData::mimeType(void) const
 {
 	RP_D(const RomData);
 	return d->mimeType;
+}
+
+/**
+ * Is this a PAL-region title?
+ * Mostly used to select between US/GB flags in the
+ * language dropdown box for multi-language titles.
+ * @return True if it's definitely PAL; false if not or unknown.
+ */
+bool RomData::isPAL(void) const
+{
+	RP_D(const RomData);
+	return d->isPAL;
 }
 
 /**
@@ -804,8 +901,9 @@ const RomFields *RomData::fields(void) const
 		// Data has not been loaded.
 		// Load it now.
 		int ret = const_cast<RomData*>(this)->loadFieldData();
-		if (ret < 0)
+		if (ret < 0) {
 			return nullptr;
+		}
 	}
 	return &d->fields;
 }
@@ -817,14 +915,15 @@ const RomFields *RomData::fields(void) const
 const RomMetaData *RomData::metaData(void) const
 {
 	RP_D(const RomData);
-	if (!d->metaData || d->metaData->empty()) {
+	if (d->metaData.empty()) {
 		// Data has not been loaded.
 		// Load it now.
 		int ret = const_cast<RomData*>(this)->loadMetaData();
-		if (ret < 0)
+		if (ret < 0) {
 			return nullptr;
+		}
 	}
-	return d->metaData;
+	return &d->metaData;
 }
 
 /**
@@ -869,8 +968,9 @@ rp_image_const_ptr RomData::image(ImageType imageType) const
 rp_image_const_ptr RomData::mipmap(int mipmapLevel) const
 {
 	assert(mipmapLevel >= 0);
-	if (mipmapLevel < 0)
+	if (mipmapLevel < 0) {
 		return nullptr;
+	}
 
 	// TODO: Check supportedImageTypes()?
 
@@ -899,29 +999,20 @@ rp_image_const_ptr RomData::mipmap(int mipmapLevel) const
  * try to get the size that most closely matches the
  * requested size.
  *
- * @param imageType	[in]     Image type.
- * @param pExtURLs	[out]    Output vector.
+ * @param imageType	[in]     Image type
+ * @param extURLs	[out]    Output vector
  * @param size		[in,opt] Requested image size. This may be a requested
  *                               thumbnail size in pixels, or an ImageSizeType
  *                               enum value.
  * @return 0 on success; negative POSIX error code on error.
  */
-int RomData::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
+int RomData::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) const
 {
-	assert(imageType >= IMG_EXT_MIN && imageType <= IMG_EXT_MAX);
-	if (imageType < IMG_EXT_MIN || imageType > IMG_EXT_MAX) {
-		// ImageType is out of range.
-		return -EINVAL;
-	}
-	assert(pExtURLs != nullptr);
-	if (!pExtURLs) {
-		// No vector.
-		return -EINVAL;
-	}
+	RP_UNUSED(size);
+	extURLs.clear();
+	ASSERT_extURLs(imageType);
 
 	// No external URLs by default.
-	RP_UNUSED(size);
-	pExtURLs->clear();
 	return -ENOENT;
 }
 
@@ -1027,9 +1118,9 @@ int RomData::doRomOp(int id, RomOpParams *pParams)
 	// TODO: Function to retrieve only a single RomOp.
 	const vector<RomOp> v_ops = romOps_int();
 	assert(id >= 0);
-	assert(id < (int)v_ops.size());
+	assert(id < static_cast<int>(v_ops.size()));
 	assert(pParams != nullptr);
-	if (id < 0 || id >= (int)v_ops.size() || !pParams) {
+	if (id < 0 || id >= static_cast<int>(v_ops.size()) || !pParams) {
 		return -EINVAL;
 	}
 
@@ -1041,7 +1132,7 @@ int RomData::doRomOp(int id, RomOpParams *pParams)
 		closeFileAfter = true;
 		IRpFilePtr file;
 #ifdef _WIN32
-		if (d->filenameW) {
+		if (likely(!d->filenameW.empty())) {
 			file = std::make_shared<RpFile>(d->filenameW, RpFile::FM_OPEN_WRITE);
 		} else
 #endif /* _WIN32 */

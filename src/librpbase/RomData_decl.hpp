@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpbase)                        *
  * RomData_decl.hpp: ROM data base class. (Subclass macros)                *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * Copyright (c) 2016-2018 by Egor.                                        *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
@@ -24,20 +24,44 @@ namespace LibRpBase {
 
 /**
  * Initial declaration for a RomData subclass.
- * Declares functions common to all RomData subclasses.
+ *
+ * No constructor is included with this version.
+ * ROMDATA_DECL_COMMON_FNS() must be used afterwards.
+ *
  * @param klass Class name
  */
-#define ROMDATA_DECL_BEGIN(klass) \
+#define ROMDATA_DECL_BEGIN_NO_CTOR(klass) \
 class klass##Private; \
 class klass final : public LibRpBase::RomData { \
-public: \
-	explicit klass(const LibRpFile::IRpFilePtr &file); \
-	~klass() final = default; \
 private: \
 	typedef RomData super; \
 	friend class klass##Private; \
 	RP_DISABLE_COPY(klass); \
-\
+
+/**
+ * Default constructor for a RomData subclass.
+ */
+#define ROMDATA_DECL_CTOR_DEFAULT(klass) \
+public: \
+	/**
+	 * Read a ROM image. \
+	 * \
+	 * A ROM image must be opened by the caller. The file handle \
+	 * will be ref()'d and must be kept open in order to load \
+	 * data from the ROM image. \
+	 * \
+	 * To close the file, either delete this object or call close(). \
+	 * \
+	 * NOTE: Check isValid() to determine if this is a valid ROM. \
+	 * \
+	 * @param file Open ROM image \
+	 */ \
+	explicit klass(const LibRpFile::IRpFilePtr &file);
+
+/**
+ * Common functions for a RomData subclass.
+ */
+#define ROMDATA_DECL_COMMON_FNS() \
 public: \
 	/** \
 	 * Is a ROM image supported by this class? \
@@ -74,6 +98,59 @@ protected: \
 	 */ \
 	RP_LIBROMDATA_LOCAL \
 	int loadFieldData(void) final;
+
+/**
+ * Initial declaration for a RomData subclass.
+ * Declares functions common to all RomData subclasses.
+ * @param klass Class name
+ */
+#define ROMDATA_DECL_BEGIN(klass) \
+ROMDATA_DECL_BEGIN_NO_CTOR(klass) \
+ROMDATA_DECL_CTOR_DEFAULT(klass) \
+ROMDATA_DECL_COMMON_FNS()
+
+/**
+ * RomData constructors for subclasses that handle directories.
+ * [INTERNAL; Use ROMDATA_DECL_CTOR_DIRECTORY() instead.]
+ *
+ * NOTE: Only static isDirSupported functions are provided.
+ */
+#define T_ROMDATA_DECL_CTOR_DIRECTORY(klass, CharType) \
+public: \
+	/** \
+	 * Read a directory. (for application packages, extracted file systems, etc.) \
+	 * \
+	 * NOTE: Check isValid() to determine if the directory is supported by this class. \
+	 * \
+	 * @param path Local directory path (char for UTF-8, wchar_t for Windows UTF-16) \
+	 */ \
+	klass(const CharType *path); \
+\
+	/** \
+	 * Is a directory supported by this class? \
+	 * @param path Directory to check \
+	 * @return Class-specific system ID (>= 0) if supported; -1 if not. \
+	 */ \
+	static int isDirSupported_static(const CharType *path); \
+\
+	/** \
+	 * Is a directory supported by this class? \
+	 * @param path Directory to check \
+	 * @return Class-specific system ID (>= 0) if supported; -1 if not. \
+	 */ \
+	static inline int isDirSupported_static(const std::basic_string<CharType> &path) \
+	{ \
+		return isDirSupported_static(path.c_str()); \
+	}
+
+#if defined(_WIN32) && defined(_UNICODE)
+#  define ROMDATA_DECL_CTOR_DIRECTORY(klass) \
+	T_ROMDATA_DECL_CTOR_DIRECTORY(klass, char) \
+	T_ROMDATA_DECL_CTOR_DIRECTORY(klass, wchar_t)
+#else /* !defined(_WIN32) || !defined(_UNICODE) */
+#  define ROMDATA_DECL_CTOR_DIRECTORY(klass) \
+	T_ROMDATA_DECL_CTOR_DIRECTORY(klass, char)
+#endif /* defined(_WIN32) && defined(_UNICODE) */
 
 /**
  * RomData subclass function declaration for loading metadata properties.
@@ -192,14 +269,14 @@ public: \
 	 * try to get the size that most closely matches the \
 	 * requested size. \
 	 * \
-	 * @param imageType     [in]     Image type. \
-	 * @param pExtURLs      [out]    Output vector. \
+	 * @param imageType     [in]     Image type \
+	 * @param extURLs       [out]    Output vector \
 	 * @param size          [in,opt] Requested image size. This may be a requested \
 	 *                               thumbnail size in pixels, or an ImageSizeType \
 	 *                               enum value. \
 	 * @return 0 on success; negative POSIX error code on error. \
 	 */ \
-	int extURLs(ImageType imageType, std::vector<ExtURL> *pExtURLs, int size = IMAGE_SIZE_DEFAULT) const final;
+	int extURLs(ImageType imageType, std::vector<ExtURL> &extURLs, int size = IMAGE_SIZE_DEFAULT) const final;
 
 /**
  * RomData subclass function declaration for loading the animated icon.
@@ -363,16 +440,11 @@ std::vector<RomData::ImageSizeDef> klass::supportedImageSizes(ImageType imageTyp
 	} \
 } while (0)
 
-#define ASSERT_extURLs(imageType, pExtURLs) do { \
+#define ASSERT_extURLs(imageType) do { \
 	assert((imageType) >= IMG_EXT_MIN && (imageType) <= IMG_EXT_MAX); \
 	if ((imageType) < IMG_EXT_MIN || (imageType) > IMG_EXT_MAX) { \
 		/* ImageType is out of range. */ \
 		return -ERANGE; \
-	} \
-	assert((pExtURLs) != nullptr); \
-	if (!(pExtURLs)) { \
-		/* No vector. */ \
-		return -EINVAL; \
 	} \
 } while (0)
 
@@ -403,5 +475,5 @@ std::vector<RomData::ImageSizeDef> klass::supportedImageSizes(ImageType imageTyp
 	} \
 	\
 	(pImage) = (func)(); \
-	return ((bool)pImage ? 0 : -EIO); \
+	return (pImage) ? 0 : -EIO; \
 } while (0)

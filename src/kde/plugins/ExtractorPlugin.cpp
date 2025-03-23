@@ -8,7 +8,7 @@
  * most of the important code is split out into libromdata.so, so the      *
  * forwarder version is unnecessary.                                       *
  *                                                                         *
- * Copyright (c) 2018-2024 by David Korth.                                 *
+ * Copyright (c) 2018-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -16,11 +16,11 @@
 #include "check-uid.hpp"
 
 #include <QtCore/qglobal.h>
-#if QT_VERSION >= QT_VERSION_CHECK(7,0,0)
+#if QT_VERSION >= QT_VERSION_CHECK(7, 0, 0)
 #  error Update for new Qt!
-#elif QT_VERSION >= QT_VERSION_CHECK(6,0,0)
+#elif QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #  include "ExtractorPluginKF6.hpp"
-#elif QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#elif QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 #  include "ExtractorPluginKF5.hpp"
 #else
 #  error Qt is too old!
@@ -78,10 +78,7 @@ void ExtractorPlugin::extract_properties(KFileMetaData::ExtractionResult *result
 	}
 
 	// Process the metadata.
-	const auto iter_end = metaData->cend();
-	for (auto iter = metaData->cbegin(); iter != iter_end; ++iter) {
-		const RomMetaData::MetaData &prop = *iter;
-
+	for (const RomMetaData::MetaData &prop : *metaData) {
 		// RomMetaData's property indexes match KFileMetaData.
 		// No conversion is necessary.
 		switch (prop.type) {
@@ -115,30 +112,25 @@ void ExtractorPlugin::extract_properties(KFileMetaData::ExtractionResult *result
 				LibRpBase::Property prop_name = prop.name;
 				// NOTE: kfilemetadata_version.h was added in KF5 5.94.0.
 				// Using kcoreaddons_version.h instead.
-#if KCOREADDONS_VERSION < QT_VERSION_CHECK(5,53,0)
+#if KCOREADDONS_VERSION < QT_VERSION_CHECK(5, 53, 0)
 				if (prop_name == LibRpBase::Property::Description) {
 					// KF5 5.53 added Description.
 					// Fall back to Subject since Description isn't available.
 					prop_name = LibRpBase::Property::Subject;
 				}
-#endif /* KCOREADDONS_VERSION < QT_VERSION_CHECK(5,53,0) */
+#endif /* KCOREADDONS_VERSION < QT_VERSION_CHECK(5, 53, 0) */
 
-				const string *str = prop.data.str;
-				if (str) {
-					result->add(static_cast<KFileMetaData::Property::Property>(prop_name), U82Q(*str));
+				if (prop.data.str && prop.data.str[0] != '\0') {
+					result->add(static_cast<KFileMetaData::Property::Property>(prop_name), U82Q(prop.data.str));
 				}
 				break;
 			}
 
 			case PropertyType::Timestamp: {
 				// TODO: Verify timezone handling.
-				// NOTE: fromMSecsSinceEpoch() with TZ spec was added in Qt 5.2.
-				// Maybe write a wrapper function? (RomDataView uses this, too.)
 				// NOTE: Some properties might need the full QDateTime.
 				// CreationDate seems to work fine with just QDate.
-				QDateTime dateTime;
-				dateTime.setTimeSpec(Qt::UTC);
-				dateTime.setMSecsSinceEpoch((qint64)prop.data.timestamp * 1000);
+				const QDateTime dateTime = unixTimeToQDateTime(prop.data.timestamp, true);
 				result->add(static_cast<KFileMetaData::Property::Property>(prop.name),
 					dateTime.date());
 				break;
@@ -158,7 +150,7 @@ void ExtractorPlugin::extract_properties(KFileMetaData::ExtractionResult *result
 	}
 }
 
-#if KCOREADDONS_VERSION >= QT_VERSION_CHECK(5,76,0)
+#if KCOREADDONS_VERSION >= QT_VERSION_CHECK(5, 76, 0)
 void ExtractorPlugin::extract_image(KFileMetaData::ExtractionResult *result, RomData *romData)
 {
 	// TODO: Get external images. For now, only using internal images.
@@ -178,7 +170,7 @@ void ExtractorPlugin::extract_image(KFileMetaData::ExtractionResult *result, Rom
 	Q_UNUSED(result)
 	Q_UNUSED(romData)
 }
-#endif /* KCOREADDONS_VERSION >= QT_VERSION_CHECK(5,76,0) */
+#endif /* KCOREADDONS_VERSION >= QT_VERSION_CHECK(5, 76, 0) */
 
 void ExtractorPlugin::extract(ExtractionResult *result)
 {
@@ -189,23 +181,23 @@ void ExtractorPlugin::extract(ExtractionResult *result)
 	}
 
 	// Which attributes are required?
-#if KCOREADDONS_VERSION >= QT_VERSION_CHECK(5,76,0)
+#if KCOREADDONS_VERSION >= QT_VERSION_CHECK(5, 76, 0)
 	static constexpr unsigned int mask = ExtractionResult::ExtractMetaData | ExtractionResult::ExtractImageData;
-#else /* KCOREADDONS_VERSION < QT_VERSION_CHECK(5,76,0) */
+#else /* KCOREADDONS_VERSION < QT_VERSION_CHECK(5, 76, 0) */
 	static constexpr unsigned int mask = ExtractionResult::ExtractMetaData;
-#endif /* KCOREADDONS_VERSION >= QT_VERSION_CHECK(5,76,0) */
+#endif /* KCOREADDONS_VERSION >= QT_VERSION_CHECK(5, 76, 0) */
 	unsigned int attrs;
 	switch (flags & mask) {
 		case ExtractionResult::ExtractMetaData:
 			// Only extract metadata.
 			attrs = RomDataFactory::RDA_HAS_METADATA;
 			break;
-#if KCOREADDONS_VERSION >= QT_VERSION_CHECK(5,76,0)
+#if KCOREADDONS_VERSION >= QT_VERSION_CHECK(5, 76, 0)
 		case ExtractionResult::ExtractImageData:
 			// Only extract images.
 			attrs = RomDataFactory::RDA_HAS_THUMBNAIL;
 			break;
-#endif /* KCOREADDONS_VERSION >= QT_VERSION_CHECK(5,76,0) */
+#endif /* KCOREADDONS_VERSION >= QT_VERSION_CHECK(5, 76, 0) */
 		default:
 			// Multiple things to extract.
 			attrs = 0;
@@ -218,7 +210,7 @@ void ExtractorPlugin::extract(ExtractionResult *result)
 	// Check if this is a directory.
 	const QUrl localUrl = localizeQUrl(inputUrl);
 	const string s_local_filename = localUrl.toLocalFile().toUtf8().constData();
-	if (unlikely(!s_local_filename.empty() && FileSystem::is_directory(s_local_filename.c_str()))) {
+	if (unlikely(!s_local_filename.empty() && FileSystem::is_directory(s_local_filename))) {
 		const Config *const config = Config::instance();
 		if (!config->getBoolConfigOption(Config::BoolConfig::Options_ThumbnailDirectoryPackages)) {
 			// Directory package thumbnailing is disabled.
@@ -226,7 +218,7 @@ void ExtractorPlugin::extract(ExtractionResult *result)
 		}
 
 		// Directory: Call RomDataFactory::create() with the filename.
-		romData = RomDataFactory::create(s_local_filename.c_str());
+		romData = RomDataFactory::create(s_local_filename);
 	} else {
 		// File: Open the file and call RomDataFactory::create() with the opened file.
 		IRpFilePtr file(openQUrl(localUrl, false));
@@ -246,7 +238,7 @@ void ExtractorPlugin::extract(ExtractionResult *result)
 
 	// File type
 	// NOTE: KFileMetaData has a limited set of file types as of v5.107.
-	static_assert((int)RomData::FileType::Max == (int)RomData::FileType::Ticket + 1, "Update KFileMetaData file types!");
+	static_assert(static_cast<size_t>(RomData::FileType::Max) == static_cast<size_t>(RomData::FileType::Ticket) + 1, "Update KFileMetaData file types!");
 	switch (romData->fileType()) {
 		default:
 			// No KFileMetaData::Type is applicable here.
@@ -273,14 +265,14 @@ void ExtractorPlugin::extract(ExtractionResult *result)
 		extract_properties(result, romData.get());
 	}
 
-#if KCOREADDONS_VERSION >= QT_VERSION_CHECK(5,76,0)
+#if KCOREADDONS_VERSION >= QT_VERSION_CHECK(5, 76, 0)
 	// KFileMetaData 5.76.0 added images.
 	if (flags & ExtractionResult::ExtractImageData) {
 		extract_image(result, romData.get());
 	}
-#endif /* KCOREADDONS_VERSION >= QT_VERSION_CHECK(5,76,0) */
+#endif /* KCOREADDONS_VERSION >= QT_VERSION_CHECK(5, 76, 0) */
 
 	// Finished extracting metadata.
 }
 
-} //namespace RomPropertiesKDE
+} // namespace RomPropertiesKDE

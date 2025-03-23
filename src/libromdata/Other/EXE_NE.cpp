@@ -3,7 +3,7 @@
  * EXE_NE.cpp: DOS/Windows executable reader.                              *
  * 16-bit New Executable format.                                           *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * Copyright (c) 2022 by Egor.                                             *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
@@ -31,12 +31,13 @@ namespace LibRomData {
 /** EXEPrivate **/
 
 /**
- * Load the redisent portion of NE header
+ * Load the resident portion of NE header.
  * @return 0 on success; negative POSIX error code on error.
  */
 int EXEPrivate::loadNEResident(void)
 {
-	if (ne_resident_loaded) {
+	if (!ne_resident.empty()) {
+		// Already loaded.
 		return 0;
 	} else if (!file || !file->isOpen()) {
 		// File isn't open.
@@ -52,11 +53,19 @@ int EXEPrivate::loadNEResident(void)
 	// Offsets in the NE header are relative to the start of the header.
 	const uint32_t ne_hdr_addr = le32_to_cpu(mz.e_lfanew);
 	const uint32_t entry_table_addr = le16_to_cpu(hdr.ne.EntryTableOffset);
-	const uint32_t ne_hdr_len = entry_table_addr + le16_to_cpu(hdr.ne.EntryTableLength);
+	const unsigned int ne_hdr_len = entry_table_addr + le16_to_cpu(hdr.ne.EntryTableLength);
+	assert(ne_hdr_len != 0);
+	if (ne_hdr_len == 0) {
+		// No resident portion?
+		return -ENOENT;
+	}
 	ne_resident.resize(ne_hdr_len);
 	size_t nread = file->seekAndRead(ne_hdr_addr, ne_resident.data(), ne_resident.size());
-	if (nread != ne_resident.size())
-		return -EIO; // Short read
+	if (nread != ne_resident.size()) {
+		// Short read
+		ne_resident.clear();
+		return -EIO;
+	}
 
 	span<const uint8_t> ne_segment_raw;
 	span<const uint8_t> ne_resident_name_raw;
@@ -67,8 +76,9 @@ int EXEPrivate::loadNEResident(void)
 	// It's not possible for an NE executable to be larger than 16 MB, anyway.
 	uint32_t end = static_cast<uint32_t>(ne_resident.size());
 	auto set_span = [this, &end](span<const uint8_t> &sp, unsigned int offset) -> bool {
-		if (offset > end)
+		if (offset > end) {
 			return true;
+		}
 		sp = span<const uint8_t>(ne_resident.data() + offset, end - offset);
 		end = offset;
 		return false;
@@ -80,7 +90,9 @@ int EXEPrivate::loadNEResident(void)
 	    set_span(ne_resident_name_raw, le16_to_cpu(hdr.ne.ResidNamTable)) ||
 	    set_span(ne_resource_table,    le16_to_cpu(hdr.ne.ResTableOffset)) ||
 	    set_span(ne_segment_raw,       le16_to_cpu(hdr.ne.SegTableOffset)) ||
-	    end < sizeof(NE_Header)) {
+	    end < sizeof(NE_Header))
+	{
+		ne_resident.clear();
 		return -EIO;
 	}
 
@@ -96,8 +108,6 @@ int EXEPrivate::loadNEResident(void)
 
 	ne_imported_name_table = reinterpret_span<const char>(ne_imported_name_raw);
 
-	ne_resident_loaded = true;
-
 	return 0;
 }
 
@@ -108,7 +118,8 @@ int EXEPrivate::loadNEResident(void)
  */
 int EXEPrivate::loadNENonResidentNames(void)
 {
-	if (ne_nonresident_name_table_loaded) {
+	if (!ne_nonresident_name_table.empty()) {
+		// Already loaded.
 		return 0;
 	} else if (!file || !file->isOpen()) {
 		// File isn't open.
@@ -120,13 +131,23 @@ int EXEPrivate::loadNENonResidentNames(void)
 		// Unsupported executable type.
 		return -ENOTSUP;
 	}
-	ne_nonresident_name_table.resize(le16_to_cpu(hdr.ne.NoResNamesTabSiz));
+
+	const unsigned int ne_nnt_len = le16_to_cpu(hdr.ne.NoResNamesTabSiz);
+	assert(ne_nnt_len != 0);
+	if (ne_nnt_len == 0) {
+		// No non-resident name table?
+		return -ENOENT;
+	}
+	ne_nonresident_name_table.resize(ne_nnt_len);
 	size_t nread = file->seekAndRead(le32_to_cpu(hdr.ne.OffStartNonResTab),
 		ne_nonresident_name_table.data(),
 		ne_nonresident_name_table.size());
-	if (nread != ne_nonresident_name_table.size())
-		return -EIO; // Short read
-	ne_nonresident_name_table_loaded = true;
+	if (nread != ne_nonresident_name_table.size()) {
+		// Short read
+		ne_nonresident_name_table.clear();
+		return -EIO;
+	}
+
 	return 0;
 }
 /**
@@ -139,9 +160,7 @@ int EXEPrivate::loadNEResourceTable(void)
 		// Resource reader is already initialized.
 		return 0;
 	}
-	int res = loadNEResident();
-	if (res < 0)
-		return res;
+
 	if (!file || !file->isOpen()) {
 		// File isn't open.
 		return -EBADF;
@@ -151,6 +170,11 @@ int EXEPrivate::loadNEResourceTable(void)
 	} else if (exeType != ExeType::NE) {
 		// Unsupported executable type.
 		return -ENOTSUP;
+	}
+
+	int res = loadNEResident();
+	if (res < 0) {
+		return res;
 	}
 
 	// FIXME: NEResourceReader should be able to just take ne_resource_table.
@@ -258,7 +282,7 @@ int EXEPrivate::findNERuntimeDLL(string &refDesc, string &refLink, bool &refHasK
 			for (const auto &p : msvb_dll_tbl) {
 				if (!strncasecmp(pDllName, p.dll_name, sizeof(p.dll_name))) {
 					// Found a matching version.
-					refDesc = rp_sprintf(C_("EXE|Runtime", "Microsoft Visual Basic %u.%u Runtime"),
+					refDesc = fmt::format(FRUN(C_("EXE|Runtime", "Microsoft Visual Basic {:d}.{:d} Runtime")),
 						p.ver_major, p.ver_minor);
 					if (p.url) {
 						refLink = p.url;
@@ -323,7 +347,7 @@ void EXEPrivate::addFields_NE(void)
 		fields.addField_string(targetOS_title, targetOS);
 	} else {
 		fields.addField_string(targetOS_title,
-			rp_sprintf(C_("RomData", "Unknown (0x%02X)"), hdr.ne.targOS));
+			fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), hdr.ne.targOS));
 	}
 
 	// DGroup type.
@@ -337,7 +361,7 @@ void EXEPrivate::addFields_NE(void)
 		pgettext_expr("EXE|DGroupType", dgroupTypes[hdr.ne.ProgFlags & 3]));
 
 	// Program flags
-	static const char *const ProgFlags_names[] = {
+	static const array<const char*, 8> ProgFlags_names = {{
 		nullptr, nullptr,	// DGroup Type
 		NOP_C_("EXE|ProgFlags", "Global Init"),
 		NOP_C_("EXE|ProgFlags", "Protected Mode Only"),
@@ -345,9 +369,8 @@ void EXEPrivate::addFields_NE(void)
 		NOP_C_("EXE|ProgFlags", "80286 insns"),
 		NOP_C_("EXE|ProgFlags", "80386 insns"),
 		NOP_C_("EXE|ProgFlags", "FPU insns"),
-	};
-	vector<string> *const v_ProgFlags_names = RomFields::strArrayToVector_i18n(
-		"EXE|ProgFlags", ProgFlags_names, ARRAY_SIZE(ProgFlags_names));
+	}};
+	vector<string> *const v_ProgFlags_names = RomFields::strArrayToVector_i18n("EXE|ProgFlags", ProgFlags_names);
 	fields.addField_bitfield("Program Flags",
 		v_ProgFlags_names, 2, hdr.ne.ProgFlags);
 
@@ -376,7 +399,7 @@ void EXEPrivate::addFields_NE(void)
 		pgettext_expr("EXE|ApplType", applType));
 
 	// Application flags
-	static const char *const ApplFlags_names[] = {
+	static const array<const char*, 8> ApplFlags_names = {{
 		nullptr, nullptr,	// Application type
 		nullptr,
 		NOP_C_("EXE|ApplFlags", "OS/2 Application"),
@@ -384,9 +407,8 @@ void EXEPrivate::addFields_NE(void)
 		NOP_C_("EXE|ApplFlags", "Image Error"),
 		NOP_C_("EXE|ApplFlags", "Non-Conforming"),
 		NOP_C_("EXE|ApplFlags", "DLL"),
-	};
-	vector<string> *const v_ApplFlags_names = RomFields::strArrayToVector_i18n(
-		"EXE|ApplFlags", ApplFlags_names, ARRAY_SIZE(ApplFlags_names));
+	}};
+	vector<string> *const v_ApplFlags_names = RomFields::strArrayToVector_i18n("EXE|ApplFlags", ApplFlags_names);
 	fields.addField_bitfield(C_("EXE", "Application Flags"),
 		v_ApplFlags_names, 2, hdr.ne.ApplFlags);
 
@@ -396,14 +418,13 @@ void EXEPrivate::addFields_NE(void)
 	// References:
 	// - http://wiki.osdev.org/NE
 	// - http://www.program-transformation.org/Transform/PcExeFormat
-	static const char *const OtherFlags_names[] = {
+	static const array<const char*, 4> OtherFlags_names = {{
 		NOP_C_("EXE|OtherFlags", "Long File Names"),
 		NOP_C_("EXE|OtherFlags", "Protected Mode"),
 		NOP_C_("EXE|OtherFlags", "Proportional Fonts"),
 		NOP_C_("EXE|OtherFlags", "Gangload Area"),
-	};
-	vector<string> *const v_OtherFlags_names = RomFields::strArrayToVector_i18n(
-		"EXE|OtherFlags", OtherFlags_names, ARRAY_SIZE(OtherFlags_names));
+	}};
+	vector<string> *const v_OtherFlags_names = RomFields::strArrayToVector_i18n("EXE|OtherFlags", OtherFlags_names);
 	fields.addField_bitfield(C_("EXE", "Other Flags"),
 		v_OtherFlags_names, 2, hdr.ne.OS2EXEFlags);
 
@@ -447,7 +468,7 @@ void EXEPrivate::addFields_NE(void)
 	// TODO: Is this used in OS/2 executables?
 	if (hdr.ne.targOS == NE_OS_WIN || hdr.ne.targOS == NE_OS_WIN386) {
 		fields.addField_string(C_("EXE", "Windows Version"),
-			rp_sprintf("%u.%u", hdr.ne.expctwinver[1], hdr.ne.expctwinver[0]));
+			fmt::format(FSTR("{:d}.{:d}"), hdr.ne.expctwinver[1], hdr.ne.expctwinver[0]));
 	}
 
 	// Runtime DLL
@@ -556,7 +577,7 @@ int EXEPrivate::addFields_NE_Entry(void)
 				ent.is_movable = false;
 				ent.has_name = false;
 				ent.is_resident = false;
-				ents.emplace_back(std::move(ent));
+				ents.push_back(std::move(ent));
 				p += 3;
 			}
 			break;
@@ -579,7 +600,7 @@ int EXEPrivate::addFields_NE_Entry(void)
 				ent.is_movable = true;
 				ent.has_name = false;
 				ent.is_resident = false;
-				ents.emplace_back(std::move(ent));
+				ents.push_back(std::move(ent));
 				p += 6;
 			}
 			break;
@@ -624,7 +645,7 @@ int EXEPrivate::addFields_NE_Entry(void)
 				Entry ent = *it;
 				ent.name = name;
 				ent.is_resident = is_resident;
-				ents.emplace_back(std::move(ent)); // `it` is invalidated here
+				ents.push_back(std::move(ent)); // `it` is invalidated here
 			} else {
 				it->has_name = true;
 				it->name = name;
@@ -645,11 +666,13 @@ int EXEPrivate::addFields_NE_Entry(void)
 		return res;
 
 	const char *const s_no_name = C_("EXE|Exports", "(No name)");
-	const char *const s_address_mf = C_("EXE|Exports", "%1$02X:%2$04X (%3$s)");
+	// tr: Segment:Offset (and segment type)
+	const char *const s_address_mf = C_("EXE|Exports", "{0:0>2X}:{1:0>4X} ({2:s})");
 	const char *const s_address_movable = C_("EXE|Exports", "Movable");
 	const char *const s_address_fixed = C_("EXE|Exports", "Fixed");
+	const char *const s_address_constant = C_("EXE|Exports", "0x{:0>4X} (Constant)");
 
-	auto vv_data = new RomFields::ListData_t();
+	auto *const vv_data = new RomFields::ListData_t();
 	vv_data->reserve(ents.size());
 	for (const Entry &ent : ents) {
 		vv_data->emplace_back();
@@ -673,7 +696,7 @@ int EXEPrivate::addFields_NE_Entry(void)
 		/* Parameter count. I haven't found any module where this is
 		 * actually used. */
 		if (ent.flags & 0xF8) {
-			flags += rp_sprintf("PARAMS=%d ", ent.flags>>3);
+			flags += fmt::format(FSTR("PARAMS={:d} "), ent.flags>>3);
 		}
 		if (ent.has_name && ent.is_resident) {
 			flags += "RESIDENTNAME ";
@@ -682,20 +705,20 @@ int EXEPrivate::addFields_NE_Entry(void)
 			flags.resize(flags.size()-1);
 		}
 
-		row.emplace_back(rp_sprintf("%d", ent.ordinal));
+		row.push_back(fmt::to_string(ent.ordinal));
 		if (ent.has_name) {
 			row.emplace_back(ent.name.data(), ent.name.size());
 		} else {
 			row.emplace_back(s_no_name);
 		}
 		if (ent.is_movable) {
-			row.emplace_back(rp_sprintf_p(s_address_mf, ent.segment, ent.offset, s_address_movable));
+			row.push_back(fmt::format(FRUN(s_address_mf), ent.segment, ent.offset, s_address_movable));
 		} else if (ent.segment != 0xFE) {
-			row.emplace_back(rp_sprintf_p(s_address_mf, ent.segment, ent.offset, s_address_fixed));
+			row.push_back(fmt::format(FRUN(s_address_mf), ent.segment, ent.offset, s_address_fixed));
 		} else {
-			row.emplace_back(rp_sprintf(C_("EXE|Exports", "0x%04X (Constant)"), ent.offset));
+			row.push_back(fmt::format(FRUN(s_address_constant), ent.offset));
 		}
-		row.emplace_back(std::move(flags));
+		row.push_back(std::move(flags));
 	}
 
 	// Create the tab if we have any exports.
@@ -704,14 +727,13 @@ int EXEPrivate::addFields_NE_Entry(void)
 		fields.addTab(C_("EXE", "Entries"));
 		fields.reserve(1);
 
-		static const char *const field_names[] = {
+		static const array<const char*, 4> field_names = {{
 			NOP_C_("EXE|Exports", "Ordinal"),
 			NOP_C_("EXE|Exports", "Name"),
 			NOP_C_("EXE|Exports", "Address"),
 			NOP_C_("EXE|Exports", "Flags"),
-		};
-		vector<string> *const v_field_names = RomFields::strArrayToVector_i18n(
-			"EXE|Exports", field_names, ARRAY_SIZE(field_names));
+		}};
+		vector<string> *const v_field_names = RomFields::strArrayToVector_i18n("EXE|Exports", field_names);
 
 		RomFields::AFLD_PARAMS params;
 		params.flags = RomFields::RFT_LISTDATA_SEPARATE_ROW;
@@ -778,8 +800,8 @@ int EXEPrivate::addFields_NE_Import(void)
 	 *   target2 --> imported names offset
 	 */
 	struct hash2x16 {
-		size_t operator()(const std::pair<uint16_t, uint16_t> &p) const {
-			return std::hash<uint32_t>()(p.first<<16 | p.second);
+		size_t operator()(std::pair<uint16_t, uint16_t> p) const {
+			return std::hash<uint32_t>()((p.first << 16) | p.second);
 		}
 	};
 	std::unordered_set<std::pair<uint16_t, uint16_t>, hash2x16> ordinal_set, name_set;
@@ -825,7 +847,7 @@ int EXEPrivate::addFields_NE_Import(void)
 
 	const char *const s_no_name = C_("EXE|Exports", "(No name)");
 
-	auto vv_data = new RomFields::ListData_t();
+	auto *const vv_data = new RomFields::ListData_t();
 	vv_data->reserve(ordinal_set.size() + name_set.size());
 	for (const auto &imp : ordinal_set) {
 		string modname;
@@ -836,9 +858,9 @@ int EXEPrivate::addFields_NE_Import(void)
 		row.reserve(3);
 		const char *const name = EXENEEntries::lookup_ordinal(modname.c_str(), imp.second);
 		row.emplace_back(name ? name : s_no_name);
-		row.emplace_back(rp_sprintf("%u", imp.second));
-		row.emplace_back(std::move(modname));
-		vv_data->emplace_back(std::move(row));
+		row.push_back(fmt::to_string(imp.second));
+		row.push_back(std::move(modname));
+		vv_data->push_back(std::move(row));
 	}
 	for (const auto &imp : name_set) {
 		string modname;
@@ -850,10 +872,10 @@ int EXEPrivate::addFields_NE_Import(void)
 
 		std::vector<string> row;
 		row.reserve(3);
-		row.emplace_back(std::move(name));
+		row.push_back(std::move(name));
 		row.emplace_back();
-		row.emplace_back(std::move(modname));
-		vv_data->emplace_back(std::move(row));
+		row.push_back(std::move(modname));
+		vv_data->push_back(std::move(row));
 	}
 
 	// Sort the list data by (module, name, ordinal).
@@ -887,13 +909,12 @@ int EXEPrivate::addFields_NE_Import(void)
 	fields.reserve(1);
 
 	// Intentionally sharing the translation context with the exports tab.
-	static const char *const field_names[] = {
+	static const array<const char*, 3> field_names = {{
 		NOP_C_("EXE|Exports", "Name"),
 		NOP_C_("EXE|Exports", "Ordinal"),
 		NOP_C_("EXE|Exports", "Module")
-	};
-	vector<string> *const v_field_names = RomFields::strArrayToVector_i18n(
-		"EXE|Exports", field_names, ARRAY_SIZE(field_names));
+	}};
+	vector<string> *const v_field_names = RomFields::strArrayToVector_i18n("EXE|Exports", field_names);
 
 	RomFields::AFLD_PARAMS params;
 	params.flags = RomFields::RFT_LISTDATA_SEPARATE_ROW;

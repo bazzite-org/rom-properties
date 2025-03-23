@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librptexture)                     *
  * DidjTex.hpp: Leapster Didj .tex reader.                                 *
  *                                                                         *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -45,7 +45,6 @@ class DidjTexPrivate final : public FileFormatPrivate
 {
 	public:
 		DidjTexPrivate(DidjTex *q, const IRpFilePtr &file);
-		~DidjTexPrivate() final = default;
 
 	private:
 		typedef FileFormatPrivate super;
@@ -53,8 +52,8 @@ class DidjTexPrivate final : public FileFormatPrivate
 
 	public:
 		/** TextureInfo **/
-		static const char *const exts[];
-		static const char *const mimeTypes[];
+		static const array<const char*, 2+1> exts;
+		static const array<const char*, 1+1> mimeTypes;
 		static const TextureInfo textureInfo;
 
 	public:
@@ -75,7 +74,7 @@ class DidjTexPrivate final : public FileFormatPrivate
 		rp_image_ptr img;
 
 		// Invalid pixel format message
-		char invalid_pixel_format[24];
+		mutable string invalid_pixel_format;
 
 		/**
 		 * Load the DidjTex image.
@@ -89,21 +88,21 @@ FILEFORMAT_IMPL(DidjTex)
 /** DidjTexPrivate **/
 
 /* TextureInfo */
-const char *const DidjTexPrivate::exts[] = {
+const array<const char*, 2+1> DidjTexPrivate::exts = {{
 	".tex",		// NOTE: Too generic...
 	".texs",	// NOTE: Has multiple textures.
 
 	nullptr
-};
-const char *const DidjTexPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> DidjTexPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"image/x-didj-texture",
 
 	nullptr
-};
+}};
 const TextureInfo DidjTexPrivate::textureInfo = {
-	exts, mimeTypes
+	exts.data(), mimeTypes.data()
 };
 
 DidjTexPrivate::DidjTexPrivate(DidjTex *q, const IRpFilePtr &file)
@@ -112,7 +111,6 @@ DidjTexPrivate::DidjTexPrivate(DidjTex *q, const IRpFilePtr &file)
 {
 	// Clear the structs and arrays.
 	memset(&texHeader, 0, sizeof(texHeader));
-	memset(invalid_pixel_format, 0, sizeof(invalid_pixel_format));
 }
 
 /**
@@ -319,7 +317,7 @@ rp_image_const_ptr DidjTexPrivate::loadDidjTexImage(void)
 	}
 
 	img = imgtmp;
-	return img;
+	return imgtmp;
 }
 
 /** DidjTex **/
@@ -415,7 +413,7 @@ DidjTex::DidjTex(const IRpFilePtr &file)
 const char *DidjTex::pixelFormat(void) const
 {
 	RP_D(const DidjTex);
-	if (!d->isValid || (int)d->texType < 0) {
+	if (!d->isValid || static_cast<int>(d->texType) < 0) {
 		// Not supported.
 		return nullptr;
 	}
@@ -437,13 +435,12 @@ const char *DidjTex::pixelFormat(void) const
 
 	// Invalid pixel format.
 	// Store an error message instead.
-	// TODO: Localization?
-	if (d->invalid_pixel_format[0] == '\0') {
-		snprintf(const_cast<DidjTexPrivate*>(d)->invalid_pixel_format,
-			sizeof(d->invalid_pixel_format),
-			"Unknown (0x%08X)", d->texHeader.px_format);
+	if (d->invalid_pixel_format.empty()) {
+		d->invalid_pixel_format = fmt::format(
+			FRUN(C_("RomData", "Unknown (0x{:0>8X})")),
+			d->texHeader.px_format);
 	}
-	return d->invalid_pixel_format;
+	return d->invalid_pixel_format.c_str();
 }
 
 #ifdef ENABLE_LIBRPBASE_ROMFIELDS
@@ -459,7 +456,7 @@ int DidjTex::getFields(RomFields *fields) const
 		return 0;
 
 	RP_D(const DidjTex);
-	if (!d->isValid || (int)d->texType < 0) {
+	if (!d->isValid || static_cast<int>(d->texType) < 0) {
 		// Not valid.
 		return -EIO;
 	}
@@ -488,7 +485,7 @@ int DidjTex::getFields(RomFields *fields) const
 rp_image_const_ptr DidjTex::image(void) const
 {
 	RP_D(const DidjTex);
-	if (!d->isValid || (int)d->texType < 0) {
+	if (!d->isValid || static_cast<int>(d->texType) < 0) {
 		// Unknown file type.
 		return nullptr;
 	}
@@ -497,4 +494,4 @@ rp_image_const_ptr DidjTex::image(void) const
 	return const_cast<DidjTexPrivate*>(d)->loadDidjTexImage();
 }
 
-}
+} // namespace LibRpTexture

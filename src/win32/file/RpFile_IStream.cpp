@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (Win32)                            *
  * RpFile_IStream.hpp: IRpFile using an IStream*.                          *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -23,7 +23,7 @@ using std::unique_ptr;
 #include <zlib.h>
 
 // zlib buffer size.
-#define ZLIB_BUFFER_SIZE 16384
+static constexpr size_t ZLIB_BUFFER_SIZE = 16384U;
 
 #ifdef _MSC_VER
 // MSVC: Exception handling for /DELAYLOAD.
@@ -43,7 +43,6 @@ DELAYLOAD_TEST_FUNCTION_IMPL0(get_crc_table);
 RpFile_IStream::RpFile_IStream(IStream *pStream, bool gzip)
 	: super()
 	, m_pStream(pStream, true)	// true == call AddRef()
-	, m_filename(nullptr)
 	, m_z_uncomp_sz(0)
 	, m_z_filepos(0)
 	, m_z_realpos(0)
@@ -57,8 +56,9 @@ RpFile_IStream::RpFile_IStream(IStream *pStream, bool gzip)
 	m_isWritable = true;
 
 	// The rest of this function is only needed for gzipped files.
-	if (!gzip)
+	if (!gzip) {
 		return;
+	}
 
 	do {
 #if defined(_MSC_VER) && defined(ZLIB_IS_DLL)
@@ -92,25 +92,32 @@ RpFile_IStream::RpFile_IStream(IStream *pStream, bool gzip)
 		ULARGE_INTEGER uliFileSize;
 		li.QuadPart = -4;
 		hr = m_pStream->Seek(li, STREAM_SEEK_END, &uliFileSize);
-		if (FAILED(hr))
+		if (FAILED(hr)) {
 			break;
+		}
 
 		uliFileSize.QuadPart += 4;
 		hr = m_pStream->Read(&m_z_uncomp_sz, (ULONG)sizeof(m_z_uncomp_sz), &cbRead);
-		if (FAILED(hr) || cbRead != (ULONG)sizeof(m_z_uncomp_sz))
+		if (FAILED(hr) || cbRead != (ULONG)sizeof(m_z_uncomp_sz)) {
 			break;
-
+		}
 		m_z_uncomp_sz = le32_to_cpu(m_z_uncomp_sz);
-		if (m_z_uncomp_sz <= uliFileSize.QuadPart-(10+8))
+
+		// NOTE: Uncompressed size might be smaller than the real filesize
+		// in cases where gzip doesn't help much.
+		// TODO: Add better verification heuristics?
+		/*if (m_z_uncomp_sz <= uliFileSize.QuadPart-(10+8)) {
 			break;
+		}*/
 
 		// Valid filesize.
 		// Initialize zlib.
 		// NOTE: m_pZstm *must* be zero-initialized.
 		// Otherwise, inflateInit() will crash.
 		m_pZstm = static_cast<z_stream*>(calloc(1, sizeof(z_stream)));
-		if (!m_pZstm)
+		if (!m_pZstm) {
 			break;
+		}
 
 		// Make sure the CRC32 table is initialized.
 		get_crc_table();
@@ -156,8 +163,6 @@ RpFile_IStream::~RpFile_IStream()
 		inflateEnd(m_pZstm);
 		free(m_pZstm);
 	}
-
-	free(m_filename);
 }
 
 /**
@@ -684,8 +689,9 @@ off64_t RpFile_IStream::size(void)
  */
 const char *RpFile_IStream::filename(void) const
 {
-	// Assuming m_filename is nullptr, not empty string, if not obtained yet.
-	if (!m_filename) {
+	// NOTE: Assuming that if m_filename is empty, it hasn't been obtained yet.
+	// TODO: Cache "filename obtained" separately?
+	if (m_filename.empty()) {
 		// Get the filename.
 		// FIXME: This does NOT have the full path; only the
 		// file portion is included. This is enough for the
@@ -699,11 +705,11 @@ const char *RpFile_IStream::filename(void) const
 
 		if (statstg.pwcsName) {
 			// Save the filename.
-			const_cast<RpFile_IStream*>(this)->m_filename = strdup(W2U8(statstg.pwcsName).c_str());
+			const_cast<RpFile_IStream*>(this)->m_filename = W2U8(statstg.pwcsName);
 			CoTaskMemFree(statstg.pwcsName);
 		}
 	}
 
 	// Return the filename.
-	return (m_filename != nullptr && m_filename[0] != '\0') ? m_filename : nullptr;
+	return (likely(!m_filename.empty())) ? m_filename.c_str() : nullptr;
 }

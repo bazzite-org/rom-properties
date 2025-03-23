@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpbase)                        *
  * RpPng.cpp: PNG image handler.                                           *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -471,7 +471,7 @@ static rp_image_ptr loadPng(png_structp png_ptr, png_infop info_ptr)
  * @param file IRpFile to load from
  * @return rp_image*, or nullptr on error
  */
-rp_image_ptr load(const IRpFilePtr &file)
+rp_image_ptr load(IRpFile *file)
 {
 	if (!file)
 		return nullptr;
@@ -512,10 +512,10 @@ rp_image_ptr load(const IRpFilePtr &file)
 #endif /* PNG_WARNINGS_SUPPORTED */
 
 	// Initialize the custom I/O handler for IRpFile.
-	png_set_read_fn(png_ptr, file.get(), png_io_IRpFile_read);
+	png_set_read_fn(png_ptr, file, png_io_IRpFile_read);
 
 	// Call the actual PNG image reading function.
-	const rp_image_ptr img = loadPng(png_ptr, info_ptr);
+	rp_image_ptr img = loadPng(png_ptr, info_ptr);
 
 	// Free the PNG structs.
 	png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
@@ -541,17 +541,19 @@ int save(const IRpFilePtr &file, const rp_image_const_ptr &img)
 		return -EINVAL;
 
 	// Create a PNG writer.
-	unique_ptr<RpPngWriter> pngWriter(new RpPngWriter(file, img));
-	if (!pngWriter->isOpen())
-		return -pngWriter->lastError();
+	RpPngWriter pngWriter(file, img);
+	if (!pngWriter.isOpen()) {
+		return -pngWriter.lastError();
+	}
 
 	// Write the PNG IHDR.
-	int ret = pngWriter->write_IHDR();
-	if (ret != 0)
+	int ret = pngWriter.write_IHDR();
+	if (ret != 0) {
 		return ret;
+	}
 
 	// Write the PNG image data.
-	return pngWriter->write_IDAT();
+	return pngWriter.write_IDAT();
 }
 
 /**
@@ -570,17 +572,19 @@ int save(const char *filename, const rp_image_const_ptr &img)
 		return -EINVAL;
 
 	// Create a PNG writer.
-	unique_ptr<RpPngWriter> pngWriter(new RpPngWriter(filename, img));
-	if (!pngWriter->isOpen())
-		return -pngWriter->lastError();
+	RpPngWriter pngWriter(filename, img);
+	if (!pngWriter.isOpen()) {
+		return -pngWriter.lastError();
+	}
 
 	// Write the PNG IHDR.
-	int ret = pngWriter->write_IHDR();
-	if (ret != 0)
+	int ret = pngWriter.write_IHDR();
+	if (ret != 0) {
 		return ret;
+	}
 
 	// Write the PNG image data.
-	return pngWriter->write_IDAT();
+	return pngWriter.write_IDAT();
 }
 
 #ifdef _WIN32
@@ -600,17 +604,19 @@ int save(const wchar_t *filename, const rp_image_const_ptr &img)
 		return -EINVAL;
 
 	// Create a PNG writer.
-	unique_ptr<RpPngWriter> pngWriter(new RpPngWriter(filename, img));
-	if (!pngWriter->isOpen())
-		return -pngWriter->lastError();
+	RpPngWriter pngWriter(filename, img);
+	if (!pngWriter.isOpen()) {
+		return -pngWriter.lastError();
+	}
 
 	// Write the PNG IHDR.
-	int ret = pngWriter->write_IHDR();
-	if (ret != 0)
+	int ret = pngWriter.write_IHDR();
+	if (ret != 0) {
 		return ret;
+	}
 
 	// Write the PNG image data.
-	return pngWriter->write_IDAT();
+	return pngWriter.write_IDAT();
 }
 #endif /* _WIN32 */
 
@@ -637,21 +643,24 @@ int save(const IRpFilePtr &file, const IconAnimDataConstPtr &iconAnimData)
 {
 	assert((bool)file);
 	assert((bool)iconAnimData);
-	if (!file || !file->isOpen() || !iconAnimData)
+	if (!file || !file->isOpen() || !iconAnimData) {
 		return -EINVAL;
+	}
 
 	// Create a PNG writer.
-	unique_ptr<RpPngWriter> pngWriter(new RpPngWriter(file, iconAnimData));
-	if (!pngWriter->isOpen())
-		return -pngWriter->lastError();
+	RpPngWriter pngWriter(file, iconAnimData);
+	if (!pngWriter.isOpen()) {
+		return -pngWriter.lastError();
+	}
 
 	// Write the PNG IHDR.
-	int ret = pngWriter->write_IHDR();
-	if (ret != 0)
+	int ret = pngWriter.write_IHDR();
+	if (ret != 0) {
 		return ret;
+	}
 
 	// Write the PNG image data.
-	return pngWriter->write_IDAT();
+	return pngWriter.write_IDAT();
 }
 
 /**
@@ -675,21 +684,24 @@ int save(const char *filename, const IconAnimDataConstPtr &iconAnimData)
 	assert(filename != nullptr);
 	assert(filename[0] != '\0');
 	assert((bool)iconAnimData);
-	if (!filename || filename[0] == '\0' || !iconAnimData)
+	if (!filename || filename[0] == '\0' || !iconAnimData) {
 		return -EINVAL;
+	}
 
 	// Create a PNG writer.
-	unique_ptr<RpPngWriter> pngWriter(new RpPngWriter(filename, iconAnimData));
-	if (!pngWriter->isOpen())
-		return -pngWriter->lastError();
+	RpPngWriter pngWriter(filename, iconAnimData);
+	if (!pngWriter.isOpen()) {
+		return -pngWriter.lastError();
+	}
 
 	// Write the PNG IHDR.
-	int ret = pngWriter->write_IHDR();
-	if (ret != 0)
+	int ret = pngWriter.write_IHDR();
+	if (ret != 0) {
 		return ret;
+	}
 
 	// Write the PNG image data.
-	return pngWriter->write_IDAT();
+	return pngWriter.write_IDAT();
 }
 
 #ifdef _WIN32
@@ -714,21 +726,24 @@ int save(const wchar_t *filename, const IconAnimDataConstPtr &iconAnimData)
 	assert(filename != nullptr);
 	assert(filename[0] != L'\0');
 	assert((bool)iconAnimData);
-	if (!filename || filename[0] == L'\0' || !iconAnimData)
+	if (!filename || filename[0] == L'\0' || !iconAnimData) {
 		return -EINVAL;
+	}
 
 	// Create a PNG writer.
-	unique_ptr<RpPngWriter> pngWriter(new RpPngWriter(filename, iconAnimData));
-	if (!pngWriter->isOpen())
-		return -pngWriter->lastError();
+	RpPngWriter pngWriter(filename, iconAnimData);
+	if (!pngWriter.isOpen()) {
+		return -pngWriter.lastError();
+	}
 
 	// Write the PNG IHDR.
-	int ret = pngWriter->write_IHDR();
-	if (ret != 0)
+	int ret = pngWriter.write_IHDR();
+	if (ret != 0) {
 		return ret;
+	}
 
 	// Write the PNG image data.
-	return pngWriter->write_IDAT();
+	return pngWriter.write_IDAT();
 }
 #endif /* _WIN32 */
 

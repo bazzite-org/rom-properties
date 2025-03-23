@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (rp-stub)                          *
  * rp-stub_secure.c: Security options for rp-stub.                         *
  *                                                                         *
- * Copyright (c) 2016-2020 by David Korth.                                 *
+ * Copyright (c) 2016-2024 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -47,8 +47,6 @@ int rp_stub_do_security_options(bool config)
 
 		// dlopen()
 		SCMP_SYS(fcntl),     SCMP_SYS(fcntl64),		// gcc profiling
-		SCMP_SYS(fstat),     SCMP_SYS(fstat64),		// __GI___fxstat() [printf()]
-		SCMP_SYS(fstatat64), SCMP_SYS(newfstatat),	// Ubuntu 19.10 (32-bit)
 		SCMP_SYS(gettimeofday),	// 32-bit only?
 		SCMP_SYS(mmap),
 		SCMP_SYS(mmap2),	// might only be needed on i386...
@@ -66,7 +64,6 @@ int rp_stub_do_security_options(bool config)
 #if defined(__SNR_prlimit64) || defined(__NR_prlimit64)
 		SCMP_SYS(prlimit64),
 #endif /* __SNR_prlimit64 || __NR_prlimit64*/
-		SCMP_SYS(stat), SCMP_SYS(stat64),
 		SCMP_SYS(statfs), SCMP_SYS(statfs64),
 
 		// NPTL __pthread_initialize_minimal_internal()
@@ -77,11 +74,6 @@ int rp_stub_do_security_options(bool config)
 		SCMP_SYS(set_tid_address), SCMP_SYS(set_robust_list),
 
 		SCMP_SYS(getppid),	// dll-search.c: walk_proc_tree()
-
-#if defined(__SNR_statx) || defined(__NR_statx)
-		SCMP_SYS(getcwd),	// called by glibc's statx()
-		SCMP_SYS(statx),
-#endif /* __SNR_statx || __NR_statx */
 
 		// ConfReader checks timestamps between rpcli runs.
 		// NOTE: Only seems to get triggered on PowerPC...
@@ -96,12 +88,15 @@ int rp_stub_do_security_options(bool config)
 
 		// librpbase/libromdata
 		SCMP_SYS(dup),		// gzdopen()
-		SCMP_SYS(ftruncate),	// LibRpBase::RpFile::truncate() [from LibRpBase::RpPngWriterPrivate::init()]
+		SCMP_SYS(ftruncate),	// LibRpBase::RpFile::truncate() [from LibRpBase::RpPngWriterPrivate ctors]
 		SCMP_SYS(ftruncate64),
-		SCMP_SYS(futex),	// pthread_once()
-		SCMP_SYS(getuid), SCMP_SYS(geteuid),	// TODO: Only use geteuid()?
+		SCMP_SYS(futex),				// pthread_once()
+#if defined(__SNR_futex_time64) || defined(__NR_futex_time64)
+		SCMP_SYS(futex_time64),				// pthread_once()
+#endif /* __SNR_futex_time64 || __NR_futex_time64 */
+		SCMP_SYS(getuid), SCMP_SYS(geteuid),		// TODO: Only use geteuid()?
 		SCMP_SYS(lseek), SCMP_SYS(_llseek),
-		SCMP_SYS(lstat), SCMP_SYS(lstat64),	// realpath() [LibRpBase::FileSystem::resolve_symlink()]
+		SCMP_SYS(lstat), SCMP_SYS(lstat64),		// realpath() [LibRpBase::FileSystem::resolve_symlink()]
 		SCMP_SYS(readlink),	// realpath() [LibRpBase::FileSystem::resolve_symlink()]
 
 		// ExecRpDownload_posix.cpp

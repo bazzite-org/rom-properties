@@ -13,20 +13,10 @@ CHECK_INCLUDE_FILE("dirent.h" HAVE_DIRENT_H)
 # Windows Universal CRT has this; older versions of MSVCRT do not.
 CHECK_INCLUDE_FILE("sys/stat.h" HAVE_SYS_STAT_H)
 
-# Check for reentrant time functions.
+# Check for timegm() or equivalent function.
 # NOTE: May be _gmtime32_s() or _gmtime64_s() on MSVC 2005+.
 # The "inline" part will detect that.
 INCLUDE(CheckSymbolExistsOrInline)
-CHECK_SYMBOL_EXISTS_OR_INLINE(gmtime_r "time.h" "time_t tm; gmtime_r(&tm, NULL);" HAVE_GMTIME_R)
-IF(NOT HAVE_GMTIME_R)
-	CHECK_SYMBOL_EXISTS_OR_INLINE(gmtime_s "time.h" "time_t tm; gmtime_s(NULL, &tm);" HAVE_GMTIME_S)
-ENDIF(NOT HAVE_GMTIME_R)
-CHECK_SYMBOL_EXISTS_OR_INLINE(localtime_r "time.h" "time_t tm; localtime_r(&tm, NULL);" HAVE_LOCALTIME_R)
-IF(NOT HAVE_LOCALTIME_R)
-	CHECK_SYMBOL_EXISTS_OR_INLINE(localtime_s "time.h" "time_t tm; localtime_s(NULL, &tm);" HAVE_LOCALTIME_S)
-ENDIF(NOT HAVE_LOCALTIME_R)
-
-# Other time functions.
 CHECK_SYMBOL_EXISTS_OR_INLINE(timegm "time.h" "struct tm tm; time_t x = timegm(&tm);" HAVE_TIMEGM)
 IF(NOT HAVE_TIMEGM)
 	# NOTE: MSVCRT's _mkgmtime64() has a range of [1970/01/01, 3000/12/31].
@@ -43,14 +33,19 @@ ENDIF(NOT HAVE_TIMEGM AND NOT HAVE__MKGMTIME AND NOT HAVE__MKGMTIME32 AND NOT HA
 # NOTE: MinGW-w64 only has _aligned_malloc().
 # It doesn't even have inline function wrappers
 # for the other functions.
-CHECK_SYMBOL_EXISTS(_aligned_malloc	"malloc.h"		HAVE_MSVC_ALIGNED_MALLOC)
-# FIXME: aligned_alloc isn't working on properly on Mac OS.
-#CHECK_SYMBOL_EXISTS(aligned_alloc	"stdlib.h"		HAVE_ALIGNED_ALLOC)
-CHECK_SYMBOL_EXISTS(posix_memalign	"stdlib.h"		HAVE_POSIX_MEMALIGN)
-CHECK_SYMBOL_EXISTS(memalign		"stdlib.h;malloc.h"	HAVE_MEMALIGN)
+CHECK_SYMBOL_EXISTS(_aligned_malloc "malloc.h" HAVE_MSVC_ALIGNED_MALLOC)
+# FIXME: aligned_alloc isn't working on properly on Mac OS. (only provided as of 10.15?)
+IF(NOT APPLE)
+CHECK_SYMBOL_EXISTS(aligned_alloc "stdlib.h" HAVE_ALIGNED_ALLOC)
+ENDIF(NOT APPLE)
+CHECK_SYMBOL_EXISTS(posix_memalign "stdlib.h" HAVE_POSIX_MEMALIGN)
+CHECK_SYMBOL_EXISTS(memalign "stdlib.h;malloc.h" HAVE_MEMALIGN)
 IF(NOT HAVE_MSVC_ALIGNED_MALLOC AND NOT HAVE_ALIGNED_ALLOC AND NOT HAVE_POSIX_MEMALIGN AND NOT HAVE_MEMALIGN)
 	MESSAGE(FATAL_ERROR "System does not have an aligned malloc() function.")
 ENDIF()
+
+# Check for glibc features.h.
+CHECK_INCLUDE_FILE("features.h" HAVE_FEATURES_H)
 
 # Write the libc configuration file.
 CONFIGURE_FILE("${CMAKE_CURRENT_SOURCE_DIR}/config.libc.h.in" "${CMAKE_CURRENT_BINARY_DIR}/config.libc.h")
@@ -68,9 +63,10 @@ ELSE(MSVC)
 	SET(CMAKE_CXX_FLAGS	"${CMAKE_CXX_FLAGS} -include ${RP_CONFIG_LIBC_H} -include ${RP_COMPILER_COMPAT_H}")
 ENDIF(MSVC)
 
-# Check for hidden visibility flags.
-INCLUDE(CheckHiddenVisibility)
-CHECK_HIDDEN_VISIBILITY()
+# Set CMake hidden visibility options.
+SET(CMAKE_C_VISIBILITY_PRESET "hidden")
+SET(CMAKE_CXX_VISIBILITY_PRESET "hidden")
+SET(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
 # Check for stdbool.h.
 INCLUDE(CheckIncludeFile)
@@ -131,7 +127,6 @@ ADD_SUBDIRECTORY(librpsecure)
 ADD_SUBDIRECTORY(libi18n)
 ADD_SUBDIRECTORY(librpthreads)
 ADD_SUBDIRECTORY(libcachecommon)
-ADD_SUBDIRECTORY(rp-download)
 ADD_SUBDIRECTORY(librpcpuid)
 ADD_SUBDIRECTORY(librpbyteswap)
 ADD_SUBDIRECTORY(librpfile)
@@ -144,6 +139,9 @@ ADD_SUBDIRECTORY(libromdata)
 IF(BUILD_CLI)
 	ADD_SUBDIRECTORY(rpcli)
 ENDIF(BUILD_CLI)
+IF(ENABLE_NETWORKING)
+	ADD_SUBDIRECTORY(rp-download)
+ENDIF(ENABLE_NETWORKING)
 
 IF(UNIX AND NOT APPLE)
 	IF(BUILD_KDE4 OR BUILD_KF5 OR BUILD_KF6)

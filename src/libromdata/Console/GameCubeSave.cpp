@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * GameCubeSave.hpp: Nintendo GameCube save file reader.                   *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -29,8 +29,7 @@ namespace LibRomData {
 class GameCubeSavePrivate final : public RomDataPrivate
 {
 public:
-	GameCubeSavePrivate(const IRpFilePtr &file);
-	~GameCubeSavePrivate() final = default;
+	explicit GameCubeSavePrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -38,8 +37,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 3+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -66,6 +65,20 @@ public:
 		Max
 	};
 	SaveType saveType;
+
+	/**
+	 * PDP-swap a DWORD from a .sav save file.
+	 * @param x Original DWORD
+	 * @return PDP-swapped DWORD
+	 */
+	static inline uint32_t PDP_SWAP(uint32_t x)
+	{
+		union { uint16_t w[2]; uint32_t d; } tmp;
+		tmp.d = be32_to_cpu(x);
+		tmp.w[0] = __swab16(tmp.w[0]);
+		tmp.w[1] = __swab16(tmp.w[1]);
+		return tmp.d;
+	}
 
 	/**
 	 * Byteswap a card_direntry struct.
@@ -108,7 +121,7 @@ public:
 	 * Get the comment from the save file.
 	 * @return Comment, or empty string on error.
 	 */
-	string getComment(void);
+	string getComment(void) const;
 };
 
 ROMDATA_IMPL(GameCubeSave)
@@ -117,22 +130,22 @@ ROMDATA_IMPL_IMG(GameCubeSave)
 /** GameCubeSavePrivate **/
 
 /* RomDataInfo */
-const char *const GameCubeSavePrivate::exts[] = {
+const array<const char*, 3+1> GameCubeSavePrivate::exts = {{
 	".gci",	// USB Memory Adapter
 	".gcs",	// GameShark
 	".sav",	// MaxDrive (TODO: Too generic?)
 
 	nullptr
-};
-const char *const GameCubeSavePrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> GameCubeSavePrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-gamecube-save",
 
 	nullptr
-};
+}};
 const RomDataInfo GameCubeSavePrivate::romDataInfo = {
-	"GameCubeSave", exts, mimeTypes
+	"GameCubeSave", exts.data(), mimeTypes.data()
 };
 
 GameCubeSavePrivate::GameCubeSavePrivate(const IRpFilePtr &file)
@@ -263,21 +276,13 @@ bool GameCubeSavePrivate::isCardDirEntry(const uint8_t *buffer, uint32_t data_si
 	// minus 64 bytes for the GCI header.
 	// NOTE: 0xFFFFFFFF indicates "no icon" or "no comment".
 	// Used by some SDK tools.
-#define PDP_SWAP(dest, src) \
-	do { \
-		union { uint16_t w[2]; uint32_t d; } tmp; \
-		tmp.d = be32_to_cpu(src); \
-		tmp.w[0] = __swab16(tmp.w[0]); \
-		tmp.w[1] = __swab16(tmp.w[1]); \
-		(dest) = tmp.d; \
-	} while (0)
 	uint32_t iconaddr, commentaddr;
-	if (saveType != SaveType::SAV) {
+	if (unlikely(saveType == SaveType::SAV)) {
+		iconaddr = PDP_SWAP(direntry->iconaddr);
+		commentaddr = PDP_SWAP(direntry->commentaddr);
+	} else {
 		iconaddr = be32_to_cpu(direntry->iconaddr);
 		commentaddr = be32_to_cpu(direntry->commentaddr);
-	} else {
-		PDP_SWAP(iconaddr, direntry->iconaddr);
-		PDP_SWAP(commentaddr, direntry->commentaddr);
 	}
 	if ((iconaddr >= data_size && iconaddr != 0xFFFFFFFFU) ||
 	    (commentaddr >= data_size && commentaddr != 0xFFFFFFFFU))
@@ -461,6 +466,13 @@ rp_image_const_ptr GameCubeSavePrivate::loadIcon(void)
 
 			case CARD_ICON_CI_SHARED: {
 				// Shared CI8 palette is at the end of the data.
+				assert(iconsizetotal >= (256*2));
+				if (iconsizetotal < (256*2)) {
+					// Not enough data for a shared CI8 palette?
+					iconAnimData->frames[i] = nullptr;
+					break;
+				}
+
 				const uint16_t *const pal_CI8_shared = reinterpret_cast<const uint16_t*>(
 					icondata.get() + (iconsizetotal - (256*2)));
 
@@ -574,7 +586,7 @@ rp_image_const_ptr GameCubeSavePrivate::loadBanner(void)
  * Get the comment from the save file.
  * @return Comment, or empty string on error.
  */
-string GameCubeSavePrivate::getComment(void)
+string GameCubeSavePrivate::getComment(void) const
 {
 	if (unlikely(direntry.commentaddr == 0xFFFFFFFFU)) {
 		// No comment.
@@ -595,10 +607,37 @@ string GameCubeSavePrivate::getComment(void)
 		return {};
 	}
 
+	// Only allow Shift-JIS for non-US/EU region codes.
+	// TODO: Use a lookup table instead of switch/case?
+	bool isShiftJIS;
+	switch (direntry.id6[3]) {
+		case 'E':	// USA
+		case 'P':	// Europe
+		case 'X':	// Multi-language release
+		case 'Y':	// Multi-language release
+		case 'L':	// Japanese import to PAL regions
+		case 'M':	// Japanese import to PAL regions
+
+		case 'D':	// Germany
+		case 'F':	// France
+		case 'H':	// Netherlands
+		case 'I':	// Italy
+		case 'R':	// Russia
+		case 'S':	// Spain
+		case 'U':	// Australia
+			isShiftJIS = false;
+			break;
+
+		default:
+			isShiftJIS = true;
+			break;
+	}
+
 	// Get the comment.
 	// NOTE: Some games have garbage after the first NULL byte
 	// in the two description fields, which prevents the rest
 	// of the field from being displayed.
+	string desc;
 
 	// Check for a NULL byte in the game description.
 	size_t desc_len = sizeof(comment.desc);
@@ -607,7 +646,11 @@ string GameCubeSavePrivate::getComment(void)
 		// Found a NULL byte.
 		desc_len = null_pos - comment.desc;
 	}
-	string desc = cp1252_sjis_to_utf8(comment.desc, static_cast<int>(desc_len));
+	if (isShiftJIS) {
+		desc = cp1252_sjis_to_utf8(comment.desc, static_cast<int>(desc_len));
+	} else {
+		desc = cp1252_to_utf8(comment.desc, static_cast<int>(desc_len));
+	}
 	// NOTE: Some games (e.g. TMNT Mutant Melee [GE5EA4]) end the field with CR.
 	if (!desc.empty() && desc[desc.size()-1] == '\r') {
 		desc.resize(desc.size()-1);
@@ -621,7 +664,11 @@ string GameCubeSavePrivate::getComment(void)
 		// Found a NULL byte.
 		desc_len = null_pos - comment.file;
 	}
-	desc += cp1252_sjis_to_utf8(comment.file, static_cast<int>(desc_len));
+	if (isShiftJIS) {
+		desc += cp1252_sjis_to_utf8(comment.file, static_cast<int>(desc_len));
+	} else {
+		desc += cp1252_to_utf8(comment.file, static_cast<int>(desc_len));
+	}
 	// NOTE: Some games (e.g. TMNT Mutant Melee [GE5EA4]) end the field with CR.
 	if (!desc.empty() && desc[desc.size()-1] == '\r') {
 		desc.resize(desc.size()-1);
@@ -806,9 +853,9 @@ const char *GameCubeSave::systemName(unsigned int type) const
 		"GameCubeSave::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Nintendo GameCube", "GameCube", "GCN", nullptr
-	};
+	}};
 
 	// Special check for GCN abbreviation in Japan.
 	if ((type & SYSNAME_REGION_MASK) == SYSNAME_REGION_ROM_LOCAL) {
@@ -850,9 +897,9 @@ vector<RomData::ImageSizeDef> GameCubeSave::supportedImageSizes_static(ImageType
 
 	switch (imageType) {
 		case IMG_INT_ICON:
-			return {{nullptr, 32, 32, 0}};
+			return {{nullptr, CARD_ICON_W, CARD_ICON_H, 0}};
 		case IMG_INT_BANNER:
-			return {{nullptr, 96, 32, 0}};
+			return {{nullptr, CARD_BANNER_W, CARD_BANNER_H, 0}};
 		default:
 			break;
 	}
@@ -916,7 +963,7 @@ int GameCubeSave::loadFieldData(void)
 	} else if (!d->file || !d->file->isOpen()) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->saveType < 0 || d->dataOffset < 0) {
+	} else if (!d->isValid || static_cast<int>(d->saveType) < 0 || d->dataOffset < 0) {
 		// Unknown save file type.
 		return -EIO;
 	}
@@ -991,44 +1038,41 @@ int GameCubeSave::loadFieldData(void)
 int GameCubeSave::loadMetaData(void)
 {
 	RP_D(GameCubeSave);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->saveType < 0 || d->dataOffset < 0) {
+	} else if (!d->isValid || static_cast<int>(d->saveType) < 0 || d->dataOffset < 0) {
 		// Unknown save file type.
 		return -EIO;
 	}
 
 	// Save file header is read and byteswapped in the constructor.
 	const card_direntry *const direntry = &d->direntry;
-
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(3);	// Maximum of 4 metadata properties.
+	d->metaData.reserve(3);	// Maximum of 4 metadata properties.
 
 	// Look up the publisher.
 	const char *publisher = NintendoPublishers::lookup(direntry->company);
 	if (publisher) {
-		d->metaData->addMetaData_string(Property::Publisher, publisher);
+		d->metaData.addMetaData_string(Property::Publisher, publisher);
 	}
 
 	// Description (using this as the Title)
 	string description = d->getComment();
 	if (likely(!description.empty())) {
-		d->metaData->addMetaData_string(Property::Title, description);
+		d->metaData.addMetaData_string(Property::Title, description);
 	}
 
 	// Last Modified timestamp
 	// NOTE: Using "CreationDate".
 	// TODO: Adjust for local timezone, since it's UTC.
-	d->metaData->addMetaData_timestamp(Property::CreationDate,
+	d->metaData.addMetaData_timestamp(Property::CreationDate,
 		static_cast<time_t>(direntry->lastmodified) + GC_UNIX_TIME_DIFF);
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -1089,7 +1133,7 @@ int GameCubeSave::loadInternalImage(ImageType imageType, rp_image_const_ptr &pIm
 	}
 
 	// TODO: -ENOENT if the file doesn't actually have an icon/banner.
-	return ((bool)pImage ? 0 : -EIO);
+	return (pImage) ? 0 : -EIO;
 }
 
 /**
@@ -1126,4 +1170,4 @@ IconAnimDataConstPtr GameCubeSave::iconAnimData(void) const
 	return d->iconAnimData;
 }
 
-}
+} // namespace LibRomData

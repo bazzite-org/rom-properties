@@ -86,6 +86,15 @@ void AllowDarkModeForApp(bool allow)
 		_SetPreferredAppMode(allow ? AllowDark : Default);
 }
 
+static HTHEME WINAPI MyOpenThemeData(HWND hWnd, LPCWSTR classList)
+{
+	if (lstrcmpW(classList, L"ScrollBar") == 0) {
+		hWnd = nullptr;
+		classList = L"Explorer::ScrollBar";
+	}
+	return _OpenNcThemeData(hWnd, classList);
+};
+
 void FixDarkScrollBar(void)
 {
 	HMODULE hComctl = LoadLibraryEx(_T("comctl32.dll"), nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -99,14 +108,6 @@ void FixDarkScrollBar(void)
 	DWORD oldProtect;
 	if (!VirtualProtect(addr, sizeof(IMAGE_THUNK_DATA), PAGE_READWRITE, &oldProtect))
 		return;
-
-	auto MyOpenThemeData = [](HWND hWnd, LPCWSTR classList) -> HTHEME {
-		if (lstrcmpW(classList, L"ScrollBar") == 0) {
-			hWnd = nullptr;
-			classList = L"Explorer::ScrollBar";
-		}
-		return _OpenNcThemeData(hWnd, classList);
-	};
 
 	addr->u1.Function = reinterpret_cast<ULONG_PTR>(static_cast<fnOpenNcThemeData>(MyOpenThemeData));
 	VirtualProtect(addr, sizeof(IMAGE_THUNK_DATA), oldProtect, &oldProtect);
@@ -135,35 +136,45 @@ int InitDarkModePFNs(void)
 	if (g_darkModeSupported)
 		return 0;
 
-	auto RtlGetNtVersionNumbers = reinterpret_cast<fnRtlGetNtVersionNumbers>(
-		GetProcAddress(GetModuleHandle(_T("ntdll.dll")), "RtlGetNtVersionNumbers"));
-	if (!RtlGetNtVersionNumbers)
+	HMODULE hNtDll = GetModuleHandle(_T("ntdll.dll"));
+	assert(hNtDll != nullptr);
+	if (!hNtDll) {
+		// Uh oh, something's broken...
 		return 1;
+	}
+
+	auto RtlGetNtVersionNumbers = reinterpret_cast<fnRtlGetNtVersionNumbers>(
+		GetProcAddress(hNtDll, "RtlGetNtVersionNumbers"));
+	if (!RtlGetNtVersionNumbers) {
+		return 2;
+	}
 
 	DWORD major, minor;
 	RtlGetNtVersionNumbers(&major, &minor, &g_buildNumber);
 	g_buildNumber &= ~0xF0000000;
 	if (major != 10 || minor != 0 || !CheckBuildNumber(g_buildNumber)) {
 		// Not Windows 10, or not a supported build number.
-		return 2;
+		return 3;
 	}
 
 	HMODULE hKernel32 = GetModuleHandle(_T("kernel32.dll"));
 	assert(hKernel32 != nullptr);
-	if (!hKernel32)
-		return 3;
+	if (!hKernel32) {
+		return 4;
+	}
 
 	// Functions added in Windows Vista
 	_CompareStringOrdinal = reinterpret_cast<fnCompareStringOrdinal>(GetProcAddress(hKernel32, "CompareStringOrdinal"));
 	if (!_CompareStringOrdinal) {
 		// If we don't even have a function from Vista,
 		// we definitely won't have any Dark Mode functions.
-		return 4;
+		return 5;
 	}
 
 	HMODULE hUxtheme = LoadLibraryEx(_T("uxtheme.dll"), nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-	if (!hUxtheme)
-		return 5;
+	if (!hUxtheme) {
+		return 6;
+	}
 
 	// Standard theming functions (uxtheme)
 	_OpenNcThemeData = reinterpret_cast<fnOpenNcThemeData>(GetProcAddress(hUxtheme, MAKEINTRESOURCEA(49)));
@@ -216,7 +227,7 @@ int InitDarkModePFNs(void)
 	_ShouldSystemUseDarkMode = nullptr;
 	_SetPreferredAppMode = nullptr;
 	FreeLibrary(hUxtheme);
-	return 6;
+	return 7;
 }
 
 /**

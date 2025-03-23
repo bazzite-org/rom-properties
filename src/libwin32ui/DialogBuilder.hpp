@@ -2,14 +2,14 @@
  * ROM Properties Page shell extension. (libwin32ui)                       *
  * DialogBuilder.hpp: DLGTEMPLATEEX builder class.                         *
  *                                                                         *
- * Copyright (c) 2017-2023 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
 #pragma once
 
-// C includes
-#include <stdint.h>
+// C includes (C++ namespace)
+#include <cstdint>
 
 // Windows SDK
 #include "RpWin32_sdk.h"
@@ -32,15 +32,8 @@ public:
 	DialogBuilder();
 
 	// Disable copy/assignment constructors.
-#if __cplusplus >= 201103L
-public:
 	DialogBuilder(const DialogBuilder &) = delete;
 	DialogBuilder &operator=(const DialogBuilder &) = delete;
-#else /* __cplusplus < 201103L */
-private:
-	DialogBuilder(const DialogBuilder &);
-	DialogBuilder &operator=(const DialogBuilder &);
-#endif /* __cplusplus */
 
 private:
 	/** DLGTEMPLATEEX helper functions. **/

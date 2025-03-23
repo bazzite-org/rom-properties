@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (GTK+ common)                      *
  * KeyManagerTab.cpp: Key Manager tab for rp-config.                       *
  *                                                                         *
- * Copyright (c) 2017-2024 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -51,7 +51,7 @@ static gboolean	btnImport_event_signal_handler			(GtkButton		*button,
 static void rp_key_manager_tab_show_key_import_return_status	(RpKeyManagerTab	*tab,
 								 const char		*filename,
 								 const char		*keyType,
-								 const KeyStoreUI::ImportReturn &iret);
+								 KeyStoreUI::ImportReturn iret);
 
 #ifdef USE_G_MENU_MODEL
 static void	action_triggered_signal_handler			(GSimpleAction		*action,
@@ -104,10 +104,10 @@ rp_key_manager_tab_rp_config_tab_interface_init(RpConfigTabInterface *iface)
 static void
 rp_key_manager_tab_init(RpKeyManagerTab *tab)
 {
-#if GTK_CHECK_VERSION(3,0,0)
+#if GTK_CHECK_VERSION(3, 0, 0)
 	// Make this a VBox.
 	gtk_orientable_set_orientation(GTK_ORIENTABLE(tab), GTK_ORIENTATION_VERTICAL);
-#endif /* GTK_CHECK_VERSION(3,0,0) */
+#endif /* GTK_CHECK_VERSION(3, 0, 0) */
 	gtk_box_set_spacing(GTK_BOX(tab), 8);
 
 	// MessageWidget goes at the top of the window.
@@ -122,22 +122,22 @@ rp_key_manager_tab_init(RpKeyManagerTab *tab)
 	g_signal_connect(tab->keyStore, "modified", G_CALLBACK(keyStore_modified_signal_handler), tab);
 
 	// Scroll area for the GtkTreeView.
-#if GTK_CHECK_VERSION(4,0,0)
+#if GTK_CHECK_VERSION(4, 0, 0)
 	tab->scrolledWindow = gtk_scrolled_window_new();
 	gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(tab->scrolledWindow), true);
-#else /* !GTK_CHECK_VERSION(4,0,0) */
+#else /* !GTK_CHECK_VERSION(4, 0, 0) */
 	tab->scrolledWindow = gtk_scrolled_window_new(nullptr, nullptr);
 	gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(tab->scrolledWindow), GTK_SHADOW_IN);
 #endif /* GTK_CHECK_VERSION */
 	gtk_widget_set_name(tab->scrolledWindow, "scrolledWindow");
 	gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(tab->scrolledWindow),
 		GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-#if GTK_CHECK_VERSION(2,91,1)
+#if GTK_CHECK_VERSION(2, 91, 1)
 	gtk_widget_set_halign(tab->scrolledWindow, GTK_ALIGN_FILL);
 	gtk_widget_set_valign(tab->scrolledWindow, GTK_ALIGN_FILL);
 	gtk_widget_set_hexpand(tab->scrolledWindow, TRUE);
 	gtk_widget_set_vexpand(tab->scrolledWindow, TRUE);
-#endif /* GTK_CHECK_VERSION(2,91,1) */
+#endif /* GTK_CHECK_VERSION(2, 91, 1) */
 
 	// Create the Gtk(Tree|Column)View and backing store.
 	rp_key_manager_tab_create_GtkTreeView(tab);
@@ -151,11 +151,11 @@ rp_key_manager_tab_init(RpKeyManagerTab *tab)
 #endif /* USE_GTK_MENU_BUTTON */
 	gtk_widget_set_name(tab->btnImport, "btnImport");
 
-#if GTK_CHECK_VERSION(4,0,0) && defined(USE_GTK_MENU_BUTTON)
+#if GTK_CHECK_VERSION(4, 0, 0) && defined(USE_GTK_MENU_BUTTON)
 	gtk_menu_button_set_label(GTK_MENU_BUTTON(tab->btnImport), s_import.c_str());
 	gtk_menu_button_set_use_underline(GTK_MENU_BUTTON(tab->btnImport), TRUE);
 	gtk_menu_button_set_direction(GTK_MENU_BUTTON(tab->btnImport), GTK_ARROW_UP);
-#else /* !GTK_CHECK_VERSION(4,0,0) || !defined(USE_GTK_MENU_BUTTON) */
+#else /* !GTK_CHECK_VERSION(4, 0, 0) || !defined(USE_GTK_MENU_BUTTON) */
 	// GtkMenuButton in GTK3 only supports a label *or* an image by default.
 	// Create a GtkBox to store both a label and image.
 	// This will also be used for the non-GtkMenuButton version.
@@ -169,12 +169,12 @@ rp_key_manager_tab_init(RpKeyManagerTab *tab)
 	gtk_widget_set_name(hboxImport, "hboxImport");
 	gtk_box_pack_start(GTK_BOX(hboxImport), lblImport, false, false, 0);
 	gtk_box_pack_start(GTK_BOX(hboxImport), imgImport, false, false, 0);
-#  if GTK_CHECK_VERSION(4,0,0)
+#  if GTK_CHECK_VERSION(4, 0, 0)
 	gtk_button_set_child(GTK_BUTTON(tab->btnImport), hboxImport);
-#  else /* !GTK_CHECK_VERSION(4,0,0) */
+#  else /* !GTK_CHECK_VERSION(4, 0, 0) */
 	gtk_container_add(GTK_CONTAINER(tab->btnImport), hboxImport);
-#  endif /* GTK_CHECK_VERSION(4,0,0) */
-#endif /* GTK_CHECK_VERSION(4,0,0) && defined(USE_GTK_MENU_BUTTON) */
+#  endif /* GTK_CHECK_VERSION(4, 0, 0) */
+#endif /* GTK_CHECK_VERSION(4, 0, 0) && defined(USE_GTK_MENU_BUTTON) */
 
 #ifndef RP_USE_GTK_ALIGNMENT
 	GTK_WIDGET_HALIGN_LEFT(tab->btnImport);
@@ -188,34 +188,31 @@ rp_key_manager_tab_init(RpKeyManagerTab *tab)
 
 	// Create the "Import" popup menu.
 #ifdef USE_G_MENU_MODEL
-	char prefix[64];
-	snprintf(prefix, sizeof(prefix), "rp-KeyManagerTab-Import-%p", tab->btnImport);
+	const string s_prefix = fmt::format(FSTR("rp-KeyManagerTab-Import-{:p}"), static_cast<void*>(tab->btnImport));
 
 	tab->actionGroup = g_simple_action_group_new();
 	tab->menuModel = g_menu_new();
 	for (int i = 0; i < ARRAY_SIZE_I(import_menu_actions); i++) {
 		// Create the action.
-		char buf[128];
-		snprintf(buf, sizeof(buf), "%d", i);
-		GSimpleAction *const action = g_simple_action_new(buf, nullptr);
+		GSimpleAction *const action = g_simple_action_new(
+			fmt::to_string(i).c_str(), nullptr);
 		g_simple_action_set_enabled(action, TRUE);
 		g_object_set_qdata(G_OBJECT(action), menuImport_id_quark, GINT_TO_POINTER(i));
 		g_signal_connect(action, "activate", G_CALLBACK(action_triggered_signal_handler), tab);
 		g_action_map_add_action(G_ACTION_MAP(tab->actionGroup), G_ACTION(action));
 
 		// Create the menu item.
-		snprintf(buf, sizeof(buf), "%s.%d", prefix, i);
-		g_menu_append(tab->menuModel, import_menu_actions[i], buf);
+		g_menu_append(tab->menuModel, import_menu_actions[i],
+			fmt::format(FSTR("{:s}.{:d}"), s_prefix, i).c_str());
 	}
 
-	gtk_widget_insert_action_group(GTK_WIDGET(tab->btnImport), prefix, G_ACTION_GROUP(tab->actionGroup));
+	gtk_widget_insert_action_group(GTK_WIDGET(tab->btnImport), s_prefix.c_str(), G_ACTION_GROUP(tab->actionGroup));
 #else /* !USE_G_MENU_MODEL */
 	tab->menuImport = gtk_menu_new();
 	gtk_widget_set_name(tab->menuImport, "menuImport");
 	for (int i = 0; i < ARRAY_SIZE_I(import_menu_actions); i++) {
 		GtkWidget *const menuItem = gtk_menu_item_new_with_label(import_menu_actions[i]);
-		char menu_name[32];
-		snprintf(menu_name, sizeof(menu_name), "menuImport%d", i);
+		gtk_widget_set_name(menuItem, fmt::format(FSTR("menuImport{:d}"), i).c_str());
 		g_object_set_qdata(G_OBJECT(menuItem), menuImport_id_quark, GINT_TO_POINTER(i));
 		g_signal_connect(menuItem, "activate", G_CALLBACK(menuImport_triggered_signal_handler), tab);
 		gtk_widget_show(menuItem);
@@ -242,11 +239,11 @@ rp_key_manager_tab_init(RpKeyManagerTab *tab)
 	g_signal_connect(tab->btnImport, "event", G_CALLBACK(btnImport_event_signal_handler), tab);
 #endif /* !USE_GTK_MENU_BUTTON */
 
-#if GTK_CHECK_VERSION(4,0,0)
+#if GTK_CHECK_VERSION(4, 0, 0)
 	gtk_box_append(GTK_BOX(tab), tab->messageWidget);
 	gtk_box_append(GTK_BOX(tab), tab->scrolledWindow);
 	gtk_box_append(GTK_BOX(tab), tab->btnImport);
-#else /* !GTK_CHECK_VERSION(4,0,0) */
+#else /* !GTK_CHECK_VERSION(4, 0, 0) */
 	gtk_box_pack_start(GTK_BOX(tab), tab->messageWidget, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(tab), tab->scrolledWindow, TRUE, TRUE, 0);
 
@@ -258,7 +255,7 @@ rp_key_manager_tab_init(RpKeyManagerTab *tab)
 
 	gtk_widget_show_all(tab->scrolledWindow);
 	gtk_widget_show_all(tab->btnImport);
-#endif /* GTK_CHECK_VERSION(4,0,0) */
+#endif /* GTK_CHECK_VERSION(4, 0, 0) */
 
 	// Initialize the GtkTreeView with the available keys.
 	rp_key_manager_tab_init_keys(tab);
@@ -346,8 +343,9 @@ rp_key_manager_tab_save(RpKeyManagerTab *tab, GKeyFile *keyFile)
 	for (int i = 0; i < totalKeyCount; i++) {
 		const KeyStoreUI::Key *const key = keyStoreUI->getKey(i);
 		assert(key != nullptr);
-		if (!key || !key->modified)
+		if (!key || !key->modified) {
 			continue;
+		}
 
 		// Save this key.
 		g_key_file_set_string(keyFile, "Keys", key->name.c_str(), key->value.c_str());
@@ -371,8 +369,8 @@ rp_key_manager_tab_save(RpKeyManagerTab *tab, GKeyFile *keyFile)
 static void
 btnImport_menu_pos_func(GtkMenu *menu, gint *x, gint *y, gboolean *push_in, gpointer user_data)
 {
-	GtkWidget *const button = (GtkWidget*)GTK_BUTTON(user_data);
-	GdkWindow *const window = gtk_widget_get_window(button);
+	GtkButton *const button = GTK_BUTTON(user_data);
+	GdkWindow *const window = gtk_widget_get_window(GTK_WIDGET(button));
 
 	// FIXME: GTK2: First run results in the menu going down, not up.
 	GtkAllocation button_alloc, menu_alloc;
@@ -453,7 +451,7 @@ rp_key_manager_getOpenFileDialog_callback(GFile *file, open_data_t *open_data)
 	KeyStoreUI *const keyStoreUI = rp_key_store_gtk_get_key_store_ui(tab->keyStore);
 	const KeyStoreUI::ImportReturn iret = keyStoreUI->importKeysFromBin(open_data->id, filename);
 
-	rp_key_manager_tab_show_key_import_return_status(tab, filename, import_menu_actions[(int)open_data->id], iret);
+	rp_key_manager_tab_show_key_import_return_status(tab, filename, import_menu_actions[static_cast<size_t>(open_data->id)], iret);
 	g_free(filename);
 	g_free(open_data);
 }
@@ -467,10 +465,10 @@ rp_key_manager_getOpenFileDialog_callback(GFile *file, open_data_t *open_data)
 static void
 rp_key_manager_tab_handle_menu_action(RpKeyManagerTab *tab, gint id)
 {
-	assert(id >= (int)KeyStoreUI::ImportFileID::WiiKeysBin);
-	assert(id <= (int)KeyStoreUI::ImportFileID::N3DSaeskeydb);
-	if (id < (int)KeyStoreUI::ImportFileID::WiiKeysBin ||
-	    id > (int)KeyStoreUI::ImportFileID::N3DSaeskeydb)
+	assert(id >= static_cast<int>(KeyStoreUI::ImportFileID::WiiKeysBin));
+	assert(id <= static_cast<int>(KeyStoreUI::ImportFileID::N3DSaeskeydb));
+	if (id < static_cast<int>(KeyStoreUI::ImportFileID::WiiKeysBin) ||
+	    id > static_cast<int>(KeyStoreUI::ImportFileID::N3DSaeskeydb))
 		return;
 
 	static constexpr char dialog_titles_tbl[][32] = {
@@ -534,7 +532,7 @@ static void
 rp_key_manager_tab_show_key_import_return_status(RpKeyManagerTab	*tab,
 					      const char	*filename,
 					      const char	*keyType,
-					      const KeyStoreUI::ImportReturn &iret)
+					      KeyStoreUI::ImportReturn iret)
 {
 	GtkMessageType type = GTK_MESSAGE_INFO;
 	bool showKeyStats = false;
@@ -546,9 +544,6 @@ rp_key_manager_tab_show_key_import_return_status(RpKeyManagerTab	*tab,
 
 	// TODO: Localize POSIX error messages?
 	// TODO: Thread-safe strerror()?
-	// NOTE: glib doesn't seem to have its own numeric formatting,
-	// so we'll use printf()'s grouping modifier.
-
 	switch (iret.status) {
 		case KeyStoreUI::ImportStatus::InvalidParams:
 		default:
@@ -567,14 +562,14 @@ rp_key_manager_tab_show_key_import_return_status(RpKeyManagerTab	*tab,
 
 		case KeyStoreUI::ImportStatus::OpenError:
 			if (iret.error_code != 0) {
-				// tr: %1$s == filename, %2$s == error message
-				msg = rp_sprintf_p(C_("KeyManagerTab",
-					"An error occurred while opening '%1$s': %2$s"),
+				// tr: {0:s} == filename, {1:s} == error message
+				msg = fmt::format(FRUN(C_("KeyManagerTab",
+					"An error occurred while opening '{0:s}': {1:s}")),
 					fileNoPath, strerror(iret.error_code));
 			} else {
-				// tr: %s == filename
-				msg = rp_sprintf_p(C_("KeyManagerTab",
-					"An error occurred while opening '%s'."),
+				// tr: {:s} == filename
+				msg = fmt::format(FRUN(C_("KeyManagerTab",
+					"An error occurred while opening '{:s}'.")),
 					fileNoPath);
 			}
 			type = GTK_MESSAGE_ERROR;
@@ -583,31 +578,31 @@ rp_key_manager_tab_show_key_import_return_status(RpKeyManagerTab	*tab,
 		case KeyStoreUI::ImportStatus::ReadError:
 			// TODO: Error code for short reads.
 			if (iret.error_code != 0) {
-				// tr: %1$s == filename, %2$s == error message
-				msg = rp_sprintf_p(C_("KeyManagerTab",
-					"An error occurred while reading '%1$s': %2$s"),
+				// tr: {0:s} == filename, {1:s} == error message
+				msg = fmt::format(FRUN(C_("KeyManagerTab",
+					"An error occurred while reading '{0:s}': {1:s}")),
 					fileNoPath, strerror(iret.error_code));
 			} else {
-				// tr: %s == filename
-				msg = rp_sprintf_p(C_("KeyManagerTab",
-					"An error occurred while reading '%s'."),
+				// tr: {:s} == filename
+				msg = fmt::format(FRUN(C_("KeyManagerTab",
+					"An error occurred while reading '{:s}'.")),
 					fileNoPath);
 			}
 			type = GTK_MESSAGE_ERROR;
 			break;
 
 		case KeyStoreUI::ImportStatus::InvalidFile:
-			// tr: %1$s == filename, %2$s == type of file
-			msg = rp_sprintf_p(C_("KeyManagerTab",
-				"The file '%1$s' is not a valid %2$s file."),
+			// tr: {0:s} == filename, {1:s} == type of file
+			msg = fmt::format(FRUN(C_("KeyManagerTab",
+				"The file '{0:s}' is not a valid {1:s} file.")),
 				fileNoPath, keyType);
 			type = GTK_MESSAGE_WARNING;
 			break;
 
 		case KeyStoreUI::ImportStatus::NoKeysImported:
-			// tr: %s == filename
-			msg = rp_sprintf(C_("KeyManagerTab",
-				"No keys were imported from '%s'."),
+			// tr: {:s} == filename
+			msg = fmt::format(FRUN(C_("KeyManagerTab",
+				"No keys were imported from '{:s}'.")),
 				fileNoPath);
 			type = GTK_MESSAGE_INFO;
 			showKeyStats = true;
@@ -615,14 +610,12 @@ rp_key_manager_tab_show_key_import_return_status(RpKeyManagerTab	*tab,
 
 		case KeyStoreUI::ImportStatus::KeysImported: {
 			const int keyCount = static_cast<int>(iret.keysImportedVerify + iret.keysImportedNoVerify);
-			char buf[16];
-			snprintf(buf, sizeof(buf), "%'d", keyCount);
-
-			// tr: %1$s == number of keys (formatted), %2$u == filename
-			msg = rp_sprintf_p(NC_("KeyManagerTab",
-				"%1$s key was imported from '%2$s'.",
-				"%1$s keys were imported from '%2$s'.",
-				keyCount), buf, fileNoPath);
+			// tr: {0:Ld} == number of keys, {1:s} == filename
+			msg = fmt::format(FRUN(NC_("KeyManagerTab",
+				"{0:Ld} key was imported from '{1:s}'.",
+				"{0:Ld} keys were imported from '{1:s}'.",
+				keyCount)),
+				keyCount, fileNoPath);
 			type = GTK_MESSAGE_INFO;	// NOTE: No equivalent to KMessageWidget::Positive.
 			showKeyStats = true;
 			break;
@@ -633,60 +626,59 @@ rp_key_manager_tab_show_key_import_return_status(RpKeyManagerTab	*tab,
 	static constexpr char nl_bullet[] = "\n\xE2\x80\xA2 ";
 
 	if (showKeyStats) {
-		char buf[16];
-
 		if (iret.keysExist > 0) {
-			snprintf(buf, sizeof(buf), "%'d", iret.keysExist);
 			msg += nl_bullet;
-			// tr: %s == number of keys (formatted)
-			msg += rp_sprintf(NC_("KeyManagerTab",
-				"%s key already exists in the Key Manager.",
-				"%s keys already exist in the Key Manager.",
-				iret.keysExist), buf);
+			// tr: {:Ld} == number of keys
+			msg += fmt::format(FRUN(NC_("KeyManagerTab",
+				"{:Ld} key already exists in the Key Manager.",
+				"{:Ld} keys already exist in the Key Manager.",
+				iret.keysExist)),
+				iret.keysExist);
 		}
 		if (iret.keysInvalid > 0) {
-			snprintf(buf, sizeof(buf), "%'d", iret.keysInvalid);
 			msg += nl_bullet;
-			// tr: %s == number of keys (formatted)
-			msg += rp_sprintf(NC_("KeyManagerTab",
-				"%s key was not imported because it is incorrect.",
-				"%s keys were not imported because they are incorrect.",
-				iret.keysInvalid), buf);
+			// tr: {:Ld} == number of keys
+			msg += fmt::format(FRUN(NC_("KeyManagerTab",
+				"{:Ld} key was not imported because it is incorrect.",
+				"{:Ld} keys were not imported because they are incorrect.",
+				iret.keysInvalid)),
+				iret.keysInvalid);
 		}
 		if (iret.keysNotUsed > 0) {
-			snprintf(buf, sizeof(buf), "%'d", iret.keysNotUsed);
 			msg += nl_bullet;
-			// tr: %s == number of keys (formatted)
-			msg += rp_sprintf(NC_("KeyManagerTab",
-				"%s key was not imported because it isn't used by rom-properties.",
-				"%s keys were not imported because they aren't used by rom-properties.",
-				iret.keysNotUsed), buf);
+			// tr: {:Ld} == number of keys
+			msg += fmt::format(FRUN(NC_("KeyManagerTab",
+				"{:Ld} key was not imported because it isn't used by rom-properties.",
+				"{:Ld} keys were not imported because they aren't used by rom-properties.",
+				iret.keysNotUsed)),
+				iret.keysNotUsed);
 		}
 		if (iret.keysCantDecrypt > 0) {
-			snprintf(buf, sizeof(buf), "%'d", iret.keysCantDecrypt);
 			msg += nl_bullet;
-			// tr: %s == number of keys (formatted)
-			msg += rp_sprintf(NC_("KeyManagerTab",
-				"%s key was not imported because it is encrypted and the master key isn't available.",
-				"%s keys were not imported because they are encrypted and the master key isn't available.",
-				iret.keysCantDecrypt), buf);
+			// tr: {:Ld} == number of keys
+			msg += fmt::format(FRUN(NC_("KeyManagerTab",
+				"{:Ld} key was not imported because it is encrypted and the master key isn't available.",
+				"{:Ld} keys were not imported because they are encrypted and the master key isn't available.",
+				iret.keysCantDecrypt)),
+				iret.keysCantDecrypt);
 		}
 		if (iret.keysImportedVerify > 0) {
-			snprintf(buf, sizeof(buf), "%'d", iret.keysImportedVerify);
 			msg += nl_bullet;
-			// tr: %s == number of keys (formatted)
-			msg += rp_sprintf(NC_("KeyManagerTab",
-				"%s key has been imported and verified as correct.",
-				"%s keys have been imported and verified as correct.",
-				iret.keysImportedVerify), buf);
+			// tr: {:Ld} == number of keys
+			msg += fmt::format(FRUN(NC_("KeyManagerTab",
+				"{:Ld} key has been imported and verified as correct.",
+				"{:Ld} keys have been imported and verified as correct.",
+				iret.keysImportedVerify)),
+				iret.keysImportedVerify);
 		}
 		if (iret.keysImportedNoVerify > 0) {
-			snprintf(buf, sizeof(buf), "%'d", iret.keysImportedNoVerify);
 			msg += nl_bullet;
-			msg += rp_sprintf(NC_("KeyManagerTab",
-				"%s key has been imported without verification.",
-				"%s keys have been imported without verification.",
-				iret.keysImportedNoVerify), buf);
+			// tr: {:Ld} == number of keys
+			msg += fmt::format(FRUN(NC_("KeyManagerTab",
+				"{:Ld} key has been imported without verification.",
+				"{:Ld} keys have been imported without verification.",
+				iret.keysImportedNoVerify)),
+				iret.keysImportedNoVerify);
 		}
 	}
 
@@ -715,7 +707,7 @@ action_triggered_signal_handler(GSimpleAction *action, GVariant *parameter, RpKe
 	RP_UNUSED(parameter);
 	g_return_if_fail(RP_IS_KEY_MANAGER_TAB(tab));
 
-	const gint id = (gboolean)GPOINTER_TO_INT(g_object_get_qdata(G_OBJECT(action), menuImport_id_quark));
+	const gint id = GPOINTER_TO_INT(g_object_get_qdata(G_OBJECT(action), menuImport_id_quark));
 	rp_key_manager_tab_handle_menu_action(tab, id);
 }
 #else /* !USE_G_MENU_MODEL */
@@ -729,7 +721,7 @@ menuImport_triggered_signal_handler(GtkMenuItem *menuItem, RpKeyManagerTab *tab)
 {
 	g_return_if_fail(RP_IS_KEY_MANAGER_TAB(tab));
 
-	const gint id = (gboolean)GPOINTER_TO_INT(g_object_get_qdata(G_OBJECT(menuItem), menuImport_id_quark));
+	const gint id = GPOINTER_TO_INT(g_object_get_qdata(G_OBJECT(menuItem), menuImport_id_quark));
 	rp_key_manager_tab_handle_menu_action(tab, id);
 }
 #endif /* USE_G_MENU_MODEL */

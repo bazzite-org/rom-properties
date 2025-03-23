@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * WiiTMD.hpp: Nintendo Wii (and Wii U) title metadata reader.             *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -17,7 +17,9 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace LibRomData {
@@ -25,8 +27,7 @@ namespace LibRomData {
 class WiiTMDPrivate final : public RomDataPrivate
 {
 public:
-	WiiTMDPrivate(const IRpFilePtr &file);
-	~WiiTMDPrivate();
+	explicit WiiTMDPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -34,8 +35,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -43,7 +44,7 @@ public:
 	RVL_TMD_Header tmdHeader;
 
 	// TMD v1: CMD group header
-	WUP_CMD_GroupHeader *cmdGroupHeader;
+	unique_ptr<WUP_CMD_GroupHeader> cmdGroupHeader;
 
 public:
 	/**
@@ -58,33 +59,27 @@ ROMDATA_IMPL(WiiTMD)
 /** WiiTMDPrivate **/
 
 /* RomDataInfo */
-const char *const WiiTMDPrivate::exts[] = {
+const array<const char*, 1+1> WiiTMDPrivate::exts = {{
 	".tmd",
 
 	nullptr
-};
-const char *const WiiTMDPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> WiiTMDPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-nintendo-tmd",
 
 	nullptr
-};
+}};
 const RomDataInfo WiiTMDPrivate::romDataInfo = {
-	"WiiTMD", exts, mimeTypes
+	"WiiTMD", exts.data(), mimeTypes.data()
 };
 
 WiiTMDPrivate::WiiTMDPrivate(const IRpFilePtr &file)
 	: super(file, &romDataInfo)
-	, cmdGroupHeader(nullptr)
 {
 	// Clear the TMD header struct.
 	memset(&tmdHeader, 0, sizeof(tmdHeader));
-}
-
-WiiTMDPrivate::~WiiTMDPrivate()
-{
-	delete cmdGroupHeader;
 }
 
 /**
@@ -117,7 +112,7 @@ int WiiTMDPrivate::loadCmdGroupHeader(void)
 		return -EIO;
 	}
 
-	this->cmdGroupHeader = grpHdr;
+	this->cmdGroupHeader.reset(grpHdr);
 	return 0;
 }
 
@@ -192,7 +187,7 @@ int WiiTMD::isRomSupported_static(const DetectInfo *info)
 
 	// NOTE: File extension must match.
 	bool ok = false;
-	for (const char *const *ext = WiiTMDPrivate::exts;
+	for (const char *const *ext = WiiTMDPrivate::exts.data();
 	     *ext != nullptr; ext++)
 	{
 		if (!strcasecmp(info->ext, *ext)) {
@@ -295,16 +290,16 @@ const char *WiiTMD::systemName(unsigned int type) const
 		"WiiTMD::systemName() array index optimization needs to be updated.");
 
 	// Use the title ID to determine the system.
-	static const char *const sysNames[8][4] = {
-		{"Nintendo Wii", "Wii", "Wii", nullptr},	// Wii IOS
-		{"Nintendo Wii", "Wii", "Wii", nullptr},	// Wii
-		{"GBA NetCard", "NetCard", "NetCard", nullptr},	// GBA NetCard
-		{"Nintendo DSi", "DSi", "DSi", nullptr},	// DSi
-		{"Nintendo 3DS", "3DS", "3DS", nullptr},	// 3DS
-		{"Nintendo Wii U", "Wii U", "Wii U", nullptr},	// Wii U
-		{nullptr, nullptr, nullptr, nullptr},		// unused
-		{"Nintendo Wii U", "Wii U", "Wii U", nullptr},	// Wii U (vWii)
-	};
+	static const array<array<const char*, 4>, 8> sysNames = {{
+		{{"Nintendo Wii", "Wii", "Wii", nullptr}},		// Wii IOS
+		{{"Nintendo Wii", "Wii", "Wii", nullptr}},		// Wii
+		{{"GBA NetCard", "NetCard", "NetCard", nullptr}},	// GBA NetCard
+		{{"Nintendo DSi", "DSi", "DSi", nullptr}},		// DSi
+		{{"Nintendo 3DS", "3DS", "3DS", nullptr}},		// 3DS
+		{{"Nintendo Wii U", "Wii U", "Wii U", nullptr}},	// Wii U
+		{{nullptr, nullptr, nullptr, nullptr}},			// unused
+		{{"Nintendo Wii U", "Wii U", "Wii U", nullptr}},	// Wii U (vWii)
+	}};
 
 	const unsigned int sysID = be16_to_cpu(d->tmdHeader.title_id.sysID);
 	return (likely(sysID < ARRAY_SIZE(sysNames)))
@@ -336,11 +331,11 @@ int WiiTMD::loadFieldData(void)
 	d->fields.reserve(4);	// Maximum of 4 fields.
 
 	// Title ID
-	char s_title_id[24];
-	snprintf(s_title_id, sizeof(s_title_id), "%08X-%08X",
-		be32_to_cpu(tmdHeader->title_id.hi),
-		be32_to_cpu(tmdHeader->title_id.lo));
-	d->fields.addField_string(C_("Nintendo", "Title ID"), s_title_id, RomFields::STRF_MONOSPACE);
+	d->fields.addField_string(C_("Nintendo", "Title ID"),
+		fmt::format(FSTR("{:0>8X}-{:0>8X}"),
+			be32_to_cpu(tmdHeader->title_id.hi),
+			be32_to_cpu(tmdHeader->title_id.lo)),
+		RomFields::STRF_MONOSPACE);
 
 	// Issuer
 	d->fields.addField_string(C_("Nintendo", "Issuer"),
@@ -351,15 +346,15 @@ int WiiTMD::loadFieldData(void)
 	// TODO: Might be different on 3DS?
 	const unsigned int title_version = be16_to_cpu(tmdHeader->title_version);
 	d->fields.addField_string(C_("Nintendo", "Title Version"),
-		rp_sprintf("%u.%u (v%u)", title_version >> 8, title_version & 0xFF, title_version));
+		fmt::format(FSTR("{:d}.{:d} (v{:d})"),
+			title_version >> 8, title_version & 0xFF, title_version));
 
 	// OS version (if non-zero)
 	const Nintendo_TitleID_BE_t os_tid = tmdHeader->sys_version;
 	const unsigned int sysID = be16_to_cpu(os_tid.sysID);
 	if (os_tid.id != 0) {
 		// OS display depends on the system ID.
-		char buf[24];
-		buf[0] = '\0';
+		string s_os_name;
 
 		switch (sysID) {
 			default:
@@ -374,27 +369,27 @@ int WiiTMD::loadFieldData(void)
 				const uint32_t tid_lo = be32_to_cpu(os_tid.lo);
 				switch (tid_lo) {
 					case 1:
-						strcpy(buf, "boot2");
+						s_os_name = "boot2";
 						break;
 					case 2:
 						// TODO: Localize this?
-						strcpy(buf, "System Menu");
+						s_os_name = "System Menu";
 						break;
 					case 256:
-						strcpy(buf, "BC");
+						s_os_name = "BC";
 						break;
 					case 257:
-						strcpy(buf, "MIOS");
+						s_os_name = "MIOS";
 						break;
 					case 512:
-						strcpy(buf, "BC-NAND");
+						s_os_name = "BC-NAND";
 						break;
 					case 513:
-						strcpy(buf, "BC-WFS");
+						s_os_name = "BC-WFS";
 						break;
 					default:
 						if (tid_lo < 256) {
-							snprintf(buf, sizeof(buf), "IOS%u", tid_lo);
+							s_os_name = fmt::format(FSTR("IOS{:d}"), tid_lo);
 						}
 						break;
 				}
@@ -422,27 +417,28 @@ int WiiTMD::loadFieldData(void)
 					break;
 				}
 
-				snprintf(buf, sizeof(buf), "OSv%u %s", (tid_lo & 0xFF),
+				s_os_name = fmt::format(FSTR("OSv{:d} {:s}"),
+					(tid_lo & 0xFF),
 					(likely(debug_flag == 0x4000)) ? "NDEBUG" : "DEBUG");
 				break;
 			}
 		}
 
-		if (unlikely(buf[0] == '\0')) {
+		if (unlikely(s_os_name.empty())) {
 			// Print the OS title ID.
-			snprintf(buf, sizeof(buf), "%08X-%08X",
+			s_os_name = fmt::format(FSTR("{:0>8X}-{:0>8X}"),
 				be32_to_cpu(os_tid.hi),
 				be32_to_cpu(os_tid.lo));
 		}
-		d->fields.addField_string(C_("RomData", "OS Version"), buf);
+		d->fields.addField_string(C_("RomData", "OS Version"), s_os_name);
 	}
 
 	// Access rights
 	if (sysID == NINTENDO_SYSID_RVL || sysID == NINTENDO_SYSID_WUP) {
-		vector<string> *const v_access_rights_hdr = new vector<string>();
-		v_access_rights_hdr->reserve(2);
-		v_access_rights_hdr->emplace_back("AHBPROT");
-		v_access_rights_hdr->emplace_back(C_("Wii", "DVD Video"));
+		vector<string> *const v_access_rights_hdr = new vector<string>({
+			"AHBPROT",
+			C_("Wii", "DVD Video")
+		});
 		d->fields.addField_bitfield(C_("Wii", "Access Rights"),
 			v_access_rights_hdr, 0, be32_to_cpu(tmdHeader->access_rights));
 	}
@@ -461,7 +457,7 @@ int WiiTMD::loadFieldData(void)
 int WiiTMD::loadMetaData(void)
 {
 	RP_D(WiiTMD);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -472,22 +468,18 @@ int WiiTMD::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
 	// TMD header is read in the constructor.
 	const RVL_TMD_Header *const tmdHeader = &d->tmdHeader;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Title ID (using as Title)
-	char s_title_id[24];
-	snprintf(s_title_id, sizeof(s_title_id), "%08X-%08X",
-		be32_to_cpu(tmdHeader->title_id.hi),
-		be32_to_cpu(tmdHeader->title_id.lo));
-	d->metaData->addMetaData_string(Property::Title, s_title_id);
+	d->metaData.addMetaData_string(Property::Title,
+		fmt::format(FSTR("{:0>8X}-{:0>8X}"),
+			be32_to_cpu(tmdHeader->title_id.hi),
+			be32_to_cpu(tmdHeader->title_id.lo)));
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /** TMD accessors **/
@@ -616,4 +608,4 @@ rp::uvector<WUP_Content_Entry> WiiTMD::contentsTableV1(unsigned int grpIdx)
 	return {};
 }
 
-}
+} // namespace LibRomData

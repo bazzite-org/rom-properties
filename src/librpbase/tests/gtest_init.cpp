@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpbase/tests)                  *
  * gtest_init.cpp: Google Test initialization.                             *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -30,6 +30,9 @@ namespace Gdiplus {
 #  include <gdiplus.h>
 #endif /* _WIN32 */
 
+// libfmt
+#include "rp-libfmt.h"
+
 extern "C" int gtest_main(int argc, TCHAR *argv[]);
 
 int RP_C_API _tmain(int argc, TCHAR *argv[])
@@ -48,10 +51,11 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 #if defined(__SNR_clock_gettime64) || defined(__NR_clock_gettime64)
 		SCMP_SYS(clock_gettime64),
 #endif /* __SNR_clock_gettime64 || __NR_clock_gettime64 */
-		SCMP_SYS(fcntl),     SCMP_SYS(fcntl64),		// gcc profiling
-		SCMP_SYS(fstat),     SCMP_SYS(fstat64),		// __GI___fxstat() [printf()]
-		SCMP_SYS(fstatat64), SCMP_SYS(newfstatat),	// Ubuntu 19.10 (32-bit)
-		SCMP_SYS(futex),	// iconv_open()
+		SCMP_SYS(fcntl), SCMP_SYS(fcntl64),		// gcc profiling
+		SCMP_SYS(futex),				// iconv_open()
+#if defined(__SNR_futex_time64) || defined(__NR_futex_time64)
+		SCMP_SYS(futex_time64),				// iconv_open()
+#endif /* __SNR_futex_time64 || __NR_futex_time64 */
 		SCMP_SYS(gettimeofday),	// 32-bit only? [testing::internal::GetTimeInMillis()]
 		SCMP_SYS(mmap),		// iconv_open()
 		SCMP_SYS(mmap2),	// iconv_open() [might only be needed on i386...]
@@ -83,16 +87,10 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 
 		// MiniZip
 		SCMP_SYS(close),			// mktime() [mz_zip_dosdate_to_time_t()]
-		SCMP_SYS(stat), SCMP_SYS(stat64),	// mktime() [mz_zip_dosdate_to_time_t()]
 
 		// glibc ncsd
 		// TODO: Restrict connect() to AF_UNIX.
 		SCMP_SYS(connect), SCMP_SYS(recvmsg), SCMP_SYS(sendto),
-
-#if defined(__SNR_statx) || defined(__NR_statx)
-		//SCMP_SYS(getcwd),	// called by glibc's statx() [referenced above]
-		SCMP_SYS(statx),
-#endif /* __SNR_statx || __NR_statx */
 
 		// for posix_fadvise()
 		SCMP_SYS(fadvise64), SCMP_SYS(fadvise64_64),
@@ -134,7 +132,7 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 	ULONG_PTR gdipToken;
 	Gdiplus::Status status = GdiplusStartup(&gdipToken, &gdipSI, nullptr);
 	if (status != Gdiplus::Status::Ok) {
-		fputs("*** ERROR: GDI+ initialization failed.\n", stderr);
+		fmt::print(stderr, FSTR("*** ERROR: GDI+ initialization failed.\n"));
 		return EXIT_FAILURE;
 	}
 
@@ -153,11 +151,18 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 	// NOTE: The variable needs to be static char[] because
 	// POSIX putenv() takes `char*` and the buffer becomes
 	// part of the environment.
-	static TCHAR lc_all_env[] = _T("LC_ALL=C");
-	static TCHAR lc_messages_env[] = _T("LC_MESSAGES=C");
+#ifdef _WIN32
+#  define T_C_LOCALE _T("C")
+#  define C_LOCALE "C"
+#else /* !_WIN32 */
+#  define T_C_LOCALE _T("C.UTF-8")
+#  define C_LOCALE "C.UTF-8"
+#endif /* _WIN32 */
+	static TCHAR lc_all_env[] = _T("LC_ALL=") T_C_LOCALE;
+	static TCHAR lc_messages_env[] = _T("LC_MESSAGES=") T_C_LOCALE;
 	_tputenv(lc_all_env);
 	_tputenv(lc_messages_env);
-	locale::global(locale("C"));
+	locale::global(locale(C_LOCALE));
 
 	// Call the actual main function.
 	int ret = gtest_main(argc, argv);

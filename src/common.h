@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension.                                    *
  * common.h: Common types and macros.                                      *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -33,23 +33,37 @@
  */
 #define ARRAY_SIZE_I(x) ((int)(ARRAY_SIZE(x)))
 
-// PACKED struct attribute.
+// RP_PACKED struct attribute.
 // Use in conjunction with #pragma pack(1).
+// (NOTE: Was previously PACKED, but that conflicts with libfmt.)
 #ifdef __GNUC__
-#  define PACKED __attribute__((packed))
+#  define RP_PACKED __attribute__((packed))
 #else
-#  define PACKED
+#  define RP_PACKED
 #endif
+
+// static_assert() support
+#if defined(__cplusplus)
+// C++11 supports static_assert() with two arguments.
+#  define HAVE_STATIC_ASSERT_CXX 1
+#else /* !__cplusplus */
+#  if defined(_MSC_VER) && _MSC_VER >= 1900
+// MSVC 2015 and later supports _Static_assert() in C.
+#    define HAVE_STATIC_ASSERT_C 1
+#  elif defined(__GNUC__) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+// gcc supports _Static_assert() if compiling as C11 or later.
+#    define HAVE_STATIC_ASSERT_C 1
+#  endif
+#endif /* __cplusplus */
 
 /**
  * static_asserts size of a structure
  * Also defines a constant of form StructName_SIZE
  */
-// TODO: Check MSVC support for static_assert() in C mode.
-#if defined(__cplusplus)
+#if defined(HAVE_STATIC_ASSERT_CXX)
 #  define ASSERT_STRUCT(st,sz) /*enum { st##_SIZE = (sz), };*/ \
 	static_assert(sizeof(st)==(sz),#st " is not " #sz " bytes.")
-#elif defined(__GNUC__) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#elif defined(HAVE_STATIC_ASSERT_C)
 #  define ASSERT_STRUCT(st,sz) /*enum { st##_SIZE = (sz), };*/ \
 	_Static_assert(sizeof(st)==(sz),#st " is not " #sz " bytes.")
 #else
@@ -60,11 +74,10 @@
  * static_asserts offset of a structure member
  * Also defines a constant of form StructName_MemberName_OFFSET
  */
-// TODO: Check MSVC support for static_assert() in C mode.
-#if defined(__cplusplus)
+#if defined(HAVE_STATIC_ASSERT_CXX)
 #  define ASSERT_STRUCT_OFFSET(st,mb,of) /*enum { st##_##mb##_OFFSET = (of), };*/ \
 	static_assert(offsetof(st,mb)==(of),#mb " is not at offset " #of " in struct " #st ".")
-#elif defined(__GNUC__) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#elif defined(HAVE_STATIC_ASSERT_C)
 #  define ASSERT_STRUCT_OFFSET(st,mb,of) /*enum { st##_##mb##_OFFSET = (of), };*/ \
 	_Static_assert(offsetof(st,mb)==(of),#mb " is not at offset " #of " in struct " #st ".")
 #else
@@ -74,26 +87,19 @@
 // RP equivalent of Q_UNUSED().
 #define RP_UNUSED(x) ((void)(x))
 
-// NOLINTBEGIN(bugprone-macro-parentheses)
+// NOLINTBEGIN(bugprone-macro-parentheses, cppcoreguidelines-pro-type-static-cast-downcast)
 #ifdef __cplusplus
 // RP equivalents of Q_D() and Q_Q().
 #  define RP_D(klass) klass##Private *const d = static_cast<klass##Private*>(d_ptr)
 #  define RP_Q(klass) klass *const q = static_cast<klass*>(q_ptr)
 
 // RP equivalent of Q_DISABLE_COPY().
-#  if __cplusplus >= 201103L
-#    define RP_DISABLE_COPY(klass) \
-	public: \
-		klass(const klass &) = delete; \
-		klass &operator=(const klass &) = delete;
-#  else /* __cplusplus < 201103L */
-#    define RP_DISABLE_COPY(klass) \
-	private: \
-		klass(const klass &); \
-		klass &operator=(const klass &);
-#  endif /* __cplusplus >= 201103L */
+#  define RP_DISABLE_COPY(klass) \
+public: \
+	klass(const klass &) = delete; \
+	klass &operator=(const klass &) = delete;
 #endif /* __cplusplus */
-// NOLINTEND(bugprone-macro-parentheses)
+// NOLINTEND(bugprone-macro-parentheses, cppcoreguidelines-pro-type-static-cast-downcast)
 
 // Deprecated function attribute.
 #ifndef DEPRECATED

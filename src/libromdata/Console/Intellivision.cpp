@@ -18,6 +18,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::vector;
 
@@ -26,7 +27,7 @@ namespace LibRomData {
 class IntellivisionPrivate final : public RomDataPrivate
 {
 public:
-	IntellivisionPrivate(const IRpFilePtr &file);
+	explicit IntellivisionPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -34,8 +35,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 2+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -56,22 +57,22 @@ ROMDATA_IMPL(Intellivision)
 /** IntellivisionPrivate **/
 
 /* RomDataInfo */
-const char *const IntellivisionPrivate::exts[] = {
+const array<const char*, 2+1> IntellivisionPrivate::exts = {{
 	".int", ".itv",
 
 	//".bin",	// NOTE: Too generic...
 
 	nullptr
-};
-const char *const IntellivisionPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> IntellivisionPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-intellivision-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo IntellivisionPrivate::romDataInfo = {
-	"Intellivision", exts, mimeTypes
+	"Intellivision", exts.data(), mimeTypes.data()
 };
 
 IntellivisionPrivate::IntellivisionPrivate(const IRpFilePtr &file)
@@ -208,7 +209,7 @@ int Intellivision::isRomSupported_static(const DetectInfo *info)
 	// The Intellivision ROM header doesn't have enough magic
 	// to conclusively determine if it's a Intellivision ROM,
 	// so check the file extension.
-	for (const char *const *ext = IntellivisionPrivate::exts;
+	for (const char *const *ext = IntellivisionPrivate::exts.data();
 	     *ext != nullptr; ext++)
 	{
 		if (!strcasecmp(info->ext, *ext)) {
@@ -238,9 +239,9 @@ const char *Intellivision::systemName(unsigned int type) const
 		"Intellivision::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Intellivision", "Intellivision", "INTV", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -287,7 +288,7 @@ int Intellivision::loadFieldData(void)
 		flags &= ~INTV_SKIP_ECS;
 	}
 
-	static const char *const flags_bitfield_names[] = {
+	static const array<const char*, 9> flags_bitfield_names = {{
 		// Bits 0-5: Keyclick bits (TODO)
 		nullptr, nullptr, nullptr, nullptr, nullptr,
 
@@ -295,9 +296,8 @@ int Intellivision::loadFieldData(void)
 		NOP_C_("Intellivision|Flags", "Intellivision 2"),
 		NOP_C_("Intellivision|Flags", "Run code after title string"),
 		NOP_C_("Intellivision|Flags", "Skip ECS title screen"),
-	};
-	vector<string> *const v_flags_bitfield_names = RomFields::strArrayToVector_i18n(
-		"Region", flags_bitfield_names, ARRAY_SIZE(flags_bitfield_names));
+	}};
+	vector<string> *const v_flags_bitfield_names = RomFields::strArrayToVector_i18n("Region", flags_bitfield_names);
 	d->fields.addField_bitfield(C_("RomData", "Flags"),
 		v_flags_bitfield_names, 2, flags);
 
@@ -315,7 +315,7 @@ int Intellivision::loadFieldData(void)
 int Intellivision::loadMetaData(void)
 {
 	RP_D(Intellivision);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -326,26 +326,23 @@ int Intellivision::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(2);	// Maximum of 2 metadata properties.
-
 	//const Intellivision_ROMHeader *const romHeader = &d->romHeader;
+	d->metaData.reserve(2);	// Maximum of 2 metadata properties.
 
 	// Title
 	int year = -1;
 	const string title = d->getTitle(&year);
 	if (!title.empty()) {
-		d->metaData->addMetaData_string(Property::Title, title);
+		d->metaData.addMetaData_string(Property::Title, title);
 	}
 
 	// Release year (actually copyright year)
 	if (year >= 0) {
-		d->metaData->addMetaData_uint(Property::ReleaseYear, static_cast<unsigned int>(year));
+		d->metaData.addMetaData_uint(Property::ReleaseYear, static_cast<unsigned int>(year));
 	}
 
 	// Finished reading the metadata.
-	return (d->metaData ? static_cast<int>(d->metaData->count()) : -ENOENT);
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

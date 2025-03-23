@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * DpfReader.cpp: GameCube/Wii DPF/RPF sparse disc image reader.           *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -158,10 +158,13 @@ DpfReader::DpfReader(const IRpFilePtr &file)
 
 		// TODO: Use pointer arithmetic?
 		for (unsigned int i = 0; i < d->dpfHeader.entry_count; i++) {
-			d->entries[i].virt_offset = static_cast<uint64_t>(le32_to_cpu(dpf_entry_buf[i].virt_offset));
-			d->entries[i].phys_offset = static_cast<uint64_t>(le32_to_cpu(dpf_entry_buf[i].phys_offset));
-			d->entries[i].size = le32_to_cpu(dpf_entry_buf[i].size);
-			d->entries[i].unknown_14 = le32_to_cpu(dpf_entry_buf[i].unknown_0C);
+			const DpfEntry &dpfEntry = dpf_entry_buf[i];
+			RpfEntry &rpfEntry = d->entries[i];
+
+			rpfEntry.virt_offset = static_cast<uint64_t>(le32_to_cpu(dpfEntry.virt_offset));
+			rpfEntry.phys_offset = static_cast<uint64_t>(le32_to_cpu(dpfEntry.phys_offset));
+			rpfEntry.size = le32_to_cpu(dpfEntry.size);
+			rpfEntry.unknown_14 = le32_to_cpu(dpfEntry.unknown_0C);
 		}
 	}
 
@@ -175,9 +178,10 @@ DpfReader::DpfReader(const IRpFilePtr &file)
 	// The first entry should be virt=0, phys=0.
 	// If it isn't, we'll need to adjust offsets in order to read the beginning of the disc.
 	// TODO: Currently only virt=0, phys!=0.
-	if (d->entries[0].virt_offset == 0 && d->entries[0].phys_offset != 0) {
+	const auto &entry0 = d->entries[0];
+	if (entry0.virt_offset == 0 && entry0.phys_offset != 0) {
 		// Need to add an extra entry.
-		const uint32_t entry_size = static_cast<uint32_t>(d->entries[0].phys_offset);
+		const uint32_t entry_size = static_cast<uint32_t>(entry0.phys_offset);
 		const RpfEntry first_entry = {
 			0,		// virt_offset
 			0,		// phys_offset
@@ -198,6 +202,11 @@ DpfReader::DpfReader(const IRpFilePtr &file)
 
 	// Reset the disc position.
 	d->pos = 0;
+}
+
+DpfReader::~DpfReader()
+{
+	delete d_ptr;
 }
 
 /**
@@ -294,14 +303,14 @@ size_t DpfReader::read(void *ptr, size_t size)
 			if (p.size == 0)
 				continue;
 
-			if (d->pos < (int64_t)p.virt_offset) {
+			if (d->pos < static_cast<off64_t>(p.virt_offset)) {
 				// Requested position is before this entry. This means we don't have a valid entry...
 				phys_offset = -1;
 				break;
 			}
 
-			const int64_t virt_end = static_cast<int64_t>(p.virt_offset) + p.size;
-			if (d->pos >= (int64_t)p.virt_offset && d->pos < virt_end) {
+			const off64_t virt_end = static_cast<off64_t>(p.virt_offset) + p.size;
+			if (d->pos >= static_cast<off64_t>(p.virt_offset) && d->pos < virt_end) {
 				// Requested position starts within this entry.
 				virt_start = p.virt_offset;
 				virt_size = static_cast<size_t>(p.size);

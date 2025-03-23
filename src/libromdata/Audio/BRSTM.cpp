@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * BRSTM.cpp: Nintendo Wii BRSTM audio reader.                             *
  *                                                                         *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -24,7 +24,7 @@ namespace LibRomData {
 class BRSTMPrivate final : public RomDataPrivate
 {
 public:
-	BRSTMPrivate(const IRpFilePtr &file);
+	explicit BRSTMPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -32,8 +32,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -71,20 +71,20 @@ ROMDATA_IMPL(BRSTM)
 /** BRSTMPrivate **/
 
 /* RomDataInfo */
-const char *const BRSTMPrivate::exts[] = {
+const array<const char*, 1+1> BRSTMPrivate::exts = {{
 	".brstm",
 
 	nullptr
-};
-const char *const BRSTMPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> BRSTMPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"audio/x-brstm",
 
 	nullptr
-};
+}};
 const RomDataInfo BRSTMPrivate::romDataInfo = {
-	"BRSTM", exts, mimeTypes
+	"BRSTM", exts.data(), mimeTypes.data()
 };
 
 BRSTMPrivate::BRSTMPrivate(const IRpFilePtr &file)
@@ -281,9 +281,9 @@ const char *BRSTM::systemName(unsigned int type) const
 		"BRSTM::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Nintendo Wii", "Wii", "Wii", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -320,7 +320,7 @@ int BRSTM::loadFieldData(void)
 
 	// Version
 	d->fields.addField_string(C_("RomData", "Version"),
-		rp_sprintf("%u.%u", brstmHeader->version_major, brstmHeader->version_minor));
+		fmt::format(FSTR("{:d}.{:d}"), brstmHeader->version_major, brstmHeader->version_minor));
 
 	// Endianness
 	d->fields.addField_string(C_("RomData", "Endianness"),
@@ -340,7 +340,7 @@ int BRSTM::loadFieldData(void)
 			pgettext_expr("BRSTM|Codec", codec_tbl[headChunk1->codec]));
 	} else {
 		d->fields.addField_string(codec_title,
-			rp_sprintf(C_("RomData", "Unknown (%u)"), headChunk1->codec));
+			fmt::format(FRUN(C_("RomData", "Unknown ({:d})")), headChunk1->codec));
 	}
 
 	// Number of channels
@@ -352,7 +352,7 @@ int BRSTM::loadFieldData(void)
 
 	// Sample rate
 	d->fields.addField_string(C_("RomData|Audio", "Sample Rate"),
-		rp_sprintf(C_("RomData", "%u Hz"), sample_rate));
+		fmt::format(FRUN(C_("RomData", "{:Ld} Hz")), sample_rate));
 
 	// Length (non-looping)
 	d->fields.addField_string(C_("RomData|Audio", "Length"),
@@ -378,7 +378,7 @@ int BRSTM::loadFieldData(void)
 int BRSTM::loadMetaData(void)
 {
 	RP_D(BRSTM);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -389,29 +389,26 @@ int BRSTM::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(3);	// Maximum of 3 metadata properties.
-
 	// BRSTM header chunk 1
 	const BRSTM_HEAD_Chunk1 *const headChunk1 = &d->headChunk1;
+	d->metaData.reserve(3);	// Maximum of 3 metadata properties.
 
 	// Number of channels
-	d->metaData->addMetaData_integer(Property::Channels, headChunk1->channel_count);
+	d->metaData.addMetaData_integer(Property::Channels, headChunk1->channel_count);
 
 	// Sample rate and sample count
 	const uint16_t sample_rate = d->brstm16_to_cpu(headChunk1->sample_rate);
 	const uint32_t sample_count = d->brstm32_to_cpu(headChunk1->sample_count);
 
 	// Sample rate
-	d->metaData->addMetaData_integer(Property::SampleRate, sample_rate);
+	d->metaData.addMetaData_integer(Property::SampleRate, sample_rate);
 
 	// Length, in milliseconds (non-looping)
-	d->metaData->addMetaData_integer(Property::Duration,
+	d->metaData.addMetaData_integer(Property::Duration,
 		convSampleToMs(sample_count, sample_rate));
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

@@ -88,11 +88,11 @@ static int W32U_UTF16_to_mbs(
  *
  * The specified code page number will be used.
  *
- * @param cp	[in] Code page number.
- * @param str	[in] ANSI text.
- * @param len	[in] Length of str, in bytes. (-1 for NULL-terminated string)
- * @param flags	[in] Flags. (See TextConv_Flags_e.)
- * @return UTF-8 string.
+ * @param cp	[in] Code page number
+ * @param str	[in] ANSI text
+ * @param len	[in] Length of str, in bytes (-1 for NULL-terminated string)
+ * @param flags	[in] Flags (See TextConv_Flags_e)
+ * @return UTF-8 string
  */
 string cpN_to_utf8(unsigned int cp, const char *str, int len, unsigned int flags)
 {
@@ -101,25 +101,8 @@ string cpN_to_utf8(unsigned int cp, const char *str, int len, unsigned int flags
 		return cpRP_to_utf8(cp, str, len);
 	}
 
-	len = check_NULL_terminator(str, len);
-	DWORD dwFlags = 0;
-	if (flags & TEXTCONV_FLAG_CP1252_FALLBACK) {
-		// Fallback is enabled.
-		// Fail on invalid characters in the first pass.
-		dwFlags = MB_ERR_INVALID_CHARS;
-	}
-
 	// Convert from `cp` to UTF-16.
-	u16string s_wcs;
-	if (W32U_mbs_to_UTF16(s_wcs, str, len, cp, dwFlags) != 0) {
-		if (flags & TEXTCONV_FLAG_CP1252_FALLBACK) {
-			// Try again using cp1252.
-			if (W32U_mbs_to_UTF16(s_wcs, str, len, 1252, 0) != 0) {
-				// Failed.
-				s_wcs.clear();
-			}
-		}
-	}
+	u16string s_wcs = cpN_to_utf16(cp, str, len, flags);
 
 	string s_mbs;
 	if (!s_wcs.empty()) {
@@ -144,11 +127,11 @@ string cpN_to_utf8(unsigned int cp, const char *str, int len, unsigned int flags
  *
  * The specified code page number will be used.
  *
- * @param cp	[in] Code page number.
- * @param str	[in] ANSI text.
- * @param len	[in] Length of str, in bytes. (-1 for NULL-terminated string)
- * @param flags	[in] Flags. (See TextConv_Flags_e.)
- * @return UTF-16 string.
+ * @param cp	[in] Code page number
+ * @param str	[in] ANSI text
+ * @param len	[in] Length of str, in bytes (-1 for NULL-terminated string)
+ * @param flags	[in] Flags (See TextConv_Flags_e)
+ * @return UTF-16 string
  */
 u16string cpN_to_utf16(unsigned int cp, const char *str, int len, unsigned int flags)
 {
@@ -162,12 +145,48 @@ u16string cpN_to_utf16(unsigned int cp, const char *str, int len, unsigned int f
 
 	// Convert from `cp` to UTF-16.
 	u16string s_wcs;
-	if (W32U_mbs_to_UTF16(s_wcs, str, len, cp, dwFlags) != 0) {
-		if (flags & TEXTCONV_FLAG_CP1252_FALLBACK) {
-			// Try again using cp1252.
-			if (W32U_mbs_to_UTF16(s_wcs, str, len, 1252, 0) != 0) {
-				// Failed.
+
+	if ((flags & TEXTCONV_FLAG_JIS_X_0208) && len >= 1) {
+		// Check if the string might be JIS X 0208.
+		// If it is, make it EUC-JP compatible, then convert it.
+		bool is0208 = false;
+		// Heuristic: First character should be 0x21-0x24.
+		if (*str >= 0x21 && *str <= 0x24) {
+			is0208 = true;
+			const char *const p_end = str + len;
+			for (const char *p = str + 1; p < p_end; p++) {
+				const uint8_t chr = static_cast<uint8_t>(*p);
+				if (chr == 0) {
+					// End of string
+					break;
+				} else if (chr & 0x80) {
+					// High bit cannot be set
+					is0208 = false;
+					break;
+				}
+			}
+		}
+
+		if (is0208) {
+			// Make the string EUC-JP compatible.
+			string eucJP(str, 0, len);
+			for (char &c : eucJP) {
+				c |= 0x80;
+			}
+			if (W32U_mbs_to_UTF16(s_wcs, eucJP.c_str(), eucJP.size(), 20932, dwFlags) != 0) {
 				s_wcs.clear();
+			}
+		}
+	}
+
+	if (s_wcs.empty()) {
+		if (W32U_mbs_to_UTF16(s_wcs, str, len, cp, dwFlags) != 0) {
+			if (flags & TEXTCONV_FLAG_CP1252_FALLBACK) {
+				// Try again using cp1252.
+				if (W32U_mbs_to_UTF16(s_wcs, str, len, 1252, 0) != 0) {
+					// Failed.
+					s_wcs.clear();
+				}
 			}
 		}
 	}
@@ -253,9 +272,9 @@ string utf16_to_cpN(unsigned int cp, const char16_t *wcs, int len)
 /**
  * Convert UTF-16LE text to UTF-8.
  * Trailing NULL bytes will be removed.
- * @param wcs	[in] UTF-16LE text.
- * @param len	[in] Length of wcs, in characters. (-1 for NULL-terminated string)
- * @return UTF-8 string.
+ * @param wcs	[in] UTF-16LE text
+ * @param len	[in] Length of wcs, in characters (-1 for NULL-terminated string)
+ * @return UTF-8 string
  */
 string utf16le_to_utf8(const char16_t *wcs, int len)
 {
@@ -266,9 +285,9 @@ string utf16le_to_utf8(const char16_t *wcs, int len)
 /**
  * Convert UTF-16BE text to UTF-8.
  * Trailing NULL bytes will be removed.
- * @param wcs	[in] UTF-16BE text.
- * @param len	[in] Length of wcs, in characters. (-1 for NULL-terminated string)
- * @return UTF-8 string.
+ * @param wcs	[in] UTF-16BE text
+ * @param len	[in] Length of wcs, in characters (-1 for NULL-terminated string)
+ * @return UTF-8 string
  */
 string utf16be_to_utf8(const char16_t *wcs, int len)
 {

@@ -2,13 +2,12 @@
  * ROM Properties Page shell extension. (librptext)                        *
  * conversion.cpp: Text encoding functions                                 *
  *                                                                         *
- * Copyright (c) 2009-2024 by David Korth.                                 *
+ * Copyright (c) 2009-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
 #include "config.librptext.h"
 #include "conversion.hpp"
-#include "printf.hpp"
 
 // Other rom-properties libraries
 #include "libi18n/i18n.h"
@@ -38,6 +37,9 @@
 using std::ostringstream;
 using std::string;
 using std::u16string;
+
+// libfmt
+#include "rp-libfmt.h"
 
 namespace LibRpText {
 
@@ -108,38 +110,6 @@ size_t u16_strnlen(const char16_t *wcs, size_t maxlen)
 }
 
 /**
- * char16_t strdup().
- * @param wcs 16-bit string.
- * @return Copy of wcs.
- */
-char16_t *u16_strdup(const char16_t *wcs)
-{
-	const size_t len = u16_strlen(wcs)+1;	// includes terminator
-	char16_t *const ret = static_cast<char16_t*>(malloc(len * sizeof(*wcs)));
-	memcpy(ret, wcs, len*sizeof(*wcs));
-	return ret;
-}
-
-/**
- * char16_t strcmp().
- * @param wcs1 16-bit string 1.
- * @param wcs2 16-bit string 2.
- * @return strcmp() result.
- */
-int u16_strcmp(const char16_t *wcs1, const char16_t *wcs2)
-{
-	// References:
-	// - http://stackoverflow.com/questions/20004458/optimized-strcmp-implementation
-	// - http://clc-wiki.net/wiki/C_standard_library%3astring.h%3astrcmp
-	while (*wcs1 && (*wcs1 == *wcs2)) {
-		wcs1++;
-		wcs2++;
-	}
-
-	return ((int)*wcs1 - (int)*wcs2);
-}
-
-/**
  * char16_t strncmp().
  * @param wcs1 16-bit string 1.
  * @param wcs2 16-bit string 2.
@@ -160,25 +130,6 @@ int u16_strncmp(const char16_t *wcs1, const char16_t *wcs2, size_t n)
 		return 0;
 	}
 	return ((int)*wcs1 - (int)*wcs2);
-}
-
-/**
- * char16_t strcasecmp().
- * @param wcs1 16-bit string 1.
- * @param wcs2 16-bit string 2.
- * @return strcasecmp() result.
- */
-int u16_strcasecmp(const char16_t *wcs1, const char16_t *wcs2)
-{
-	// References:
-	// - http://stackoverflow.com/questions/20004458/optimized-strcmp-implementation
-	// - http://clc-wiki.net/wiki/C_standard_library%3astring.h%3astrcmp
-	while (*wcs1 && (towupper(*wcs1) == towupper(*wcs2))) {
-		wcs1++;
-		wcs2++;
-	}
-
-	return ((int)towupper(*wcs1) - (int)towupper(*wcs2));
 }
 
 /**
@@ -251,8 +202,8 @@ static void initLocalizedDecimalPoint(void)
 	if (!locale || locale[0] == '\0') {
 		locale = getenv("LC_ALL");
 	}
-	if (locale && !strcmp(locale, "C")) {
-		// We're using the C locale.
+	if (locale && locale[0] == 'C' && (locale[1] == '\0' || locale[1] == '.')) {
+		// We're using the "C" locale. (or "C.UTF-8")
 		is_C_locale = true;
 		strcpy(lc_decimal, ".");
 		return;
@@ -449,9 +400,9 @@ string formatFileSize(off64_t size, BinaryUnitDialect dialect)
 	}
 
 	if (suffix) {
-		// tr: %1$s == localized value, %2$s == suffix (e.g. MiB)
-		return rp_sprintf_p(C_("LibRpText|FileSize", "%1$s %2$s"),
-			s_value.str().c_str(), suffix);
+		// tr: {0:s} == localized value, {1:s} == suffix (e.g. MiB)
+		return fmt::format(FRUN(C_("LibRpText|FileSize", "{0:s} {1:s}")),
+			s_value.str(), suffix);
 	}
 
 	// No suffix needed.
@@ -472,10 +423,11 @@ std::string formatFileSizeKiB(unsigned int size, BinaryUnitDialect dialect)
 {
 	// Localize the number.
 	// FIXME: If using C locale, don't do localization.
-	ostringstream s_value;
-	s_value << ((likely(dialect != BinaryUnitDialect::MetricBinaryDialect))
-		? (size / 1024)
-		: (size / 1000));
+	if (likely(dialect != BinaryUnitDialect::MetricBinaryDialect)) {
+		size /= 1024;
+	} else {
+		size /= 1000;
+	}
 
 	const char *suffix;
 	switch (dialect) {
@@ -491,9 +443,8 @@ std::string formatFileSizeKiB(unsigned int size, BinaryUnitDialect dialect)
 			break;
 	}
 
-	// tr: %1$s == localized value, %2$s == suffix (e.g. MiB)
-	return rp_sprintf_p(C_("LibRpText|FileSize", "%1$s %2$s"),
-		s_value.str().c_str(), suffix);
+	// tr: {0:Ld} == localized value, {1:s} == suffix (e.g. MiB)
+	return fmt::format(FRUN(C_("LibRpText|FileSize", "{0:Ld} {1:s}")), size, suffix);
 }
 
 /**
@@ -556,9 +507,9 @@ std::string formatFrequency(uint32_t frequency)
 	}
 
 	if (suffix) {
-		// tr: %1$s == localized value, %2$s == suffix (e.g. MHz)
-		return rp_sprintf_p(C_("LibRpText|Frequency", "%1$s %2$s"),
-			s_value.str().c_str(), suffix);
+		// tr: {0:s} == localized value, {1:s} == suffix (e.g. MHz)
+		return fmt::format(FRUN(C_("LibRpText|Frequency", "{0:s} {1:s}")),
+			s_value.str(), suffix);
 	}
 
 	// No suffix needed.
@@ -681,7 +632,6 @@ std::string dos2unix(const char *str_dos, int len, int *lf_count)
  */
 string formatSampleAsTime(unsigned int sample, unsigned int rate)
 {
-	char buf[32];
 	unsigned int min, sec, cs;
 
 	assert(rate != 0);
@@ -704,10 +654,7 @@ string formatSampleAsTime(unsigned int sample, unsigned int rate)
 	min = sec / 60;
 	sec %= 60;
 
-	int len = snprintf(buf, sizeof(buf), "%u:%02u.%02u", min, sec, cs);
-	if (len >= (int)sizeof(buf))
-		len = (int)sizeof(buf)-1;
-	return {buf, static_cast<size_t>(len)};
+	return fmt::format(FSTR("{:d}:{:0>2d}.{:0>2d}"), min, sec, cs);
 }
 
 /**

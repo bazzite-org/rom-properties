@@ -30,10 +30,10 @@ using namespace LibRpFile;
 
 namespace LibRomData {
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && defined(ZLIB_IS_DLL)
 // DelayLoad test implementation.
 DELAYLOAD_TEST_FUNCTION_IMPL0(get_crc_table);
-#endif /* _MSC_VER */
+#endif /* _MSC_VER && ZLIB_IS_DLL */
 
 class GczReaderPrivate : public SparseDiscReaderPrivate
 {
@@ -128,11 +128,11 @@ GczReader::GczReader(const IRpFilePtr &file)
 		m_file.reset();
 		return;
 	}
-#else /* !defined(_MSC_VER) || !defined(ZLIB_IS_DLL) */
-		// zlib isn't in a DLL, but we need to ensure that the
-		// CRC table is initialized anyway.
-		get_crc_table();
-#endif /* defined(_MSC_VER) && defined(ZLIB_IS_DLL) */
+#else /* !(_MSC_VER && ZLIB_IS_DLL) */
+	// zlib isn't in a DLL, but we need to ensure that the
+	// CRC table is initialized anyway.
+	get_crc_table();
+#endif /* _MSC_VER && ZLIB_IS_DLL */
 
 	// Read the GCZ header.
 	RP_D(GczReader);
@@ -187,7 +187,7 @@ GczReader::GczReader(const IRpFilePtr &file)
 		// Round it up, then check.
 		expected_data_size = ALIGN_BYTES(d->block_size, d->gczHeader.data_size);
 	}
-	if (((uint64_t)d->block_size * (uint64_t)d->gczHeader.num_blocks) != expected_data_size) {
+	if ((static_cast<uint64_t>(d->block_size) * static_cast<uint64_t>(d->gczHeader.num_blocks)) != expected_data_size) {
 		// Not a multiple.
 		m_file.reset();
 		m_lastError = EIO;
@@ -328,7 +328,7 @@ int GczReader::isDiscSupported_static(const uint8_t *pHeader, size_t szHeader)
 		// Round it up, then check.
 		expected_data_size = ALIGN_BYTES(block_size, data_size);
 	}
-	if (((uint64_t)block_size * (uint64_t)num_blocks) != expected_data_size) { 
+	if ((static_cast<uint64_t>(block_size) * static_cast<uint64_t>(num_blocks)) != expected_data_size) { 
 		// Incorrect size.
 		return -1;
 	}
@@ -390,7 +390,7 @@ int GczReader::readBlock(uint32_t blockIdx, int pos, void *ptr, size_t size)
 	// NOTE: This can only be called by SparseDiscReader,
 	// so the main assertions are already checked there.
 	RP_D(GczReader);
-	assert(pos >= 0 && pos < (int)d->block_size);
+	assert(pos >= 0 && pos < static_cast<int>(d->block_size));
 	assert(size <= d->block_size);
 	// TODO: Make sure overflow doesn't occur.
 	assert(static_cast<off64_t>(pos + size) <= static_cast<off64_t>(d->block_size));
@@ -456,6 +456,7 @@ int GczReader::readBlock(uint32_t blockIdx, int pos, void *ptr, size_t size)
 		// then decompress it.
 		if (z_block_size > d->block_size) {
 			// Compressed data is larger than the uncompressed block size...
+			d->blockCacheIdx = ~0U;
 			m_lastError = EIO;
 			return 0;
 		}
@@ -463,6 +464,7 @@ int GczReader::readBlock(uint32_t blockIdx, int pos, void *ptr, size_t size)
 		size_t sz_read = m_file->seekAndRead(physBlockAddr, d->z_buffer.data(), z_block_size);
 		if (sz_read != z_block_size) {
 			// Seek and/or read error.
+			d->blockCacheIdx = ~0U;
 			m_lastError = m_file->lastError();
 			if (m_lastError == 0) {
 				m_lastError = EIO;
@@ -476,6 +478,7 @@ int GczReader::readBlock(uint32_t blockIdx, int pos, void *ptr, size_t size)
 		if (hash_calc != le32_to_cpu(d->hashes[blockIdx])) {
 			// Hash error.
 			// TODO: Print warnings and/or more comprehensive error codes.
+			d->blockCacheIdx = ~0U;
 			m_lastError = EIO;
 			return 0;
 		}
@@ -486,7 +489,13 @@ int GczReader::readBlock(uint32_t blockIdx, int pos, void *ptr, size_t size)
 		z.avail_in = z_block_size;
 		z.next_out = d->blockCache.data();
 		z.avail_out = d->block_size;
-		inflateInit(&z);
+		int ret = inflateInit(&z);
+		if (ret != Z_OK) {
+			// Error initializing zlib.
+			d->blockCacheIdx = ~0U;
+			m_lastError = EIO;
+			return 0;
+		}
 
 		int status = inflate(&z, Z_FULL_FLUSH);
 		const uint32_t uncomp_size = d->block_size - z.avail_out;

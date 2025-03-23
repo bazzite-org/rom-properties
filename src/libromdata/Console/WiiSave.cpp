@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * WiiSave.cpp: Nintendo Wii save game file reader.                        *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -33,6 +33,7 @@ using namespace LibRpTexture;
 // C++ STL classes
 using std::array;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace LibRomData {
@@ -40,8 +41,7 @@ namespace LibRomData {
 class WiiSavePrivate final : public RomDataPrivate
 {
 public:
-	WiiSavePrivate(const IRpFilePtr &file);
-	~WiiSavePrivate() final;
+	explicit WiiSavePrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -49,8 +49,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -71,13 +71,13 @@ public:
 	template<typename T>
 	static inline constexpr T toNext64(T val)
 	{
-		return (val + (T)63) & ~((T)63);
+		return (val + static_cast<T>(63)) & ~(static_cast<T>(63));
 	}
 
 #ifdef ENABLE_DECRYPTION
 	// CBC reader for the main data area.
 	CBCReaderPtr cbcReader;
-	WiiWIBN *wibnData;
+	unique_ptr<WiiWIBN> wibnData;
 
 	// Key indexes (0 == AES, 1 == IV)
 	std::array<WiiTicket::EncryptionKeys, 2> key_idx;
@@ -92,21 +92,21 @@ ROMDATA_IMPL_IMG(WiiSave)
 /** WiiSavePrivate **/
 
 /* RomDataInfo */
-const char *const WiiSavePrivate::exts[] = {
+const array<const char*, 1+1> WiiSavePrivate::exts = {{
 	".bin",
 	// TODO: Custom extension?
 
 	nullptr
-};
-const char *const WiiSavePrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> WiiSavePrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-wii-save",
 
 	nullptr
-};
+}};
 const RomDataInfo WiiSavePrivate::romDataInfo = {
-	"WiiSave", exts, mimeTypes
+	"WiiSave", exts.data(), mimeTypes.data()
 };
 
 // Wii_Bk_Header_t magic
@@ -117,9 +117,6 @@ const array<uint8_t, 8> WiiSavePrivate::bk_header_magic = {{
 WiiSavePrivate::WiiSavePrivate(const IRpFilePtr &file)
 	: super(file, &romDataInfo)
 	, svLoaded(false)
-#ifdef ENABLE_DECRYPTION
-	, wibnData(nullptr)
-#endif /* ENABLE_DECRYPTION */
 {
 	// Clear the various structs.
 	memset(&svHeader, 0, sizeof(svHeader));
@@ -128,13 +125,6 @@ WiiSavePrivate::WiiSavePrivate(const IRpFilePtr &file)
 #ifdef ENABLE_DECRYPTION
 	key_idx.fill(WiiTicket::EncryptionKeys::Max);
 	key_status.fill(KeyManager::VerifyResult::Unknown);
-#endif /* ENABLE_DECRYPTION */
-}
-
-WiiSavePrivate::~WiiSavePrivate()
-{
-#ifdef ENABLE_DECRYPTION
-	delete wibnData;
 #endif /* ENABLE_DECRYPTION */
 }
 
@@ -169,13 +159,12 @@ WiiSave::WiiSave(const IRpFilePtr &file)
 	// - Reading with save file header, banner, max number of icons, and the Bk header.
 	// - Bk header is the only unencrypted header.
 	// - Need to get encryption keys.
-	static constexpr unsigned int svSizeMin = (unsigned int)(
+	static constexpr size_t svSizeMin =
 		sizeof(Wii_SaveGame_Header_t) +
 		sizeof(Wii_WIBN_Header_t) +
 		BANNER_WIBN_IMAGE_SIZE + BANNER_WIBN_ICON_SIZE +
-		sizeof(Wii_Bk_Header_t));
-	static constexpr unsigned int svSizeTotal = (unsigned int)(
-		svSizeMin + (BANNER_WIBN_ICON_SIZE * (CARD_MAXICONS-1)));
+		sizeof(Wii_Bk_Header_t);
+	static constexpr size_t svSizeTotal = svSizeMin + (BANNER_WIBN_ICON_SIZE * (CARD_MAXICONS - 1));
 	auto svData = aligned_uptr<uint8_t>(16, svSizeTotal);
 
 	d->file->rewind();
@@ -190,8 +179,7 @@ WiiSave::WiiSave(const IRpFilePtr &file)
 	}
 
 	// Check for the Bk header at the designated locations.
-	unsigned int bkHeaderAddr = (unsigned int)(
-		svSizeMin - sizeof(Wii_Bk_Header_t));
+	size_t bkHeaderAddr = svSizeMin - sizeof(Wii_Bk_Header_t);
 	for (; bkHeaderAddr < size; bkHeaderAddr += BANNER_WIBN_ICON_SIZE) {
 		const Wii_Bk_Header_t *bkHeader =
 			reinterpret_cast<const Wii_Bk_Header_t*>(svData.get() + bkHeaderAddr);
@@ -277,7 +265,7 @@ WiiSave::WiiSave(const IRpFilePtr &file)
 			WiiWIBN *const wibn = new WiiWIBN(ptFile);
 			if (wibn->isOpen()) {
 				// Opened successfully.
-				d->wibnData = wibn;
+				d->wibnData.reset(wibn);
 			} else {
 				// Unable to open the WiiWIBN.
 				delete wibn;
@@ -331,7 +319,7 @@ int WiiSave::isRomSupported_static(const DetectInfo *info)
 	// read by RomDataFactory, so we ca'nt rely on it.
 	// Therefore, we're using the file extension.
 	if (info->ext && info->ext[0] != 0) {
-		for (const char *const *ext = WiiSavePrivate::exts;
+		for (const char *const *ext = WiiSavePrivate::exts.data();
 		     *ext != nullptr; ext++)
 		{
 			if (!strcasecmp(info->ext, *ext)) {
@@ -361,9 +349,9 @@ const char *WiiSave::systemName(unsigned int type) const
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"WiiSave::systemName() array index optimization needs to be updated.");
 
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Nintendo Wii", "Wii", "Wii", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -452,17 +440,17 @@ int WiiSave::loadFieldData(void)
 	const bool isSvValid = (svHeader->savegame_id.id != 0);
 	const bool isBkValid = (!memcmp(bkHeader->full_magic, d->bk_header_magic.data(), d->bk_header_magic.size()));
 
-	// Savegame header.
+	// Savegame header
 	if (isSvValid) {
-		// Savegame ID. (title ID)
+		// Savegame ID (title ID)
 		d->fields.addField_string(C_("WiiSave", "Savegame ID"),
-			rp_sprintf("%08X-%08X",
+			fmt::format(FSTR("{:0>8X}-{:0>8X}"),
 				be32_to_cpu(svHeader->savegame_id.hi),
 				be32_to_cpu(svHeader->savegame_id.lo)));
 
 	}
 
-	// Game ID.
+	// Game ID
 	// NOTE: Uses the ID from the Bk header.
 	// TODO: Check if it matches the savegame header?
 	if (isBkValid) {
@@ -478,7 +466,7 @@ int WiiSave::loadFieldData(void)
 		}
 	}
 
-	// Permissions.
+	// Permissions
 	if (isSvValid) {
 		// Unix-style permissions field.
 		char s_perms[] = "----------";
@@ -511,10 +499,10 @@ int WiiSave::loadFieldData(void)
 	}
 #endif /* ENABLE_DECRYPTION */
 
-	// MAC address.
+	// MAC address
 	if (isBkValid) {
 		d->fields.addField_string(C_("WiiSave", "MAC Address"),
-			rp_sprintf("%02X:%02X:%02X:%02X:%02X:%02X",
+			fmt::format(FSTR("{:0>2X}:{:0>2X}:{:0>2X}:{:0>2X}:{:0>2X}:{:0>2X}"),
 				bkHeader->wii_mac[0], bkHeader->wii_mac[1],
 				bkHeader->wii_mac[2], bkHeader->wii_mac[3],
 				bkHeader->wii_mac[4], bkHeader->wii_mac[5]));
@@ -573,4 +561,4 @@ IconAnimDataConstPtr WiiSave::iconAnimData(void) const
 	return nullptr;
 }
 
-}
+} // namespace LibRomData

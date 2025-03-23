@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * SNES.cpp: Super Nintendo ROM image reader.                              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -28,7 +28,7 @@ namespace LibRomData {
 class SNESPrivate final : public RomDataPrivate
 {
 public:
-	SNESPrivate(const IRpFilePtr &file);
+	explicit SNESPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -36,8 +36,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 8+1> exts;
+	static const array<const char*, 3+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -121,7 +121,7 @@ ROMDATA_IMPL_IMG(SNES)
 /** SNESPrivate **/
 
 /* RomDataInfo */
-const char *const SNESPrivate::exts[] = {
+const array<const char*, 8+1> SNESPrivate::exts = {{
 	".smc", ".swc", ".sfc",
 	".fig", ".ufo", ".mgd",
 
@@ -132,8 +132,8 @@ const char *const SNESPrivate::exts[] = {
 	//".ic1",
 
 	nullptr
-};
-const char *const SNESPrivate::mimeTypes[] = {
+}};
+const array<const char*, 3+1> SNESPrivate::mimeTypes = {{
 	// Vendor-specific MIME types from FreeDesktop.org.
 	"application/vnd.nintendo.snes.rom",
 
@@ -145,9 +145,9 @@ const char *const SNESPrivate::mimeTypes[] = {
 	"application/x-satellaview-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo SNESPrivate::romDataInfo = {
-	"SNES", exts, mimeTypes
+	"SNES", exts.data(), mimeTypes.data()
 };
 
 SNESPrivate::SNESPrivate(const IRpFilePtr &file)
@@ -617,10 +617,14 @@ string SNESPrivate::getPublisher(void) const
 			if (ISALNUM(romHeader.snes.ext.new_publisher_code[0]) &&
 			    ISALNUM(romHeader.snes.ext.new_publisher_code[1]))
 			{
-				s_publisher = rp_sprintf(C_("RomData", "Unknown (%.2s)"),
-					romHeader.snes.ext.new_publisher_code);
+				const array<char, 3> s_pub_code = {{
+					romHeader.snes.ext.new_publisher_code[0],
+					romHeader.snes.ext.new_publisher_code[1],
+					'\0'
+				}};
+				s_publisher = fmt::format(FRUN(C_("RomData", "Unknown ({:s})")), s_pub_code.data());
 			} else {
-				s_publisher = rp_sprintf(C_("RomData", "Unknown (%02X %02X)"),
+				s_publisher = fmt::format(FRUN(C_("RomData", "Unknown ({:0>2X} {:0>2X})")),
 					static_cast<uint8_t>(romHeader.snes.ext.new_publisher_code[0]),
 					static_cast<uint8_t>(romHeader.snes.ext.new_publisher_code[1]));
 			}
@@ -631,7 +635,7 @@ string SNESPrivate::getPublisher(void) const
 		if (publisher) {
 			s_publisher = publisher;
 		} else {
-			s_publisher = rp_sprintf(C_("RomData", "Unknown (%02X)"),
+			s_publisher = fmt::format(FRUN(C_("RomData", "Unknown ({:0>2X})")),
 				romHeader.snes.old_publisher_code);
 		}
 	}
@@ -693,7 +697,7 @@ string SNESPrivate::getGameID(bool doFake) const
 		char prefix[6];
 		char suffix[6];
 	};
-	static const PrefixSuffixTbl_t region_ps[] = {
+	static const array<PrefixSuffixTbl_t, 0x13> region_ps = {{
 		// 0x00
 		{"SHVC-", "-JPN"},	// Japan
 		{"SNS-",  "-USA"},	// North America
@@ -718,7 +722,7 @@ string SNESPrivate::getGameID(bool doFake) const
 		{"SNS-",  "-BRA"},	// Brazil
 		{"SNSP-", "-AUS"},	// Australia
 		{"SNSP-", "-SCN"},	// Scandinavia
-	};
+	}};
 	if (romType == RomType::BSX) {
 		// Separate BS-X titles from regular SNES titles.
 		// NOTE: This originally had a fake "BSX-" and "-JPN"
@@ -731,7 +735,7 @@ string SNESPrivate::getGameID(bool doFake) const
 			prefix = "";
 			suffix = "";
 		}
-	} else if (region < ARRAY_SIZE(region_ps)) {
+	} else if (region < region_ps.size()) {
 		prefix = region_ps[region].prefix;
 		suffix = region_ps[region].suffix;
 	} else {
@@ -820,7 +824,7 @@ SNES::SNES(const IRpFilePtr &file)
 	if (d->romType == SNESPrivate::RomType::Unknown) {
 		// Check for BS-X "Memory Pack" headers.
 		static constexpr array<uint16_t, 2> bsx_addrs = {{0x7F00, 0xFF00}};
-		static constexpr uint8_t bsx_mempack_magic[6] = {'M', 0, 'P', 0, 0, 0};
+		static constexpr array<uint8_t, 6> bsx_mempack_magic = {{'M', 0, 'P', 0, 0, 0}};
 		uint8_t buf[7];
 
 		for (const uint16_t bsx_addr : bsx_addrs) {
@@ -831,7 +835,7 @@ SNES::SNES(const IRpFilePtr &file)
 				return;
 			}
 
-			if (!memcmp(buf, bsx_mempack_magic, sizeof(bsx_mempack_magic))) {
+			if (!memcmp(buf, bsx_mempack_magic.data(), bsx_mempack_magic.size())) {
 				// Found BS-X memory pack magic.
 				// Check the memory pack type.
 				// (7 is ROM; 1 to 4 is FLASH.)
@@ -983,7 +987,7 @@ int SNES::isRomSupported_static(const DetectInfo *info)
 	// SNES ROMs don't necessarily have a header at the start of the file.
 	// Therefore, we're using the file extension.
 	if (info->ext && info->ext[0] != 0) {
-		for (const char *const *ext = SNESPrivate::exts;
+		for (const char *const *ext = SNESPrivate::exts.data();
 		     *ext != nullptr; ext++)
 		{
 			if (!strcasecmp(info->ext, *ext)) {
@@ -1049,7 +1053,7 @@ const char *SNES::systemName(unsigned int type) const
 	unsigned int idx = (type & SYSNAME_TYPE_MASK);
 
 	// Localized SNES/SFC system names.
-	static const char *const sysNames[16] = {
+	static const array<const char*, 4*4> sysNames = {{
 		// Japan: Super Famicom
 		"Nintendo Super Famicom", "Super Famicom", "SFC", nullptr,
 		// South Korea: Super Comboy
@@ -1058,12 +1062,12 @@ const char *SNES::systemName(unsigned int type) const
 		"Super Nintendo Entertainment System", "Super NES", "SNES", nullptr,
 		// Reserved.
 		nullptr, nullptr, nullptr, nullptr
-	};
+	}};
 
 	// BS-X system names.
-	static const char *const sysNames_BSX[4] = {
+	static const array<const char*, 4> sysNames_BSX = {{
 		"Satellaview BS-X", "Satellaview", "BS-X", nullptr
-	};
+	}};
 
 	switch (d->romType) {
 		case SNESPrivate::RomType::SNES:
@@ -1347,7 +1351,7 @@ int SNES::loadFieldData(void)
 	} else {
 		// Unknown ROM mapping.
 		d->fields.addField_string(rom_mapping_title,
-			rp_sprintf(C_("RomData", "Unknown (0x%02X)"), rom_mapping));
+			fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")), rom_mapping));
 	}
 
 	// Cartridge HW
@@ -1392,7 +1396,7 @@ int SNES::loadFieldData(void)
 					pgettext_expr("Region", region_lkup));
 			} else {
 				d->fields.addField_string(region_title,
-					rp_sprintf(C_("RomData", "Unknown (0x%02X)"),
+					fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>2X})")),
 						romHeader->snes.destination_code));
 			}
 
@@ -1463,7 +1467,7 @@ int SNES::loadFieldData(void)
 					pgettext_expr("SNES|ProgramType", program_type));
 			} else {
 				d->fields.addField_string(program_type_title,
-					rp_sprintf(C_("RomData", "Unknown (0x%08X)"),
+					fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>8X})")),
 						le32_to_cpu(romHeader->bsx.ext.program_type)));
 			}
 
@@ -1512,35 +1516,32 @@ int SNES::loadFieldData(void)
 int SNES::loadMetaData(void)
 {
 	RP_D(SNES);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->romType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->romType) < 0) {
 		// Unknown ROM image type.
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(2);	// Maximum of 2 metadata properties.
-
 	// ROM header is read in the constructor.
 	//const SNES_RomHeader *const romHeader = &d->romHeader;
+	d->metaData.reserve(2);	// Maximum of 2 metadata properties.
 
 	// Title
 	const string s_title = d->getRomTitle();
 	if (!s_title.empty()) {
-		d->metaData->addMetaData_string(Property::Title, s_title);
+		d->metaData.addMetaData_string(Property::Title, s_title);
 	}
 
 	// Publisher
-	d->metaData->addMetaData_string(Property::Publisher, d->getPublisher());
+	d->metaData.addMetaData_string(Property::Publisher, d->getPublisher());
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -1551,20 +1552,20 @@ int SNES::loadMetaData(void)
  * try to get the size that most closely matches the
  * requested size.
  *
- * @param imageType	[in]     Image type.
- * @param pExtURLs	[out]    Output vector.
+ * @param imageType	[in]     Image type
+ * @param extURLs	[out]    Output vector
  * @param size		[in,opt] Requested image size. This may be a requested
  *                               thumbnail size in pixels, or an ImageSizeType
  *                               enum value.
  * @return 0 on success; negative POSIX error code on error.
  */
-int SNES::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
+int SNES::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) const
 {
-	ASSERT_extURLs(imageType, pExtURLs);
-	pExtURLs->clear();
+	extURLs.clear();
+	ASSERT_extURLs(imageType);
 
 	RP_D(const SNES);
-	if (!d->isValid || (int)d->romType < 0) {
+	if (!d->isValid || static_cast<int>(d->romType) < 0) {
 		// ROM image isn't valid.
 		return -EIO;
 	}
@@ -1630,16 +1631,16 @@ int SNES::extURLs(ImageType imageType, vector<ExtURL> *pExtURLs, int size) const
 	}
 
 	// Add the URLs.
-	pExtURLs->resize(1);
-	auto extURL_iter = pExtURLs->begin();
-	extURL_iter->url = d->getURL_RPDB("snes", imageTypeName, region_code, gameID.c_str(), ext);
-	extURL_iter->cache_key = d->getCacheKey_RPDB("snes", imageTypeName, region_code, gameID.c_str(), ext);
-	extURL_iter->width = sizeDefs[0].width;
-	extURL_iter->height = sizeDefs[0].height;
-	extURL_iter->high_res = (sizeDefs[0].index >= 2);
+	extURLs.resize(1);
+	ExtURL &extURL = extURLs[0];
+	extURL.url = d->getURL_RPDB("snes", imageTypeName, region_code, gameID.c_str(), ext);
+	extURL.cache_key = d->getCacheKey_RPDB("snes", imageTypeName, region_code, gameID.c_str(), ext);
+	extURL.width = sizeDefs[0].width;
+	extURL.height = sizeDefs[0].height;
+	extURL.high_res = (sizeDefs[0].index >= 2);
 
 	// All URLs added.
 	return 0;
 }
 
-}
+} // namespace LibRomData

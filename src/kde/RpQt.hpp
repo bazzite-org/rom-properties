@@ -2,16 +2,24 @@
  * ROM Properties Page shell extension. (KDE4/KF5)                         *
  * RpQt.hpp: Qt wrappers for some libromdata functionality.                *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
 #pragma once
 
 // Qt includes
+#include <QtCore/QDateTime>
 #include <QtCore/QObject>
 #include <QtCore/QString>
 #include <QtGui/QImage>
+
+// NOTE: Using QT_VERSION_CHECK causes errors on moc-qt4 due to CMAKE_AUTOMOC.
+// Reference: https://bugzilla.redhat.com/show_bug.cgi?id=1396755
+// QT_VERSION_CHECK(6, 7, 0) -> 0x60700
+#if QT_VERSION >= 0x60700
+#  include <QtCore/QTimeZone>
+#endif /* QT_VERSION >= 0x60700 */
 
 // RomPropertiesKDE namespace info
 #include "RpQtNS.hpp"
@@ -21,6 +29,11 @@
 
 #define CONCAT_FN(fn, suffix)		CONCAT_FN_INT(fn, suffix)
 #define CONCAT_FN_INT(fn, suffix)	fn ## suffix
+
+// NOTE: Using QT_VERSION_CHECK causes errors on moc-qt4 due to CMAKE_AUTOMOC.
+// Reference: https://bugzilla.redhat.com/show_bug.cgi?id=1396755
+// QT_VERSION_CHECK(6, 0, 0) -> 0x60000
+// QT_VERSION_CHECK(5, 0, 0) -> 0x50000
 
 /** Text conversion **/
 
@@ -33,11 +46,11 @@
 
 // Qt6 uses qsizetype for string lengths, which is ssize_t on Linux systems.
 // Qt5 uses int for string lengths. (qsizetype introduced in Qt 5.10)
-#if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
-typedef qsizetype rp_qstringsizetype;
-#else /* QT_VERSION < QT_VERSION_CHECK(6,0,0) */
-typedef int rp_qstringsizetype;
-#endif /* QT_VERSION >= QT_VERSION_CHECK(6,0,0) */
+#if QT_VERSION >= 0x60000
+typedef qsizetype rp_qsizetype;
+#else /* QT_VERSION < 0x60000 */
+typedef int rp_qsizetype;
+#endif /* QT_VERSION >= 0x60000 */
 
 /**
  * Convert an std::string to QString.
@@ -46,7 +59,7 @@ typedef int rp_qstringsizetype;
  */
 static inline QString U82Q(const std::string &str)
 {
-	return QString::fromUtf8(str.data(), static_cast<rp_qstringsizetype>(str.size()));
+	return QString::fromUtf8(str.data(), static_cast<rp_qsizetype>(str.size()));
 }
 
 /**
@@ -55,7 +68,7 @@ static inline QString U82Q(const std::string &str)
  * @param len Length of str, in characters. (optional; -1 for C string)
  * @return QString
  */
-static inline QString U82Q(const char *str, rp_qstringsizetype len = -1)
+static inline QString U82Q(const char *str, rp_qsizetype len = -1)
 {
 	return QString::fromUtf8(str, len);
 }
@@ -107,9 +120,9 @@ static inline QString lcToQString(uint32_t lc)
 template<typename T>
 static inline T findDirectChild(QObject *obj, const QString &aName = QString())
 {
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0)
+#if QT_VERSION >= 0x50000
 	return obj->findChild<T>(aName, Qt::FindDirectChildrenOnly);
-#else /* QT_VERSION < QT_VERSION_CHECK(5,0,0) */
+#else /* QT_VERSION < 0x50000 */
 	for (QObject *child : obj->children()) {
 		T qchild = qobject_cast<T>(child);
 		if (qchild != nullptr) {
@@ -119,7 +132,7 @@ static inline T findDirectChild(QObject *obj, const QString &aName = QString())
 		}
 	}
 	return nullptr;
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,0,0) */
+#endif /* QT_VERSION >= 0x50000 */
 }
 
 /** Image conversion **/
@@ -164,3 +177,38 @@ static inline QImage rpToQImage(const LibRpTexture::rp_image_const_ptr &image)
  * @return Qt file dialog filter.
  */
 QString rpFileDialogFilterToQt(const char *filter);
+
+/**
+ * Convert a Unix timestamp to milliseconds.
+ *
+ * Uses a QDateTime helper function with QTimeZone or Qt::TimeSpec,
+ * depending on Qt version.
+ *
+ * @param timestamp Unix timestamp
+ * @param utc If true, use UTC; otherwise, use localtime.
+ * @return QDateTime
+ */
+static inline QDateTime unixTimeToQDateTime(time_t timestamp, bool utc)
+{
+	const qint64 msecs = static_cast<qint64>(timestamp) * 1000;
+
+// NOTE: Using QT_VERSION_CHECK causes errors on moc-qt4 due to CMAKE_AUTOMOC.
+// Reference: https://bugzilla.redhat.com/show_bug.cgi?id=1396755
+// QT_VERSION_CHECK(6, 7, 0) -> 0x60700
+// QT_VERSION_CHECK(5, 2, 0) -> 0x50200
+#if QT_VERSION >= 0x60700
+	// FIXME: The QTimeZone version was also introduced in Qt 5.2.
+	// Use it unconditionally for Qt 5.2+, or only 6.7+?
+	QDateTime dateTime = QDateTime::fromMSecsSinceEpoch(msecs,
+		QTimeZone(utc ? QTimeZone::UTC : QTimeZone::LocalTime));
+#elif QT_VERSION >= 0x50200
+	QDateTime dateTime = QDateTime::fromMSecsSinceEpoch(msecs,
+		utc ? Qt::UTC : Qt::LocalTime);
+#else /* QT_VERSION < 0x50200 */
+	QDateTime dateTime;
+	dateTime.setTimeSpec(utc ? Qt::UTC : Qt::LocalTime);
+	dateTime.setMSecsSinceEpoch(msecs);
+#endif
+
+	return dateTime;
+}

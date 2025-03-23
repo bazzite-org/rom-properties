@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * Xbox360_STFS.cpp: Microsoft Xbox 360 package reader.                    *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -21,6 +21,7 @@
 #include "librpbase/img/RpPng.hpp"
 #include "librpfile/MemFile.hpp"
 #include "librpfile/SubFile.hpp"
+#include "librpfile/VectorFile.hpp"
 using namespace LibRpBase;
 using namespace LibRpFile;
 using namespace LibRpText;
@@ -30,6 +31,7 @@ using namespace LibRpTexture;
 using std::array;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace LibRomData {
@@ -40,8 +42,7 @@ namespace LibRomData {
 class Xbox360_STFS_Private final : public RomDataPrivate
 {
 public:
-	Xbox360_STFS_Private(const IRpFilePtr &file);
-	~Xbox360_STFS_Private() final;
+	explicit Xbox360_STFS_Private(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -49,8 +50,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 2+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -108,7 +109,7 @@ public:
 
 public:
 	// XEX executable
-	Xbox360_XEX *xex;
+	unique_ptr<Xbox360_XEX> xex;
 
 	// File table
 	rp::uvector<STFS_DirEntry_t> fileTable;
@@ -158,22 +159,22 @@ ROMDATA_IMPL_IMG_TYPES(Xbox360_STFS)
 /** Xbox360_STFS_Private **/
 
 /* RomDataInfo */
-const char *const Xbox360_STFS_Private::exts[] = {
+const array<const char*, 2+1> Xbox360_STFS_Private::exts = {{
 	//".stfs",	// FIXME: Not actually used...
 	".fxs",		// Fallout
 	".exs",		// Skyrim
 
 	nullptr
-};
-const char *const Xbox360_STFS_Private::mimeTypes[] = {
+}};
+const array<const char*, 1+1> Xbox360_STFS_Private::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-xbox360-stfs",
 
 	nullptr
-};
+}};
 const RomDataInfo Xbox360_STFS_Private::romDataInfo = {
-	"Xbox360_STFS", exts, mimeTypes
+	"Xbox360_STFS", exts.data(), mimeTypes.data()
 };
 
 Xbox360_STFS_Private::Xbox360_STFS_Private(const IRpFilePtr &file)
@@ -188,11 +189,6 @@ Xbox360_STFS_Private::Xbox360_STFS_Private(const IRpFilePtr &file)
 	memset(&stfsThumbnails, 0, sizeof(stfsThumbnails));
 }
 
-Xbox360_STFS_Private::~Xbox360_STFS_Private()
-{
-	delete xex;
-}
-
 /**
  * Load the icon.
  * @return Icon, or nullptr on error.
@@ -202,7 +198,7 @@ rp_image_const_ptr Xbox360_STFS_Private::loadIcon(void)
 	if (img_icon) {
 		// Icon has already been loaded.
 		return img_icon;
-	} else if (!this->isValid || (int)this->stfsType < 0) {
+	} else if (!this->isValid || static_cast<int>(this->stfsType) < 0) {
 		// Can't load the icon.
 		return nullptr;
 	}
@@ -237,8 +233,11 @@ rp_image_const_ptr Xbox360_STFS_Private::loadIcon(void)
 
 	// Create a MemFile and decode the image.
 	// TODO: For rpcli, shortcut to extract the PNG directly.
-	shared_ptr<MemFile> f_mem = std::make_shared<MemFile>(pIconData, iconSize);
-	rp_image_ptr img = RpPng::load(f_mem);
+	rp_image_ptr img;
+	{
+		MemFile f_mem(pIconData, iconSize);
+		img = RpPng::load(&f_mem);
+	}
 
 	if (!img) {
 		// Unable to load the title thumbnail image.
@@ -253,8 +252,8 @@ rp_image_const_ptr Xbox360_STFS_Private::loadIcon(void)
 			iconSize = sizeof(stfsThumbnails.mdv2.thumbnail_image);
 		}
 
-		f_mem = std::make_shared<MemFile>(pIconData, iconSize);
-		img = RpPng::load(f_mem);
+		MemFile f_mem(pIconData, iconSize);
+		img = RpPng::load(&f_mem);
 	}
 
 	this->img_icon = img;
@@ -304,7 +303,7 @@ int Xbox360_STFS_Private::loadHeader(unsigned int header)
 	if (!this->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!this->isValid || (int)this->stfsType < 0) {
+	} else if (!this->isValid || static_cast<int>(this->stfsType) < 0) {
 		// STFS file isn't valid.
 		return -EIO;
 	}
@@ -401,7 +400,7 @@ int Xbox360_STFS_Private::loadFileTable(void)
 	if (!this->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!this->isValid || (int)this->stfsType < 0) {
+	} else if (!this->isValid || static_cast<int>(this->stfsType) < 0) {
 		// STFS file isn't valid.
 		return -EIO;
 	}
@@ -463,7 +462,7 @@ int Xbox360_STFS_Private::loadFileTable(void)
 Xbox360_XEX *Xbox360_STFS_Private::openDefaultXex(void)
 {
 	if (this->xex) {
-		return this->xex;
+		return this->xex.get();
 	}
 
 	// Make sure the file table is loaded.
@@ -516,27 +515,49 @@ Xbox360_XEX *Xbox360_STFS_Private::openDefaultXex(void)
 
 	// Offset and filesize.
 	// NOTE: Block number is **little-endian** here.
-	const int32_t blockNumber =
+	const int32_t startingBlockNumber =
 		(dirEntry->block_number[2] << 16) |
 		(dirEntry->block_number[1] <<  8) |
 		 dirEntry->block_number[0];
-	const int32_t offset = blockNumberToOffset(dataBlockNumberToPhys(blockNumber));
 	const uint32_t filesize = be32_to_cpu(dirEntry->filesize);
 
-	// Load default.xexp.
-	// FIXME: Maybe add a reader class to handle the hashes,
-	// though we only need the XEX header right now.
-	shared_ptr<SubFile> xexFile_tmp = std::make_shared<SubFile>(this->file, offset, filesize);
-	if (xexFile_tmp->isOpen()) {
-		Xbox360_XEX *const xex_tmp = new Xbox360_XEX(xexFile_tmp);
-		if (xex_tmp->isOpen()) {
-			this->xex = xex_tmp;
-		} else {
-			delete xex_tmp;
-		}
+	// FIXME: There are hash blocks after so many blocks, and files are not necessarily contiguous.
+	// Implement a better non-contiguous reader using the FAT-equivalent later.
+	// For now, we'll skip the hash blocks and load the entire file into memory
+	// instead of using SubFile.
+	// TODO:
+	// - Create a SparseDiscReader instead of reading the entire file into memory.
+	// - Handle non-contiguous files.
+	VectorFilePtr xexFile_tmp = std::make_shared<VectorFile>();
+	vector<uint8_t> &vec = xexFile_tmp->vector();
+	vec.resize(filesize);
+
+	const unsigned int block_count = static_cast<unsigned int>(filesize / STFS_BLOCK_SIZE);
+	int32_t blockNumber = startingBlockNumber;
+	uint8_t *pVec = vec.data();
+	for (unsigned int p = 0; p < block_count; p++, blockNumber++, pVec += STFS_BLOCK_SIZE) {
+		// Read the block.
+		const int32_t offset = blockNumberToOffset(dataBlockNumberToPhys(blockNumber));
+		this->file->seekAndRead(offset, pVec, STFS_BLOCK_SIZE);
 	}
 
-	return this->xex;
+	const unsigned int partial_block_size = static_cast<unsigned int>(filesize % STFS_BLOCK_SIZE);
+	if (partial_block_size != 0) {
+		// Not a multiple of the block size?
+		// Read the partial block.
+		const int32_t offset = blockNumberToOffset(dataBlockNumberToPhys(blockNumber));
+		this->file->seekAndRead(offset, pVec, partial_block_size);
+	}
+
+	// Open the XEX.
+	Xbox360_XEX *const xex_tmp = new Xbox360_XEX(xexFile_tmp);
+	if (xex_tmp->isOpen()) {
+		this->xex.reset(xex_tmp);
+	} else {
+		delete xex_tmp;
+	}
+
+	return this->xex.get();
 }
 
 /** Xbox360_STFS **/
@@ -729,9 +750,9 @@ const char *Xbox360_STFS::systemName(unsigned int type) const
 
 	// Bits 0-1: Type. (long, short, abbreviation)
 	// TODO: STFS-specific, or just use Xbox 360?
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Microsoft Xbox 360", "Xbox 360", "X360", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -788,6 +809,33 @@ vector<RomData::ImageSizeDef> Xbox360_STFS::supportedImageSizes_static(ImageType
 }
 
 /**
+ * Get image processing flags.
+ *
+ * These specify post-processing operations for images,
+ * e.g. applying transparency masks.
+ *
+ * @param imageType Image type.
+ * @return Bitfield of ImageProcessingBF operations to perform.
+ */
+uint32_t Xbox360_STFS::imgpf(ImageType imageType) const
+{
+	ASSERT_imgpf(imageType);
+
+	uint32_t ret = 0;
+	switch (imageType) {
+		case IMG_INT_ICON:
+			// Use nearest-neighbor scaling when resizing.
+			// Image is internally stored in PNG format.
+			ret = IMGPF_RESCALE_NEAREST | IMGPF_INTERNAL_PNG_FORMAT;
+			break;
+
+		default:
+			break;
+	}
+	return ret;
+}
+
+/**
  * Load field data.
  * Called by RomData::fields() if the field data hasn't been loaded yet.
  * @return Number of fields read on success; negative POSIX error code on error.
@@ -801,7 +849,7 @@ int Xbox360_STFS::loadFieldData(void)
 	} else if (!d->file || !d->file->isOpen()) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->stfsType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->stfsType) < 0) {
 		// STFS file isn't valid.
 		return -EIO;
 	}
@@ -917,7 +965,7 @@ int Xbox360_STFS::loadFieldData(void)
 	// File type
 	// TODO: Show console-specific information for 'CON '.
 	const char *const s_package_type_title = C_("Xbox360_STFS", "Package Type");
-	static const array<const char*, (int)Xbox360_STFS_Private::StfsType::Max> file_type_tbl = {{
+	static const array<const char*, static_cast<size_t>(Xbox360_STFS_Private::StfsType::Max)> file_type_tbl = {{
 		NOP_C_("Xbox360_STFS|FileType", "Console-Specific Package"),
 		NOP_C_("Xbox360_STFS|FileType", "Non-Xbox Live Package"),
 		NOP_C_("Xbox360_STFS|FileType", "Xbox Live Package"),
@@ -941,39 +989,33 @@ int Xbox360_STFS::loadFieldData(void)
 		d->fields.addField_string(s_content_type_title, s_content_type);
 	} else {
 		d->fields.addField_string(s_content_type_title,
-			rp_sprintf(C_("RomData", "Unknown (0x%08X)"),
+			fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>8X})")),
 				be32_to_cpu(stfsMetadata->content_type)));
 	}
 
 	// Media ID
 	d->fields.addField_string(C_("Xbox360_STFS", "Media ID"),
-		rp_sprintf("%08X", be32_to_cpu(stfsMetadata->media_id)),
+		fmt::format(FSTR("{:0>8X}"), be32_to_cpu(stfsMetadata->media_id)),
 		RomFields::STRF_MONOSPACE);
 
 	// Title ID
 	// FIXME: Verify behavior on big-endian.
 	// TODO: Consolidate implementations into a shared function.
 	string tid_str;
-	char hexbuf[4];
 	if (ISUPPER(stfsMetadata->title_id.a)) {
-		tid_str += (char)stfsMetadata->title_id.a;
+		tid_str += stfsMetadata->title_id.a;
 	} else {
-		tid_str += "\\x";
-		snprintf(hexbuf, sizeof(hexbuf), "%02X",
-			(uint8_t)stfsMetadata->title_id.a);
-		tid_str.append(hexbuf, 2);
+		tid_str += fmt::format(FSTR("\\x{:0>2X}"), static_cast<uint8_t>(stfsMetadata->title_id.a));
 	}
 	if (ISUPPER(stfsMetadata->title_id.b)) {
-		tid_str += (char)stfsMetadata->title_id.b;
+		tid_str += stfsMetadata->title_id.b;
 	} else {
-		tid_str += "\\x";
-		snprintf(hexbuf, sizeof(hexbuf), "%02X",
-			(uint8_t)stfsMetadata->title_id.b);
-		tid_str.append(hexbuf, 2);
+		tid_str += fmt::format(FSTR("\\x{:0>2X}"), static_cast<uint8_t>(stfsMetadata->title_id.b));
 	}
 
 	d->fields.addField_string(C_("Xbox360_XEX", "Title ID"),
-		rp_sprintf_p(C_("Xbox360_XEX", "%1$08X (%2$s-%3$04u)"),
+		// tr: Xbox 360 title ID (32-bit hex, then two letters followed by a 4-digit decimal number)
+		fmt::format(FRUN(C_("Xbox360_XEX", "{0:0>8X} ({1:s}-{2:0>4d})")),
 			be32_to_cpu(stfsMetadata->title_id.u32),
 			tid_str.c_str(),
 			be16_to_cpu(stfsMetadata->title_id.u16)),
@@ -985,19 +1027,19 @@ int Xbox360_STFS::loadFieldData(void)
 	ver.u32 = be32_to_cpu(stfsMetadata->version.u32);
 	basever.u32 = be32_to_cpu(stfsMetadata->base_version.u32);
 	d->fields.addField_string(C_("RomData", "Version"),
-		rp_sprintf("%u.%u.%u.%u",
+		fmt::format(FSTR("{:d}.{:d}.{:d}.{:d}"),
 			static_cast<unsigned int>(ver.major),
 			static_cast<unsigned int>(ver.minor),
 			static_cast<unsigned int>(ver.build),
 			static_cast<unsigned int>(ver.qfe)));
 	d->fields.addField_string(C_("Xbox360_XEX", "Base Version"),
-		rp_sprintf("%u.%u.%u.%u",
+		fmt::format(FSTR("{:d}.{:d}.{:d}.{:d}"),
 			static_cast<unsigned int>(basever.major),
 			static_cast<unsigned int>(basever.minor),
 			static_cast<unsigned int>(basever.build),
 			static_cast<unsigned int>(basever.qfe)));
 
-	// Console-specific packages.
+	// Console-specific packages
 	if (stfsHeader->magic == cpu_to_be32(STFS_MAGIC_CON)) {
 		// NOTE: addField_string_numeric() is limited to 32-bit.
 		// Print the console ID as a hexdump instead.
@@ -1030,7 +1072,7 @@ int Xbox360_STFS::loadFieldData(void)
 			d->fields.addField_string(s_console_type_title, s_console_type);
 		} else {
 			d->fields.addField_string(s_console_type_title,
-				rp_sprintf(C_("RomData", "Unknown (%u)"), stfsHeader->console.console_type));
+				fmt::format(FRUN(C_("RomData", "Unknown ({:d})")), stfsHeader->console.console_type));
 		}
 	}
 
@@ -1056,13 +1098,13 @@ int Xbox360_STFS::loadFieldData(void)
 int Xbox360_STFS::loadMetaData(void)
 {
 	RP_D(Xbox360_STFS);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->stfsType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->stfsType) < 0) {
 		// STFS file isn't valid.
 		return -EIO;
 	}
@@ -1074,34 +1116,31 @@ int Xbox360_STFS::loadMetaData(void)
 		return ret;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(2);	// Maximum of 2 metadata properties.
-
 	const STFS_Package_Metadata *const stfsMetadata = &d->stfsMetadata;
+	d->metaData.reserve(2);	// Maximum of 2 metadata properties.
 
 	// Display name and/or title
 	// TODO: Which one to prefer?
 	// TODO: Language ID?
 	if (stfsMetadata->display_name[0][0] != 0) {
-		d->metaData->addMetaData_string(Property::Title,
+		d->metaData.addMetaData_string(Property::Title,
 			utf16be_to_utf8(stfsMetadata->display_name[0],
 				ARRAY_SIZE(stfsMetadata->display_name[0])));
 	} else if (stfsMetadata->title_name[0] != 0) {
-		d->metaData->addMetaData_string(Property::Title,
+		d->metaData.addMetaData_string(Property::Title,
 			utf16be_to_utf8(stfsMetadata->title_name,
 				ARRAY_SIZE(stfsMetadata->title_name)));
 	}		
 
 	// Publisher
 	if (stfsMetadata->publisher_name[0] != 0) {
-		d->metaData->addMetaData_string(Property::Publisher,
+		d->metaData.addMetaData_string(Property::Publisher,
 			utf16be_to_utf8(stfsMetadata->publisher_name,
 				ARRAY_SIZE(stfsMetadata->publisher_name)));
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -1124,4 +1163,4 @@ int Xbox360_STFS::loadInternalImage(ImageType imageType, rp_image_const_ptr &pIm
 		d->loadIcon);	// func
 }
 
-}
+} // namespace LibRomData

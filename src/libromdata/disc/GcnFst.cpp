@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * GcnFst.cpp: GameCube/Wii FST parser.                                    *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -372,13 +372,12 @@ const GCN_FST_Entry *GcnFstPrivate::find_path(const char *path) const
  * @param offsetShift File offset shift. (0 = GCN, 2 = Wii)
  */
 GcnFst::GcnFst(const uint8_t *fstData, uint32_t len, uint8_t offsetShift)
-	: super()
-	, d(new GcnFstPrivate(fstData, len, offsetShift))
+	: d_ptr(new GcnFstPrivate(fstData, len, offsetShift))
 { }
 
 GcnFst::~GcnFst()
 {
-	delete d;
+	delete d_ptr;
 }
 
 /**
@@ -387,6 +386,7 @@ GcnFst::~GcnFst()
  */
 bool GcnFst::isOpen(void) const
 {
+	RP_D(const GcnFst);
 	return (d->string_table_ptr != nullptr);
 }
 
@@ -396,6 +396,7 @@ bool GcnFst::isOpen(void) const
  */
 bool GcnFst::hasErrors(void) const
 {
+	RP_D(const GcnFst);
 	return d->hasErrors;
 }
 
@@ -408,6 +409,7 @@ bool GcnFst::hasErrors(void) const
  */
 IFst::Dir *GcnFst::opendir(const char *path)
 {
+	RP_D(GcnFst);
 	if (!d->fstData) {
 		// No FST.
 		return nullptr;
@@ -462,6 +464,7 @@ IFst::DirEnt *GcnFst::readdir(IFst::Dir *dirp)
 	}
 
 	// Get the directory's fst_entry.
+	RP_D(GcnFst);
 	const GCN_FST_Entry *dir_fst_entry = d->entry(dirp->dir_idx);
 	if (!dir_fst_entry) {
 		// dir_idx is corrupted.
@@ -550,6 +553,7 @@ int GcnFst::closedir(IFst::Dir *dirp)
 		return -EINVAL;
 	}
 
+	RP_D(GcnFst);
 	assert(d->fstDirCount > 0);
 	delete dirp;
 	d->fstDirCount--;
@@ -570,6 +574,7 @@ int GcnFst::find_file(const char *filename, DirEnt *dirent)
 		return -EINVAL;
 	}
 
+	RP_D(GcnFst);
 	const GCN_FST_Entry *fst_entry = d->find_path(filename);
 	if (!fst_entry) {
 		// Not found.
@@ -604,6 +609,7 @@ int GcnFst::find_file(const char *filename, DirEnt *dirent)
  */
 off64_t GcnFst::totalUsedSize(void) const
 {
+	RP_D(const GcnFst);
 	if (!d->fstData) {
 		// No FST...
 		return -1;

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpbase/tests)                  *
  * RpPngFormatTest.cpp: RpPng format test.                                 *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -46,12 +46,10 @@ using namespace LibRpFile;
 #include "librptexture/img/rp_image.hpp"
 using namespace LibRpTexture;
 
-// C includes
-#include <stdint.h>
-#include <stdlib.h>
-
 // C includes (C++ namespace)
 #include "ctypex.h"
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 // C++ includes
@@ -62,6 +60,9 @@ using namespace LibRpTexture;
 using std::array;
 using std::shared_ptr;
 using std::string;
+
+// libfmt
+#include "rp-libfmt.h"
 
 namespace LibRpBase { namespace Tests {
 
@@ -90,7 +91,7 @@ struct RpPngFormatTest_mode
 	RpPngFormatTest_mode(
 		const char *png_filename,
 		const char *bmp_gz_filename,
-		const PNG_IHDR_t &ihdr,
+		PNG_IHDR_t ihdr,
 		const BITMAPINFOHEADER &bih,
 		const tRNS_CI8_t &bmp_tRNS,
 		rp_image::Format rp_format)
@@ -106,7 +107,7 @@ struct RpPngFormatTest_mode
 	RpPngFormatTest_mode(
 		const char *png_filename,
 		const char *bmp_gz_filename,
-		const PNG_IHDR_t &ihdr,
+		PNG_IHDR_t ihdr,
 		const BITMAPINFOHEADER &bih,
 		rp_image::Format rp_format)
 		: png_filename(png_filename)
@@ -149,8 +150,8 @@ struct RpPngFormatTest_mode
 };
 
 // Maximum file size for images.
-static const off64_t MAX_PNG_IMAGE_FILESIZE =    512*1024;
-static const off64_t MAX_BMP_IMAGE_FILESIZE = 2*1024*1024;
+static constexpr off64_t MAX_PNG_IMAGE_FILESIZE =    512*1024;
+static constexpr off64_t MAX_BMP_IMAGE_FILESIZE = 2*1024*1024;
 
 class RpPngFormatTest : public ::testing::TestWithParam<RpPngFormatTest_mode>
 {
@@ -880,7 +881,7 @@ TEST_P(RpPngFormatTest, loadTest)
 	EXPECT_EQ(mode.ihdr.interlace_method,	ihdr.interlace_method);
 
 	// Create a MemFile.
-	shared_ptr<MemFile> png_mem_file = std::make_shared<MemFile>(m_png_buf.data(), m_png_buf.size());
+	MemFilePtr png_mem_file = std::make_shared<MemFile>(m_png_buf.data(), m_png_buf.size());
 	ASSERT_TRUE(png_mem_file->isOpen());
 
 	// Load the PNG image from memory.
@@ -1319,7 +1320,7 @@ INSTANTIATE_TEST_SUITE_P(happy_mac_mono_png, RpPngFormatTest,
  */
 extern "C" int gtest_main(int argc, TCHAR *argv[])
 {
-	fputs("LibRpBase test suite: RpPng format test.\n\n", stderr);
+	fmt::print(stderr, FSTR("LibRpBase test suite: RpPng format test.\n\n"));
 	fflush(nullptr);
 
 	// Make sure the CRC32 table is initialized.
@@ -1365,7 +1366,7 @@ extern "C" int gtest_main(int argc, TCHAR *argv[])
 	}
 
 	if (!is_found) {
-		fputs("*** ERROR: Cannot find the png_data test images directory.\n", stderr);
+		fmt::print(stderr, FSTR("*** ERROR: Cannot find the png_data test images directory.\n"));
 		return EXIT_FAILURE;
 	}
 

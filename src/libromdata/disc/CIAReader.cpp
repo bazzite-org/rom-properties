@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * CIAReader.cpp: Nintendo 3DS CIA reader.                                 *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -20,6 +20,10 @@
 #endif /* ENABLE_DECRYPTION */
 using namespace LibRpBase;
 using namespace LibRpFile;
+
+// C++ STL classes
+using std::array;
+using std::string;
 
 namespace LibRomData {
 
@@ -88,9 +92,9 @@ CIAReaderPrivate::CIAReaderPrivate(CIAReader *q,
 		titleKeyEncIdx = N3DS_TICKET_TITLEKEY_ISSUER_RETAIL;
 		if (ticket->keyY_index < 6) {
 			// Verification data is available.
-			keyX_verify = N3DSVerifyKeys::encryptionVerifyData_static((int)N3DSVerifyKeys::EncryptionKeys::Key_Retail_Slot0x3DKeyX);
-			keyY_verify = N3DSVerifyKeys::encryptionVerifyData_static((int)N3DSVerifyKeys::EncryptionKeys::Key_Retail_Slot0x3DKeyY_0 + ticket->keyY_index);
-			keyNormal_verify = N3DSVerifyKeys::encryptionVerifyData_static((int)N3DSVerifyKeys::EncryptionKeys::Key_Retail_Slot0x3DKeyNormal_0 + ticket->keyY_index);
+			keyX_verify = N3DSVerifyKeys::encryptionVerifyData_static(static_cast<int>(N3DSVerifyKeys::EncryptionKeys::Key_Retail_Slot0x3DKeyX));
+			keyY_verify = N3DSVerifyKeys::encryptionVerifyData_static(static_cast<int>(N3DSVerifyKeys::EncryptionKeys::Key_Retail_Slot0x3DKeyY_0) + ticket->keyY_index);
+			keyNormal_verify = N3DSVerifyKeys::encryptionVerifyData_static(static_cast<int>(N3DSVerifyKeys::EncryptionKeys::Key_Retail_Slot0x3DKeyNormal_0) + ticket->keyY_index);
 		}
 	} else if (!strncmp(ticket->issuer, N3DS_TICKET_ISSUER_DEBUG, sizeof(ticket->issuer))) {
 		// Debug issuer.
@@ -98,9 +102,9 @@ CIAReaderPrivate::CIAReaderPrivate(CIAReader *q,
 		titleKeyEncIdx = N3DS_TICKET_TITLEKEY_ISSUER_DEBUG;
 		if (ticket->keyY_index < 6) {
 			// Verification data is available.
-			keyX_verify = N3DSVerifyKeys::encryptionVerifyData_static((int)N3DSVerifyKeys::EncryptionKeys::Key_Debug_Slot0x3DKeyX);
-			keyY_verify = N3DSVerifyKeys::encryptionVerifyData_static((int)N3DSVerifyKeys::EncryptionKeys::Key_Debug_Slot0x3DKeyY_0 + ticket->keyY_index);
-			keyNormal_verify = N3DSVerifyKeys::encryptionVerifyData_static((int)N3DSVerifyKeys::EncryptionKeys::Key_Debug_Slot0x3DKeyNormal_0 + ticket->keyY_index);
+			keyX_verify = N3DSVerifyKeys::encryptionVerifyData_static(static_cast<int>(N3DSVerifyKeys::EncryptionKeys::Key_Debug_Slot0x3DKeyX));
+			keyY_verify = N3DSVerifyKeys::encryptionVerifyData_static(static_cast<int>(N3DSVerifyKeys::EncryptionKeys::Key_Debug_Slot0x3DKeyY_0) + ticket->keyY_index);
+			keyNormal_verify = N3DSVerifyKeys::encryptionVerifyData_static(static_cast<int>(N3DSVerifyKeys::EncryptionKeys::Key_Debug_Slot0x3DKeyNormal_0) + ticket->keyY_index);
 		}
 	} else {
 		// Unknown issuer.
@@ -112,21 +116,16 @@ CIAReaderPrivate::CIAReaderPrivate(CIAReader *q,
 	// TODO: Handle invalid KeyY indexes?
 	titleKeyEncIdx |= (ticket->keyY_index << 2);
 
-	// Keyslot names.
-	char keyX_name[40];
-	char keyY_name[40];
-	char keyNormal_name[40];
-	snprintf(keyX_name, sizeof(keyNormal_name), "%s-Slot0x3DKeyX", keyPrefix);
-	snprintf(keyY_name, sizeof(keyY_name), "%s-Slot0x3DKeyY-%u",
-		keyPrefix, ticket->keyY_index);
-	snprintf(keyNormal_name, sizeof(keyNormal_name), "%s-Slot0x3DKeyNormal-%u",
-		keyPrefix, ticket->keyY_index);
+	// Keyslot names
+	const string keyX_name = fmt::format(FSTR("{:s}-Slot0x3DKeyX"), keyPrefix);
+	const string keyY_name = fmt::format(FSTR("{:s}-Slot0x3DKeyY-{:d}"), keyPrefix, ticket->keyY_index);
+	const string keyNormal_name = fmt::format(FSTR("{:s}-Slot0x3DKeyNormal-{:d}"), keyPrefix, ticket->keyY_index);
 
 	// Get the KeyNormal. If that fails, get KeyX and KeyY,
 	// then use CtrKeyScrambler to generate KeyNormal.
 	u128_t keyNormal;
-	KeyManager::VerifyResult res = N3DSVerifyKeys::loadKeyNormal(&keyNormal,
-		keyNormal_name, keyX_name, keyY_name,
+	KeyManager::VerifyResult res = N3DSVerifyKeys::loadKeyNormal(keyNormal,
+		keyNormal_name.c_str(), keyX_name.c_str(), keyY_name.c_str(),
 		keyNormal_verify, keyX_verify, keyY_verify);
 	if (res != KeyManager::VerifyResult::OK) {
 		// Unable to get the CIA encryption keys.
@@ -137,7 +136,7 @@ CIAReaderPrivate::CIAReaderPrivate(CIAReader *q,
 	}
 
 	// Create a cipher to decrypt the title key.
-	IAesCipher *cipher = AesCipherFactory::create();
+	IAesCipher *const cipher = AesCipherFactory::create();
 
 	// Initialize parameters for title key decryption.
 	// TODO: Error checking.
@@ -151,24 +150,24 @@ CIAReaderPrivate::CIAReaderPrivate(CIAReader *q,
 	// CIA IV is the title ID in big-endian.
 	// The ticket title ID is already in big-endian,
 	// so copy it over directly.
-	u128_t cia_iv;
-	memcpy(cia_iv.u8, &ticket->title_id.id, sizeof(ticket->title_id.id));
-	memset(&cia_iv.u8[8], 0, 8);
-	cipher->setIV(cia_iv.u8, sizeof(cia_iv.u8));
+	array<uint8_t, 16> cia_iv;
+	memcpy(cia_iv.data(), &ticket->title_id.id, sizeof(ticket->title_id.id));
+	memset(&cia_iv[8], 0, 8);
+	cipher->setIV(cia_iv.data(), cia_iv.size());
 
 	// Decrypt the title key.
-	uint8_t title_key[16];
-	memcpy(title_key, ticket->title_key, sizeof(title_key));
-	cipher->decrypt(title_key, sizeof(title_key));
+	array<uint8_t, 16> title_key;
+	memcpy(title_key.data(), ticket->title_key, title_key.size());
+	cipher->decrypt(title_key.data(), title_key.size());
 	delete cipher;
 
 	// Data area: IV is the TMD content index.
-	cia_iv.u8[0] = tmd_content_index >> 8;
-	cia_iv.u8[1] = tmd_content_index & 0xFF;
-	memset(&cia_iv.u8[2], 0, sizeof(cia_iv.u8)-2);
+	cia_iv.fill(0);
+	cia_iv[0] = tmd_content_index >> 8;
+	cia_iv[1] = tmd_content_index & 0xFF;
 
 	// Create a CBC reader to decrypt the CIA.
-	cbcReader = std::make_shared<CBCReader>(q->m_file, content_offset, content_length, title_key, cia_iv.u8);
+	cbcReader = std::make_shared<CBCReader>(q->m_file, content_offset, content_length, title_key.data(), cia_iv.data());
 #else /* !ENABLE_DECRYPTION */
 	// Cannot decrypt the CIA.
 	// TODO: Set an error.

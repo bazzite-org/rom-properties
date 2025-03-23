@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * md_structs.h: Sega Mega Drive data structures.                          *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -73,10 +73,11 @@ typedef struct _MD_RomHeader {
 	// Shift-JIS (cp932) or cp1252.
 	// NOTE: Offsets are based on the absolute ROM address,
 	// since the header is located at 0x100.
-	char system[16];		// [0x100] System ID
-	char copyright[16];		// [0x110] Copyright
 	union {
 		struct {
+			// Standard ROM header
+			char system[16];	// [0x100] System ID
+			char copyright[16];	// [0x110] Copyright
 			char title_domestic[48];// [0x120] Japanese ROM name
 			char title_export[48];	// [0x150] US/European ROM name
 			char serial_number[14];	// [0x180] Serial number
@@ -85,6 +86,9 @@ typedef struct _MD_RomHeader {
 			MD_RomRamInfo rom_ram;	// [0x1A0] ROM/RAM address information
 		};
 		struct {
+			// Some early ROMs have 32-byte title fields.
+			char system[16];	// [0x100] System ID
+			char copyright[16];	// [0x110] Copyright
 			char title_domestic[32];// [0x120] Japanese ROM name
 			char title_export[32];	// [0x140] US/European ROM name
 			char serial_number[14];	// [0x160] Serial number
@@ -95,6 +99,18 @@ typedef struct _MD_RomHeader {
 			// at 0x190 or 0x1B0?
 			uint8_t reserved[0x20];	// [0x190]
 		} early;
+		struct {
+			// "Juusou Kihei Leynos (Japan) (Virtual Console).gen" has an
+			// Off-by-one error in the header: System is 1 byte too small.
+			char system[15];	// [0x100] System ID
+			char copyright[16];	// [0x10F] Copyright
+			char title_domestic[49];// [0x11F] Japanese ROM name
+			char title_export[48];	// [0x150] US/European ROM name
+			char serial_number[14];	// [0x180] Serial number
+			uint16_t checksum;	// [0x18E] Checksum (excluding vector table and header)
+			char io_support[16];	// [0x190] Supported I/O devices
+			MD_RomRamInfo rom_ram;	// [0x1A0] ROM/RAM address information
+		} target_earth;
 	};
 
 	// Save RAM information.
@@ -141,6 +157,46 @@ typedef enum {
 	MD_IO_ACTIVATOR		= 'L',
 	MD_IO_MEGA_MOUSE	= 'M',
 } MD_IO_Support;
+
+/**
+ * Sega Mega CD: System ID area
+ * Located at 0x0000 in the first sector.
+ * (This is where the M68K vector table would be in Mega Drive ROMs.)
+ *
+ * Reference: https://forums.sonicretro.org/index.php?threads/how-do-mega-cd-games-start-up.30588/#post-727202
+ *
+ * All fields are in big-endian.
+ * String fields are space-padded.
+ */
+#define MCD_SYSTEMID_SIGNATURE "SEGADISCSYSTEM  "
+typedef struct _MCD_SystemID {
+	char sega_disc_system[16];	// [0x000] "SEGADISCSYSTEM  "
+	char volume_name[11];		// [0x010] Volume name
+	char zero0;			// [0x01B] 0
+	uint16_t volume_system;		// [0x01C] Volume system
+	uint16_t volume_type;		// [0x01E] Volume type (usually 0x0001?)
+	char system_name[11];		// [0x020] System name
+	char zero1;			// [0x02B] 0
+	uint16_t system_version;	// [0x02C] System version (usually 0x0001?)
+	uint16_t zero2;			// [0x02E] 0
+
+	uint32_t ip_address;		// [0x030] Main68K Initial Program CD offset
+	uint32_t ip_size;		// [0x034] Main68K Initial Program CD size
+	uint32_t ip_entry;		// [0x038] Main68K Initial Program CD entry offset
+	uint32_t ip_wram_size;		// [0x03C] Main68K Initial Program Work RAM size
+
+	uint32_t sp_address;		// [0x040] Sub68K Initial Program CD offset
+	uint32_t sp_size;		// [0x044] Sub68K Initial Program CD size
+	uint32_t sp_entry;		// [0x048] Sub68K Initial Program CD entry offset
+	uint32_t sp_wram_size;		// [0x04C] Sub68K Initial Program Work RAM size
+
+	// The remainder of the System ID is "reserved", but there's usually
+	// a build date at the start, in "MMDDYYYY" format.
+	char build_date[8];		// [0x050] Build date, in "MMDDYYYY" format.
+
+	uint8_t reserved[168];
+} MCD_SystemID;
+ASSERT_STRUCT(MCD_SystemID, 256);
 
 /**
  * Sega 32X security program user header.

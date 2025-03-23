@@ -61,7 +61,6 @@ SET(${PROJECT_NAME}_SRCS
 	conversion.cpp
 	fourCC.cpp
 	libc.c
-	printf.cpp
 	specialized.cpp
 	utf8_strlen.cpp)
 # Headers
@@ -70,7 +69,6 @@ SET(${PROJECT_NAME}_H
 	fourCC.hpp
 	libc.h
 	NULL-check.hpp
-	printf.hpp
 	specialized.cpp
 	utf8_strlen.hpp
 	wchar.hpp
@@ -111,8 +109,11 @@ FOREACH(_target ${TARGETS})
 		)
 	INCLUDE(SetMSVCDebugPath)
 	SET_MSVC_DEBUG_PATH(${_target})
-	# Exclude from ALL builds.
-	SET_TARGET_PROPERTIES(${_target} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+	# Exclude from ALL builds; enable PIC.
+	SET_TARGET_PROPERTIES(${_target} PROPERTIES
+		EXCLUDE_FROM_ALL TRUE
+		POSITION_INDEPENDENT_CODE TRUE
+		)
 
 	# Make sure git_version.h is created before compiling this target.
 	IF(TARGET git_version)
@@ -163,6 +164,11 @@ FOREACH(_target ${TARGETS})
 	IF(ENABLE_NLS)
 		TARGET_LINK_LIBRARIES(${_target} PRIVATE i18n${_target_suffix})
 	ENDIF(ENABLE_NLS)
+
+	# libfmt
+	IF(Fmt_FOUND)
+		TARGET_LINK_LIBRARIES(${_target} PRIVATE ${Fmt_LIBRARY})
+	ENDIF(Fmt_FOUND)
 ENDFOREACH(_target)
 UNSET(_target_suffix)
 
@@ -170,12 +176,6 @@ IF(TARGET ${PROJECT_NAME} AND NOT TARGET ${PROJECT_NAME}-dll)
 	# On other platforms, the dll target will be an alias to the regular target.
 	ADD_LIBRARY(${PROJECT_NAME}-dll ALIAS ${PROJECT_NAME})
 ENDIF()
-
-# Unix: Add -fpic/-fPIC in order to use this static library in plugins.
-IF(UNIX AND NOT APPLE)
-	SET(CMAKE_C_FLAGS	"${CMAKE_C_FLAGS} -fpic -fPIC")
-	SET(CMAKE_CXX_FLAGS	"${CMAKE_CXX_FLAGS} -fpic -fPIC")
-ENDIF(UNIX AND NOT APPLE)
 
 # Test suite
 IF(BUILD_TESTING)

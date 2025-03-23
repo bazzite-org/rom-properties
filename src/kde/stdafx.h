@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE4/KF5)                         *
  * stdafx.h: Common definitions and includes.                              *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -11,17 +11,17 @@
 #ifdef __cplusplus
 /** C++ **/
 
-// C includes. (C++ namespace)
+// C includes (C++ namespace)
 #include <cassert>
 #include <cerrno>
 #include <cinttypes>
 #include <cmath>
 #include <cstring>
-#include <stdint.h>
-#include <stdlib.h>
+#include <cstdint>
+#include <cstdlib>
 #include <unistd.h>
 
-// C++ includes.
+// C++ includes
 #include <algorithm>
 #include <array>
 #include <forward_list>
@@ -31,10 +31,13 @@
 #include <unordered_map>
 #include <vector>
 
+// libfmt
+#include "rp-libfmt.h"
+
 #else /* !__cplusplus */
 /** C **/
 
-// C includes.
+// C includes
 #include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
@@ -47,7 +50,7 @@
 #endif /* __cplusplus */
 
 #ifdef __cplusplus
-// Qt includes.
+// Qt includes
 #include <QtCore/qglobal.h>
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
@@ -134,7 +137,6 @@
 
 // librptext C++ headers
 #include "librptext/conversion.hpp"
-#include "librptext/printf.hpp"
 
 #ifdef __cplusplus
 // KDE UI frontend headers

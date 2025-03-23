@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * Nintendo3DSFirm.hpp: Nintendo 3DS firmware reader.                      *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -30,7 +30,7 @@ namespace LibRomData {
 class Nintendo3DSFirmPrivate final : public RomDataPrivate
 {
 public:
-	Nintendo3DSFirmPrivate(const IRpFilePtr &file);
+	explicit Nintendo3DSFirmPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -38,8 +38,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 2+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -53,21 +53,21 @@ ROMDATA_IMPL(Nintendo3DSFirm)
 /** Nintendo3DSFirmPrivate **/
 
 /* RomDataInfo */
-const char *const Nintendo3DSFirmPrivate::exts[] = {
+const array<const char*, 2+1> Nintendo3DSFirmPrivate::exts = {{
 	".firm",	// boot9strap
 	".bin",		// older
 
 	nullptr
-};
-const char *const Nintendo3DSFirmPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> Nintendo3DSFirmPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-nintendo-3ds-firm",
 
 	nullptr
-};
+}};
 const RomDataInfo Nintendo3DSFirmPrivate::romDataInfo = {
-	"Nintendo3DSFirm", exts, mimeTypes
+	"Nintendo3DSFirm", exts.data(), mimeTypes.data()
 };
 
 Nintendo3DSFirmPrivate::Nintendo3DSFirmPrivate(const IRpFilePtr &file)
@@ -175,9 +175,9 @@ const char *Nintendo3DSFirm::systemName(unsigned int type) const
 
 	// Bits 0-1: Type. (long, short, abbreviation)
 	// TODO: *New* Nintendo 3DS for N3DS-exclusive titles; iQue for China.
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Nintendo 3DS", "Nintendo 3DS", "3DS", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -249,11 +249,11 @@ int Nintendo3DSFirm::loadFieldData(void)
 			}
 		}
 	} else if (arm11_entrypoint == 0 && arm9_entrypoint != 0) {
-		// ARM9 homebrew.
+		// ARM9 homebrew
 		firmBinDesc = C_("Nintendo3DSFirm", "ARM9 Homebrew");
 		checkARM9 = true;
 	} else if (arm11_entrypoint != 0 && arm9_entrypoint == 0) {
-		// ARM11 homebrew. (Not a thing...)
+		// ARM11 homebrew (Not a thing...?)
 		firmBinDesc = C_("Nintendo3DSFirm", "ARM11 Homebrew");
 	}
 
@@ -276,22 +276,22 @@ int Nintendo3DSFirm::loadFieldData(void)
 	}
 
 	if (firmBin) {
-		// Official firmware binary fields.
+		// Official firmware binary fields
 		d->fields.addField_string(C_("RomData", "Type"),
 			(firmBinDesc ? firmBinDesc : C_("RomData", "Unknown")));
 
-		// FIRM version.
+		// FIRM version
 		d->fields.addField_string(C_("Nintendo3DSFirm", "FIRM Version"),
-			rp_sprintf("%u.%u-%u", firmBin->kernel.major,
+			fmt::format(FSTR("{:d}.{:d}-{:d}"), firmBin->kernel.major,
 				firmBin->kernel.minor, firmBin->kernel.revision));
 
-		// System version.
+		// System version
 		d->fields.addField_string(C_("Nintendo3DSFirm", "System Version"),
-			rp_sprintf("%u.%u", firmBin->sys.major, firmBin->sys.minor));
+			fmt::format(FSTR("{:d}.{:d}"), firmBin->sys.major, firmBin->sys.minor));
 	} else if (firmBuf && checkARM9) {
-		// Check for ARM9 homebrew.
+		// Check for ARM9 homebrew
 
-		// Version strings.
+		// Version strings
 		struct arm9VerStr_t {
 			const char *title;	// Application title.
 			const char *searchstr;	// Search string.
@@ -411,4 +411,4 @@ int Nintendo3DSFirm::loadFieldData(void)
 	return static_cast<int>(d->fields.count());
 }
 
-}
+} // namespace LibRomData

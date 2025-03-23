@@ -5,8 +5,9 @@ project(unice68 C)
 
 # rom-properties: Hide symbols by default, since we don't want them
 # leaking from the static library to the plugins.
-INCLUDE(CheckHiddenVisibility)
-CHECK_HIDDEN_VISIBILITY()
+CMAKE_POLICY(SET CMP0063 NEW)
+SET(CMAKE_C_VISIBILITY_PRESET "hidden")
+SET(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
 # ======================================================================
 # cmake setup
@@ -15,12 +16,6 @@ CHECK_HIDDEN_VISIBILITY()
 #cmake_minimum_required(VERSION 3.3)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_INCLUDE_CURRENT_DIR_IN_INTERFACE ON)
-
-# rom-properties:
-# Unix: Add -fpic/-fPIC in order to use this static library in plugins.
-IF(UNIX AND NOT APPLE)
-	SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fpic -fPIC")
-ENDIF(UNIX AND NOT APPLE)
 
 # Disable certain warning flags.
 IF(NOT MSVC)

@@ -8,8 +8,9 @@ PROJECT(PowerVR LANGUAGES CXX)
 
 # rom-properties: Hide symbols by default, since we don't want them
 # leaking from the static library to the plugins.
-INCLUDE(CheckHiddenVisibility)
-CHECK_HIDDEN_VISIBILITY()
+CMAKE_POLICY(SET CMP0063 NEW)
+SET(CMAKE_CXX_VISIBILITY_PRESET "hidden")
+SET(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
 # Sources.
 SET(libpvrtc_SRCS PVRTDecompress.cpp)
@@ -25,9 +26,3 @@ TARGET_INCLUDE_DIRECTORIES(pvrtc
 	INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}
 	PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 	)
-
-# Unix: Add -fpic/-fPIC in order to use this static library in plugins.
-IF(UNIX AND NOT APPLE)
-	SET(CMAKE_C_FLAGS	"${CMAKE_C_FLAGS} -fpic -fPIC")
-	SET(CMAKE_CXX_FLAGS	"${CMAKE_CXX_FLAGS} -fpic -fPIC")
-ENDIF(UNIX AND NOT APPLE)

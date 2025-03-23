@@ -62,8 +62,9 @@ int recursiveScan(const TCHAR *path, forward_list<pair<tstring, uint8_t> > &rlis
 		// Make sure we should delete this file.
 		if (!(findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
 			// Thumbs.db files can be deleted.
-			if (!_tcsicmp(findFileData.cFileName, _T("Thumbs.db")))
+			if (!_tcsicmp(findFileData.cFileName, _T("Thumbs.db"))) {
 				goto isok;
+			}
 
 			// Check the extension.
 			size_t len = _tcslen(findFileData.cFileName);

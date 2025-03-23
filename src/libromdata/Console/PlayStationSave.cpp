@@ -23,6 +23,7 @@ using namespace LibRpText;
 using namespace LibRpTexture;
 
 // C++ STL classes
+using std::array;
 using std::vector;
 
 namespace LibRomData {
@@ -30,8 +31,7 @@ namespace LibRomData {
 class PlayStationSavePrivate final : public RomDataPrivate
 {
 public:
-	PlayStationSavePrivate(const IRpFilePtr &file);
-	~PlayStationSavePrivate() final = default;
+	explicit PlayStationSavePrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -39,8 +39,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 7+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -87,23 +87,23 @@ ROMDATA_IMPL_IMG(PlayStationSave)
 /** PlayStationSavePrivate **/
 
 /* RomDataInfo */
-const char *const PlayStationSavePrivate::exts[] = {
+const array<const char*, 7+1> PlayStationSavePrivate::exts = {{
 	".psv",
 	".mcb", ".mcx", ".pda", ".psx",
 	".mcs", ".ps1",
 
 	// TODO: support RAW?
 	nullptr
-};
-const char *const PlayStationSavePrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> PlayStationSavePrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-ps1-save",
 
 	nullptr
-};
+}};
 const RomDataInfo PlayStationSavePrivate::romDataInfo = {
-	"PlayStationSave", exts, mimeTypes
+	"PlayStationSave", exts.data(), mimeTypes.data()
 };
 
 PlayStationSavePrivate::PlayStationSavePrivate(const IRpFilePtr &file)
@@ -131,7 +131,7 @@ rp_image_const_ptr PlayStationSavePrivate::loadIcon(void)
 		return iconAnimData->frames[0];
 	}
 
-	if ((int)saveType < 0) {
+	if (static_cast<int>(saveType) < 0) {
 		// Invalid save type...
 		return nullptr;
 	}
@@ -314,10 +314,10 @@ int PlayStationSave::isRomSupported_static(const DetectInfo *info)
 			const uint8_t *const header = info->header.pData;
 
 			// Check the block magic.
-			static constexpr uint8_t block_magic[4] = {
+			static constexpr array<uint8_t, 4> block_magic = {{
 				PS1_ENTRY_ALLOC_FIRST, 0x00, 0x00, 0x00,
-			};
-			if (memcmp(header, block_magic, sizeof(block_magic)) != 0) {
+			}};
+			if (memcmp(header, block_magic.data(), block_magic.size()) != 0) {
 				// Block magic is incorrect.
 				return static_cast<int>(PlayStationSavePrivate::SaveType::Unknown);
 			}
@@ -377,9 +377,9 @@ const char *PlayStationSave::systemName(unsigned int type) const
 		"PlayStationSave::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Sony PlayStation", "PlayStation", "PS1", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -465,7 +465,7 @@ int PlayStationSave::loadFieldData(void)
 	} else if (!d->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->saveType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->saveType) < 0) {
 		// ROM image isn't valid.
 		return -EIO;
 	}
@@ -513,7 +513,7 @@ int PlayStationSave::loadFieldData(void)
 int PlayStationSave::loadMetaData(void)
 {
 	RP_D(PlayStationSave);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -524,19 +524,16 @@ int PlayStationSave::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
 	// PSV (PS1 on PS3) save file header.
 	const PS1_SC_Struct *const scHeader = &d->scHeader;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Title. (Description)
-	d->metaData->addMetaData_string(Property::Title,
+	d->metaData.addMetaData_string(Property::Title,
 		cp1252_sjis_to_utf8(scHeader->title, sizeof(scHeader->title)));
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -574,7 +571,7 @@ int PlayStationSave::loadInternalImage(ImageType imageType, rp_image_const_ptr &
 	// Load the icon.
 	// TODO: -ENOENT if the file doesn't actually have an icon.
 	pImage = d->loadIcon();
-	return ((bool)pImage ? 0 : -EIO);
+	return (pImage) ? 0 : -EIO;
 }
 
 /**
@@ -609,4 +606,4 @@ IconAnimDataConstPtr PlayStationSave::iconAnimData(void) const
 	return d->iconAnimData;
 }
 
-}
+} // namespace LibRomData

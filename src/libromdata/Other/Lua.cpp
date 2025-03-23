@@ -16,6 +16,7 @@ using namespace LibRpBase;
 using namespace LibRpFile;
 
 // C++ STL classes
+using std::array;
 using std::string;
 
 namespace LibRomData {
@@ -23,12 +24,12 @@ namespace LibRomData {
 class LuaPrivate final : public RomDataPrivate
 {
 public:
-	LuaPrivate(const IRpFilePtr &file);
+	explicit LuaPrivate(const IRpFilePtr &file);
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 2+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 private:
@@ -169,7 +170,7 @@ ROMDATA_IMPL(Lua)
 /** LuaPrivate **/
 
 /* RomDataInfo */
-const char *const LuaPrivate::exts[] = {
+const array<const char*, 2+1> LuaPrivate::exts = {{
 	// NOTE: These extensions may cause conflicts on
 	// Windows if fallback handling isn't working.
 	".lub", // Lua binary
@@ -177,15 +178,16 @@ const char *const LuaPrivate::exts[] = {
 
 	// TODO: Others?
 	nullptr
-};
-const char *const LuaPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> LuaPrivate::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	// FIXME: Source MIME type is "text/x-lua"; using "application/x-lua" for binary.
 	"application/x-lua",
+
 	nullptr
-};
+}};
 const RomDataInfo LuaPrivate::romDataInfo = {
-	"Lua", exts, mimeTypes
+	"Lua", exts.data(), mimeTypes.data()
 };
 
 LuaPrivate::LuaPrivate(const IRpFilePtr &file)
@@ -622,21 +624,21 @@ const char *Lua::systemName(unsigned int type) const
 
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"Lua::systemName() array index optimization needs to be updated.");
-	static_assert((int)LuaPrivate::LuaVersion::Max == 10,
+	static_assert(static_cast<int>(LuaPrivate::LuaVersion::Max) == 10,
 		"Lua::systemName() array index optimization needs to be updated.");
 
-	static const char *const sysNames[10][4] = {
-		{"PUC Lua 2.4", "Lua 2.4", "Lua", nullptr},
-		{"PUC Lua 2.5/3.0", "Lua 2.5/3.0", "Lua", nullptr},
-		{"PUC Lua 3.1", "Lua 3.1", "Lua", nullptr},
-		{"PUC Lua 3.2", "Lua 3.2", "Lua", nullptr},
-		{"PUC Lua 4.0", "Lua 4.0", "Lua", nullptr},
-		{"PUC Lua 5.0", "Lua 5.0", "Lua", nullptr},
-		{"PUC Lua 5.1", "Lua 5.1", "Lua", nullptr},
-		{"PUC Lua 5.2", "Lua 5.2", "Lua", nullptr},
-		{"PUC Lua 5.3", "Lua 5.3", "Lua", nullptr},
-		{"PUC Lua 5.4", "Lua 5.4", "Lua", nullptr},
-	};
+	static const array<array<const char*, 4>, 10> sysNames = {{
+		{{"PUC Lua 2.4", "Lua 2.4", "Lua", nullptr}},
+		{{"PUC Lua 2.5/3.0", "Lua 2.5/3.0", "Lua", nullptr}},
+		{{"PUC Lua 3.1", "Lua 3.1", "Lua", nullptr}},
+		{{"PUC Lua 3.2", "Lua 3.2", "Lua", nullptr}},
+		{{"PUC Lua 4.0", "Lua 4.0", "Lua", nullptr}},
+		{{"PUC Lua 5.0", "Lua 5.0", "Lua", nullptr}},
+		{{"PUC Lua 5.1", "Lua 5.1", "Lua", nullptr}},
+		{{"PUC Lua 5.2", "Lua 5.2", "Lua", nullptr}},
+		{{"PUC Lua 5.3", "Lua 5.3", "Lua", nullptr}},
+		{{"PUC Lua 5.4", "Lua 5.4", "Lua", nullptr}},
+	}};
 
 	const int i = (int)d->luaVersion;
 	if (i < 0 || i >= (int)LuaPrivate::LuaVersion::Max)
@@ -727,4 +729,4 @@ int Lua::loadFieldData(void)
 	return static_cast<int>(d->fields.count());
 }
 
-}
+} // namespace LibRomData

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE)                              *
  * CacheTab.cpp: Thumbnail Cache tab for rp-config.                        *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -63,7 +63,6 @@ public:
 CacheTabPrivate::CacheTabPrivate(CacheTab *q)
 	: q_ptr(q)
 	, thrCleaner(q)
-	, ccCleaner()
 {
 	thrCleaner.setObjectName(QLatin1String("thrCleaner"));
 
@@ -297,7 +296,7 @@ void CacheTab::ccCleaner_cacheCleared(CacheCleaner::CacheDir cacheDir, unsigned 
 	if (dirErrs > 0 || fileErrs > 0) {
 		// tr: Error message template. (Qt version, with formatting)
 		const QString qs_msg = QC_("ConfigDialog", "<b>ERROR:</b> %1")
-			.arg(U82Q(rp_sprintf_p(C_("CacheTab", "Unable to delete %1$u file(s) and/or %2$u dir(s)."),
+			.arg(U82Q(fmt::format(FRUN(C_("CacheTab", "Unable to delete {0:Ld} file(s) and/or {1:Ld} dir(s).")),
 				fileErrs, dirErrs)));
 		d->ui.lblStatus->setText(qs_msg);
 		MessageSound::play(QMessageBox::Warning, qs_msg, this);

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata/tests)                 *
  * ImageDecoderTest.cpp: ImageDecoder class test.                          *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -53,12 +53,10 @@ using namespace LibRpTexture;
 // RomDataFactory to load test files.
 #include "RomDataFactory.hpp"
 
-// C includes
-#include <stdint.h>
-#include <stdlib.h>
-
 // C includes (C++ namespace)
 #include "ctypex.h"
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 // C++ includes
@@ -69,6 +67,9 @@ using namespace LibRpTexture;
 using std::array;
 using std::shared_ptr;
 using std::string;
+
+// libfmt
+#include "rp-libfmt.h"
 
 // Uninitialized vector class
 #include "uvector.h"
@@ -182,7 +183,7 @@ class ImageDecoderTest : public ::testing::TestWithParam<ImageDecoderTest_mode>
 		// Placed here so it can be freed by TearDown() if necessary.
 		// The underlying MemFile is here as well, since we can't
 		// delete it before deleting the RomData object.
-		shared_ptr<MemFile> m_f_dds;
+		MemFilePtr m_f_dds;
 		RomDataPtr m_romData;
 
 	public:
@@ -386,7 +387,7 @@ void ImageDecoderTest::Compare_RpImage(
 	for (int y = 0; y < height; y++) {
 		for (int x = 0; x < width; x++, pBitsExpected++, pBitsActual++) {
 			if (*pBitsExpected != *pBitsActual) {
-				printf("ERR: (%d,%d): expected %08X, got %08X\n",
+				fmt::print("ERR: ({:d},{:d}): expected {:0>8X}, got {:0>8X}\n",
 					x, y, *pBitsExpected, *pBitsActual);
 			}
 			ASSERT_EQ(*pBitsExpected, *pBitsActual) <<
@@ -406,7 +407,7 @@ void ImageDecoderTest::decodeTest_internal(void)
 	const ImageDecoderTest_mode &mode = GetParam();
 
 	// Load the PNG image.
-	shared_ptr<MemFile> f_png = std::make_shared<MemFile>(m_png_buf.data(), m_png_buf.size());
+	MemFilePtr f_png = std::make_shared<MemFile>(m_png_buf.data(), m_png_buf.size());
 	ASSERT_TRUE(f_png->isOpen()) << "Could not create MemFile for the PNG image.";
 	rp_image_const_ptr img_png(RpPng::load(f_png));
 	ASSERT_NE(img_png,nullptr) << "Could not load the PNG image as rp_image.";
@@ -515,47 +516,30 @@ void ImageDecoderTest::decodeBenchmark_internal(void)
 	// TODO: RomDataFactory function to retrieve a constructor function?
 	auto fn_ctor = [](const IRpFilePtr &file) -> RomDataPtr { return RomDataFactory::create(file); };
 
-	// For certain types, increase the number of iterations.
+	// For certain types, increase the number of iterations. (10x increase)
+	// [usually because the files are significantly smaller or less complex than "usual"]
 	ASSERT_GT(mode.dds_gz_filename.size(), 4U);
-	if (mode.dds_gz_filename.size() >= 8U &&
-	    !mode.dds_gz_filename.compare(mode.dds_gz_filename.size()-8, 8, ".smdh.gz"))
-	{
-		// Nintendo 3DS SMDH file
-		// NOTE: Increased iterations due to smaller files.
-		max_iterations *= 10;
-	} else if (mode.dds_gz_filename.size() >= 7U &&
-		   !mode.dds_gz_filename.compare(mode.dds_gz_filename.size()-7, 7, ".gci.gz")) {
-		// Nintendo GameCube save file
-		// NOTE: Increased iterations due to smaller files.
-		max_iterations *= 10;
-	} else if (mode.dds_gz_filename.size() >= 4U &&
-		   !mode.dds_gz_filename.compare(mode.dds_gz_filename.size()-4, 4, ".VMS")) {
-		// Sega Dreamcast save file
-		// NOTE: RomDataFactory and DreamcastSave don't support gzip at the moment.
-		// NOTE: Increased iterations due to smaller files.
-		max_iterations *= 10;
-	} else if (mode.dds_gz_filename.size() >= 7U &&
-		   !mode.dds_gz_filename.compare(mode.dds_gz_filename.size()-7, 7, ".PSV.gz")) {
-		// Sony PlayStation save file
-		// NOTE: Increased iterations due to smaller files.
-		max_iterations *= 10;
-	} else if (mode.dds_gz_filename.size() >= 11U &&
-		   !mode.dds_gz_filename.compare(mode.dds_gz_filename.size()-11, 11, ".nds.bnr.gz")) {
-		// Nintendo DS ROM image
-		// NOTE: Increased iterations due to smaller files.
-		max_iterations *= 10;
-	} else if (mode.dds_gz_filename.size() >= 7U &&
-		   (!mode.dds_gz_filename.compare(mode.dds_gz_filename.size()-7, 7, ".cab.gz") ||
-		    !mode.dds_gz_filename.compare(mode.dds_gz_filename.size()-7, 7, ".prb.gz"))) {
-		// Nintendo Badge Arcade texture
-		// NOTE: Increased iterations due to smaller files.
-		max_iterations *= 10;
-	} else if (mode.dds_gz_filename.size() >= 4U &&
-		   !mode.dds_gz_filename.compare(mode.dds_gz_filename.size()-4, 4, ".tex")) {
-		// Leapster Didj texture
-		// NOTE: Increased iterations due to smaller files.
-		// NOTE: Using RpTextureWrapper.
-		max_iterations *= 10;
+	struct IterationIncrease_t {
+		uint8_t size;
+		char ext[15];
+	};
+	static const array<IterationIncrease_t, 8> iterInc_tbl = {{
+		{ 8, ".smdh.gz"},	// Nintendo 3DS SMDH file
+		{ 7, ".gci.gz"},	// Nintendo GameCube save file
+		{ 4, ".VMS"},		// Sega Dreamcast save file (NOTE: No gzip support at the moment)
+		{ 7, ".PSV.gz"},	// Sony PlayStation save file
+		{11, ".nds.bnr.gz"},	// Nintendo DS ROM image
+		{ 7, ".cab.gz"},	// Nintendo Badge Arcade texture
+		{ 7, ".prb.gz"},	// Nintendo Badge Arcade texture
+		{ 4, ".tex"}		// Leapster Didj texture
+	}};
+	for (const auto &p : iterInc_tbl) {
+		if (mode.dds_gz_filename.size() >= p.size &&
+		    !mode.dds_gz_filename.compare(mode.dds_gz_filename.size() - p.size, p.size, ".smdh.gz"))
+		{
+			max_iterations *= 10;
+			break;
+		}
 	}
 
 	rp_image_const_ptr img_dds;
@@ -615,10 +599,7 @@ string ImageDecoderTest::test_case_suffix_generator(const ::testing::TestParamIn
 		}
 	} else {
 		// Mipmap
-		char buf[16];
-		snprintf(buf, sizeof(buf), "%d", info.param.mipmapLevel);
-		suffix += "_Mipmap";
-		suffix += buf;
+		suffix += fmt::format(FSTR("_Mipmap{:d}"), info.param.mipmapLevel);
 	}
 
 	// TODO: Convert to ASCII?
@@ -1411,8 +1392,8 @@ INSTANTIATE_TEST_SUITE_P(GCI_Banner_2, ImageDecoderTest,
 		GCI_BANNER_TEST("8P-GM2E-super_monkey_ball_2.dat"),
 		GCI_BANNER_TEST("8P-GMBE-smkb0058556041f42afb"),
 		GCI_BANNER_TEST("8P-GMBE-super_monkey_ball.sys"),
-		//GCI_BANNER_TEST("8P-GPUE-Puyo Pop Fever Replay01"),
-		//GCI_BANNER_TEST("8P-GPUE-Puyo Pop Fever System"),
+		//GCI_BANNER_TEST("8P-GPUE-Puyo Pop Fever Replay01"),	// no banner in this file
+		//GCI_BANNER_TEST("8P-GPUE-Puyo Pop Fever System"),	// no banner in this file
 		GCI_BANNER_TEST("8P-GSNE-SONIC2B__5f____5f__S01"),
 		GCI_BANNER_TEST("8P-GSOE-S_MEGA_SYS"),
 		GCI_BANNER_TEST("8P-GUPE-SHADOWTHEHEDGEHOG"),
@@ -1432,6 +1413,10 @@ INSTANTIATE_TEST_SUITE_P(VMS, ImageDecoderTest,
 			RomData::IMG_INT_ICON),
 		ImageDecoderTest_mode(
 			"Misc/SONIC2C.VMS",
+			"Misc/SONIC2C.png",
+			RomData::IMG_INT_ICON),
+		ImageDecoderTest_mode(
+			"Misc/SONIC2C.DCI",
 			"Misc/SONIC2C.png",
 			RomData::IMG_INT_ICON))
 	, ImageDecoderTest::test_case_suffix_generator);
@@ -1661,7 +1646,6 @@ INSTANTIATE_TEST_SUITE_P(DidjTex, ImageDecoderTest,
 		DidjTex_IMAGE_TEST("Zone1Act1Icon"))
 	, ImageDecoderTest::test_case_suffix_generator);
 
-#ifdef ENABLE_PVRTC
 // PowerVR3 tests
 #define PowerVR3_IMAGE_TEST(file, format) ImageDecoderTest_mode( \
 			"PowerVR3/" file ".pvr.gz", \
@@ -1673,8 +1657,6 @@ INSTANTIATE_TEST_SUITE_P(DidjTex, ImageDecoderTest,
 INSTANTIATE_TEST_SUITE_P(PowerVR3, ImageDecoderTest,
 	::testing::Values(
 		//PowerVR3_IMAGE_TEST("brdfLUT", "RG1616"),					// TODO: R16fG16f
-		//PowerVR3_IMAGE_TEST("GnomeHorde-bigMushroom_texture", "PVRTC 4bpp RGB"),	// FIXME: Failing (PVRTC-I 4bpp RGB)
-		//PowerVR3_IMAGE_TEST("GnomeHorde-fern", "PVRTC 4bpp RGBA"),			// FIXME: Failing (PVRTC-I 4bpp RGBA)
 		//PowerVR3_IMAGE_TEST("Navigation3D-Road", "LA88"),				// FIXME: Failing (LA88)
 		//PowerVR3_IMAGE_TEST("Satyr-Table", "RGBA8888"),				// FIXME: Failing (RGBA8888)
 		PowerVR3_IMAGE_TEST("text-fri", "RGBA8888"),					// 32x16, caused rp_image::flip(FLIP_V) to break
@@ -1692,7 +1674,26 @@ INSTANTIATE_TEST_SUITE_P(PowerVR3, ImageDecoderTest,
 		PowerVR3_MIPMAP_TEST("Navigation3D-font",  9, "A8"),
 		PowerVR3_MIPMAP_TEST("Navigation3D-font", 10, "A8"))
 	, ImageDecoderTest::test_case_suffix_generator);
+
+#ifdef ENABLE_PVRTC
+// FIXME: These tests are both failing. (PVRTC-I 4bpp RGB)
+#  if 0
+INSTANTIATE_TEST_SUITE_P(PowerVR3, ImageDecoderTest_PVRTC,
+	 ::testing::Values(
+		PowerVR3_IMAGE_TEST("GnomeHorde-bigMushroom_texture", "PVRTC 4bpp RGB"),
+		PowerVR3_IMAGE_TEST("GnomeHorde-fern", "PVRTC 4bpp RGBA"))
+	, ImageDecoderTest::test_case_suffix_generator);
+#  endif /* 0 */
 #endif /* ENABLE_PVRTC */
+
+// PowerVR 2.0 tests (implemented in the PowerVR3 decoder)
+#define PowerVR2_IMAGE_TEST(file, format) ImageDecoderTest_mode( \
+			"PowerVR2/" file ".pvr.gz", \
+			"PowerVR2/" file ".pvr.png", (format))
+INSTANTIATE_TEST_SUITE_P(PowerVR2, ImageDecoderTest,
+	::testing::Values(
+		PowerVR2_IMAGE_TEST("INGAME", "ABGR4444"))
+	, ImageDecoderTest::test_case_suffix_generator);
 
 // TGA tests
 #define TGA_IMAGE_TEST(file, format) ImageDecoderTest_mode( \
@@ -1782,30 +1783,27 @@ INSTANTIATE_TEST_SUITE_P(STEX3, ImageDecoderTest,
 // NOTE: Godot 4 uses different encoders for DXTn and ETCn,
 // so the decompressed images will not match STEX3.
 #define STEX4_IMAGE_TEST(file, format) ImageDecoderTest_mode( \
-			"STEX4/" file ".stex.gz", \
-			"STEX4/" file ".png", (format))
-#define CTEX4_IMAGE_TEST(file, format) ImageDecoderTest_mode( \
 			"STEX4/" file ".ctex.gz", \
 			"STEX4/" file ".png", (format))
 INSTANTIATE_TEST_SUITE_P(STEX4, ImageDecoderTest,
 	::testing::Values(
 		STEX4_IMAGE_TEST("argb.DXT5", "DXT5"),
 		STEX4_IMAGE_TEST("argb.ETC2_RGBA8", "ETC2_RGBA8"),
-		ImageDecoderTest_mode("STEX4/argb.RGBA8.stex.gz", "argb-reference.png", "RGBA8"),
+		ImageDecoderTest_mode("STEX4/argb.RGBA8.ctex.gz", "argb-reference.png", "RGBA8"),
 
 		// Godot 4 encodes rgb-reference.png using DXT5 instead of DXT1 for some reason.
 		STEX4_IMAGE_TEST("rgb.DXT5", "DXT5"),
 		STEX4_IMAGE_TEST("rgb.ETC2_RGB8", "ETC2_RGB8"),
-		ImageDecoderTest_mode("STEX4/rgb.RGB8.stex.gz", "rgb-reference.png", "RGB8"),
+		ImageDecoderTest_mode("STEX4/rgb.RGB8.ctex.gz", "rgb-reference.png", "RGB8"),
 
 		STEX4_IMAGE_TEST("gray.DXT1", "DXT1"),
 		STEX4_IMAGE_TEST("gray.ETC", "ETC"),
-		ImageDecoderTest_mode("STEX4/gray.L8.stex.gz", "gray-reference.png"),
+		ImageDecoderTest_mode("STEX4/gray.L8.ctex.gz", "gray-reference.png"),
 
 		// Godot 4 prefers the .ctex extension now, so any new
 		// tests added after this point should use .ctex.
-		CTEX4_IMAGE_TEST("argb.ASTC_4x4", "ASTC_4x4"),
-		CTEX4_IMAGE_TEST("argb.BPTC_RGBA", "BPTC_RGBA"),
+		STEX4_IMAGE_TEST("argb.ASTC_4x4", "ASTC_4x4"),
+		STEX4_IMAGE_TEST("argb.BPTC_RGBA", "BPTC_RGBA"),
 
 		// NOTE: No pixel format for embedded PNGs.
 		ImageDecoderTest_mode("STEX4/argb.PNG.mipmaps.ctex", "argb-reference.png", ""),
@@ -2063,8 +2061,8 @@ INSTANTIATE_TEST_SUITE_P(MAME, ImageDecoderTest,
  */
 extern "C" int gtest_main(int argc, TCHAR *argv[])
 {
-	fprintf(stderr, "LibRomData test suite: ImageDecoder tests.\n\n");
-	fprintf(stderr, "Benchmark iterations: %u (%u for BC7)\n",
+	fputs("LibRomData test suite: ImageDecoder tests.\n\n", stderr);
+	fmt::print(stderr, FSTR("Benchmark iterations: {:d} ({:d} for BC7)\n"),
 		LibRomData::Tests::ImageDecoderTest::BENCHMARK_ITERATIONS,
 		LibRomData::Tests::ImageDecoderTest::BENCHMARK_ITERATIONS_BC7);
 	fflush(nullptr);

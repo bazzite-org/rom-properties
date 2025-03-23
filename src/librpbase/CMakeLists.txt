@@ -130,6 +130,10 @@ IF(CPU_i386 OR CPU_amd64)
 			${${PROJECT_NAME}_SSSE3_SRCS}
 			img/RpJpeg_ssse3.cpp
 			)
+		SET(${PROJECT_NAME}_SSSE3_H
+			${${PROJECT_NAME}_SSSE3_H}
+			img/RpJpeg_ssse3.hpp
+			)
 	ENDIF(JPEG_FOUND AND NOT WIN32)
 
 	IF(SSSE3_FLAG)
@@ -161,7 +165,7 @@ FOREACH(_target ${TARGETS})
 	ADD_LIBRARY(${_target} STATIC
 		${${PROJECT_NAME}_SRCS} ${${PROJECT_NAME}_H}
 		${${PROJECT_NAME}_CRYPTO_SRCS} ${${PROJECT_NAME}_CRYPTO_H}
-		${${PROJECT_NAME}_SSSE3_SRCS}
+		${${PROJECT_NAME}_SSSE3_SRCS} ${${PROJECT_NAME}_SSSE3_H}
 		)
 	IF(ENABLE_PCH)
 		TARGET_PRECOMPILE_HEADERS(${_target} PRIVATE
@@ -171,8 +175,11 @@ FOREACH(_target ${TARGETS})
 	ENDIF(ENABLE_PCH)
 	INCLUDE(SetMSVCDebugPath)
 	SET_MSVC_DEBUG_PATH(${_target})
-	# Exclude from ALL builds.
-	SET_TARGET_PROPERTIES(${_target} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+	# Exclude from ALL builds; enable PIC.
+	SET_TARGET_PROPERTIES(${_target} PROPERTIES
+		EXCLUDE_FROM_ALL TRUE
+		POSITION_INDEPENDENT_CODE TRUE
+		)
 	# Make sure git_version.h is created before compiling this target.
 	IF(TARGET git_version)
 		ADD_DEPENDENCIES(${_target} git_version)
@@ -250,6 +257,9 @@ FOREACH(_target ${TARGETS})
 		TARGET_LINK_LIBRARIES(${_target} PRIVATE ${NETTLE_LIBRARY})
 		TARGET_INCLUDE_DIRECTORIES(${_target} PRIVATE ${NETTLE_INCLUDE_DIRS})
 	ENDIF(NETTLE_FOUND)
+	IF(Fmt_FOUND)
+		TARGET_LINK_LIBRARIES(${_target} PRIVATE ${Fmt_LIBRARY})
+	ENDIF(Fmt_FOUND)
 
 	IF(WIN32)
 		# libwin32common
@@ -279,12 +289,6 @@ IF(NOT TARGET ${PROJECT_NAME}-dll)
 	# On other platforms, the dll target will be an alias to the regular target.
 	ADD_LIBRARY(${PROJECT_NAME}-dll ALIAS ${PROJECT_NAME})
 ENDIF()
-
-# Unix: Add -fpic/-fPIC in order to use this static library in plugins.
-IF(UNIX AND NOT APPLE)
-	SET(CMAKE_C_FLAGS	"${CMAKE_C_FLAGS} -fpic -fPIC")
-	SET(CMAKE_CXX_FLAGS	"${CMAKE_CXX_FLAGS} -fpic -fPIC")
-ENDIF(UNIX AND NOT APPLE)
 
 # Test suite.
 IF(BUILD_TESTING)

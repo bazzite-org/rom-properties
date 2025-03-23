@@ -43,8 +43,7 @@ namespace LibRomData {
 class PalmOSPrivate final : public RomDataPrivate
 {
 public:
-	PalmOSPrivate(const IRpFilePtr &file);
-	~PalmOSPrivate() final = default;
+	explicit PalmOSPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -52,8 +51,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 3+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -95,12 +94,12 @@ ROMDATA_IMPL(PalmOS)
 /** PalmOSPrivate **/
 
 /* RomDataInfo */
-const char *const PalmOSPrivate::exts[] = {
+const array<const char*, 1+1> PalmOSPrivate::exts = {{
 	".prc",
 
 	nullptr
-};
-const char *const PalmOSPrivate::mimeTypes[] = {
+}};
+const array<const char*, 3+1> PalmOSPrivate::mimeTypes = {{
 	// Vendor-specific MIME types from FreeDesktop.org.
 	"application/vnd.palm",
 
@@ -110,9 +109,9 @@ const char *const PalmOSPrivate::mimeTypes[] = {
 	"application/x-mobipocket-ebook",	// May show up on some systems, so reference it here.
 
 	nullptr
-};
+}};
 const RomDataInfo PalmOSPrivate::romDataInfo = {
-	"PalmOS", exts, mimeTypes
+	"PalmOS", exts.data(), mimeTypes.data()
 };
 
 PalmOSPrivate::PalmOSPrivate(const IRpFilePtr &file)
@@ -459,7 +458,7 @@ int PalmOS::isRomSupported_static(const DetectInfo *info)
 
 	// NOTE: File extension must match, and the type field must be non-zero.
 	bool ok = false;
-	for (const char *const *ext = PalmOSPrivate::exts;
+	for (const char *const *ext = PalmOSPrivate::exts.data();
 	     *ext != nullptr; ext++)
 	{
 		if (!strcasecmp(info->ext, *ext)) {
@@ -503,12 +502,9 @@ const char *PalmOS::systemName(unsigned int type) const
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"PalmOS::systemName() array index optimization needs to be updated.");
 
-	static const char *const sysNames[4] = {
-		"Palm OS",
-		"Palm OS",
-		"Palm",
-		nullptr
-	};
+	static const array<const char*, 4> sysNames = {{
+		"Palm OS", "Palm OS", "Palm", nullptr
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -677,7 +673,7 @@ int PalmOS::loadFieldData(void)
 int PalmOS::loadMetaData(void)
 {
 	RP_D(PalmOS);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -688,20 +684,17 @@ int PalmOS::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
 	// TODO: Text encoding?
 	const PalmOS_PRC_Header_t *const prcHeader = &d->prcHeader;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Title
-	d->metaData->addMetaData_string(Property::Title,
+	d->metaData.addMetaData_string(Property::Title,
 		latin1_to_utf8(prcHeader->name, sizeof(prcHeader->name)),
 		RomMetaData::STRF_TRIM_END);
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -731,7 +724,7 @@ int PalmOS::loadInternalImage(ImageType imageType, rp_image_const_ptr &pImage)
 	}
 
 	pImage = d->loadIcon();
-	return ((bool)pImage ? 0 : -EIO);
+	return (pImage) ? 0 : -EIO;
 }
 
-}
+} // namespace LibRomData

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * ADX.hpp: CRI ADX audio reader.                                          *
  *                                                                         *
- * Copyright (c) 2018-2023 by David Korth.                                 *
+ * Copyright (c) 2018-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -16,6 +16,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+using std::array;
 using std::string;
 
 namespace LibRomData {
@@ -23,7 +24,7 @@ namespace LibRomData {
 class ADXPrivate final : public RomDataPrivate
 {
 public:
-	ADXPrivate(const IRpFilePtr &file);
+	explicit ADXPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -31,8 +32,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 2+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -47,7 +48,7 @@ ROMDATA_IMPL(ADX)
 /** ADXPrivate **/
 
 /* RomDataInfo */
-const char *const ADXPrivate::exts[] = {
+const array<const char*, 2+1> ADXPrivate::exts = {{
 	".adx",
 	".ahx",	// TODO: Is this used for AHX format?
 
@@ -55,16 +56,16 @@ const char *const ADXPrivate::exts[] = {
 	//".aax",
 
 	nullptr
-};
-const char *const ADXPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> ADXPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"audio/x-adx",
 
 	nullptr
-};
+}};
 const RomDataInfo ADXPrivate::romDataInfo = {
-	"ADX", exts, mimeTypes
+	"ADX", exts.data(), mimeTypes.data()
 };
 
 ADXPrivate::ADXPrivate(const IRpFilePtr &file)
@@ -224,9 +225,9 @@ const char *ADX::systemName(unsigned int type) const
 		"ADX::systemName() array index optimization needs to be updated.");
 
 	// Bits 0-1: Type. (long, short, abbreviation)
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"CRI ADX", "ADX", "ADX", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -292,7 +293,7 @@ int ADX::loadFieldData(void)
 
 	// Sample rate
 	d->fields.addField_string(C_("RomData|Audio", "Sample Rate"),
-		rp_sprintf(C_("RomData", "%u Hz"), sample_rate));
+		fmt::format(FRUN(C_("RomData", "{:Ld} Hz")), sample_rate));
 
 	// Length. (non-looping)
 	d->fields.addField_string(C_("RomData|Audio", "Length"),
@@ -303,7 +304,7 @@ int ADX::loadFieldData(void)
 	// TODO: What does this value represent?
 	// FIXME: Disabling until I figure this out.
 	d->fields.addField_string(C_("ADX", "High-Pass Cutoff"),
-		rp_sprintf(C_("RomData", "%u Hz"), adxHeader->high_pass_cutoff));
+		fmt::format(FRUN(C_("RomData", "{:Ld} Hz")), adxHeader->high_pass_cutoff));
 #endif
 
 	// Translated strings
@@ -338,7 +339,7 @@ int ADX::loadFieldData(void)
 int ADX::loadMetaData(void)
 {
 	RP_D(ADX);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -349,29 +350,26 @@ int ADX::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(3);	// Maximum of 3 metadata properties.
-
 	// ADX header
 	const ADX_Header *const adxHeader = &d->adxHeader;
+	d->metaData.reserve(3);	// Maximum of 3 metadata properties.
 
 	// Number of channels
-	d->metaData->addMetaData_integer(Property::Channels, adxHeader->channel_count);
+	d->metaData.addMetaData_integer(Property::Channels, adxHeader->channel_count);
 
 	// Sample rate and sample count
 	const uint32_t sample_rate = be32_to_cpu(adxHeader->sample_rate);
 	const uint32_t sample_count = be32_to_cpu(adxHeader->sample_count);
 
 	// Sample rate
-	d->metaData->addMetaData_integer(Property::SampleRate, sample_rate);
+	d->metaData.addMetaData_integer(Property::SampleRate, sample_rate);
 
 	// Length, in milliseconds (non-looping)
-	d->metaData->addMetaData_integer(Property::Duration,
+	d->metaData.addMetaData_integer(Property::Duration,
 		convSampleToMs(sample_count, sample_rate));
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

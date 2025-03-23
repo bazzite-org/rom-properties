@@ -3,7 +3,7 @@
  * Xbox360_XDBF.cpp: Microsoft Xbox 360 game resource reader.              *
  * Handles XDBF files and sections.                                        *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -45,8 +45,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 3+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -270,22 +270,22 @@ ROMDATA_IMPL_IMG_SIZES(Xbox360_XDBF)
 
 /* RomDataInfo */
 // NOTE: Using the same image settings as Xbox360_XEX.
-const char *const Xbox360_XDBF_Private::exts[] = {
+const array<const char*, 3+1> Xbox360_XDBF_Private::exts = {{
 	".xdbf",
 	".spa",		// XEX XDBF files
 	".gpd",		// Gamer Profile Data
 
 	nullptr
-};
-const char *const Xbox360_XDBF_Private::mimeTypes[] = {
+}};
+const array<const char*, 1+1> Xbox360_XDBF_Private::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-xbox360-xdbf",
 
 	nullptr
-};
+}};
 const RomDataInfo Xbox360_XDBF_Private::romDataInfo = {
-	"Xbox360_XEX", exts, mimeTypes
+	"Xbox360_XEX", exts.data(), mimeTypes.data()
 };
 
 Xbox360_XDBF_Private::Xbox360_XDBF_Private(const IRpFilePtr &file, bool xex)
@@ -769,8 +769,8 @@ rp_image_const_ptr Xbox360_XDBF_Private::loadImage(uint64_t image_id)
 
 	// Create a MemFile and decode the image.
 	// TODO: For rpcli, shortcut to extract the PNG directly.
-	shared_ptr<MemFile> f_mem = std::make_shared<MemFile>(png_buf.get(), length);
-	rp_image_ptr img = RpPng::load(f_mem);
+	MemFile f_mem(png_buf.get(), length);
+	rp_image_ptr img = RpPng::load(&f_mem);
 
 	if (img) {
 		// Save the image for later use.
@@ -1004,13 +1004,13 @@ int Xbox360_XDBF_Private::addFields_achievements_SPA(void)
 	// a virtual column, much like checkboxes.
 
 	// Columns
-	static const char *const xach_col_names[] = {
+	static const array<const char*, 3> xach_col_names = {{
 		NOP_C_("Xbox360_XDBF|Achievements", "ID"),
 		NOP_C_("Xbox360_XDBF|Achievements", "Description"),
 		NOP_C_("Xbox360_XDBF|Achievements", "Gamerscore"),
-	};
+	}};
 	vector<string> *const v_xach_col_names = RomFields::strArrayToVector_i18n(
-		"Xbox360_XDBF|Achievements", xach_col_names, ARRAY_SIZE(xach_col_names));
+		"Xbox360_XDBF|Achievements", xach_col_names);
 
 	// Vectors.
 	array<RomFields::ListData_t*, XDBF_LANGUAGE_MAX> pvv_xach;
@@ -1020,7 +1020,7 @@ int Xbox360_XDBF_Private::addFields_achievements_SPA(void)
 			? new RomFields::ListData_t(xach_count)
 			: nullptr;
 	}
-	auto vv_icons = new RomFields::ListDataIcons_t(xach_count);
+	auto *const vv_icons = new RomFields::ListDataIcons_t(xach_count);
 	auto icon_iter = vv_icons->begin();
 	for (unsigned int i = 0; p < p_end && i < xach_count; p++, i++, ++icon_iter) {
 		// NOTE: Not deduplicating strings here.
@@ -1034,10 +1034,8 @@ int Xbox360_XDBF_Private::addFields_achievements_SPA(void)
 		const uint16_t unlocked_desc_id = be16_to_cpu(p->unlocked_desc_id);
 
 		// TODO: Localized numeric formatting?
-		char s_achievement_id[16];
-		snprintf(s_achievement_id, sizeof(s_achievement_id), "%u", be16_to_cpu(p->achievement_id));
-		char s_gamerscore[16];
-		snprintf(s_gamerscore, sizeof(s_gamerscore), "%u", be16_to_cpu(p->gamerscore));
+		const string s_achievement_id = fmt::to_string(be16_to_cpu(p->achievement_id));
+		const string s_gamerscore = fmt::to_string(be16_to_cpu(p->gamerscore));
 
 		for (int langID = XDBF_LANGUAGE_ENGLISH; langID < XDBF_LANGUAGE_MAX; langID++) {
 			if (!pvv_xach[langID]) {
@@ -1048,7 +1046,7 @@ int Xbox360_XDBF_Private::addFields_achievements_SPA(void)
 			data_row.reserve(3);
 
 			// Achievement ID
-			data_row.emplace_back(s_achievement_id);
+			data_row.push_back(s_achievement_id);
 
 			// Title.
 			string desc = loadString_SPA((XDBF_Language_e)langID, name_id);
@@ -1080,10 +1078,10 @@ int Xbox360_XDBF_Private::addFields_achievements_SPA(void)
 			}
 
 			// TODO: Formatting value indicating that the first line should be bold.
-			data_row.emplace_back(std::move(desc));
+			data_row.push_back(std::move(desc));
 
 			// Gamerscore
-			data_row.emplace_back(s_gamerscore);
+			data_row.push_back(s_gamerscore);
 		}
 	}
 
@@ -1217,12 +1215,12 @@ int Xbox360_XDBF_Private::addFields_avatarAwards_SPA(void)
 	// a virtual column, much like checkboxes.
 
 	// Columns
-	static const char *const xgaa_col_names[] = {
+	static const array<const char*, 2> xgaa_col_names = {
 		NOP_C_("Xbox360_XDBF|AvatarAwards", "ID"),
 		NOP_C_("Xbox360_XDBF|AvatarAwards", "Description"),
 	};
 	vector<string> *const v_xgaa_col_names = RomFields::strArrayToVector_i18n(
-		"Xbox360_XDBF|AvatarAwards", xgaa_col_names, ARRAY_SIZE(xgaa_col_names));
+		"Xbox360_XDBF|AvatarAwards", xgaa_col_names);
 
 	// Vectors.
 	array<RomFields::ListData_t*, XDBF_LANGUAGE_MAX> pvv_xgaa;
@@ -1232,7 +1230,7 @@ int Xbox360_XDBF_Private::addFields_avatarAwards_SPA(void)
 			? new RomFields::ListData_t(xgaa_count)
 			: nullptr;
 	}
-	auto vv_icons = new RomFields::ListDataIcons_t(xgaa_count);
+	auto *const vv_icons = new RomFields::ListDataIcons_t(xgaa_count);
 	auto icon_iter = vv_icons->begin();
 	for (unsigned int i = 0; p < p_end && i < xgaa_count; p++, i++, ++icon_iter) {
 		// NOTE: Not deduplicating strings here.
@@ -1247,8 +1245,7 @@ int Xbox360_XDBF_Private::addFields_avatarAwards_SPA(void)
 
 		// TODO: Localized numeric formatting?
 		// FIXME: Should this be decimal instead of hex?
-		char s_avatar_award_id[16];
-		snprintf(s_avatar_award_id, sizeof(s_avatar_award_id), "%04X", be16_to_cpu(p->avatar_award_id));
+		const string s_avatar_award_id = fmt::format(FSTR("{:0>4X}"), be16_to_cpu(p->avatar_award_id));
 
 		for (int langID = XDBF_LANGUAGE_ENGLISH; langID < XDBF_LANGUAGE_MAX; langID++) {
 			if (!pvv_xgaa[langID]) {
@@ -1259,7 +1256,7 @@ int Xbox360_XDBF_Private::addFields_avatarAwards_SPA(void)
 			data_row.reserve(2);
 
 			// Avatar award ID
-			data_row.emplace_back(s_avatar_award_id);
+			data_row.push_back(s_avatar_award_id);
 
 			// Title.
 			string desc = loadString_SPA((XDBF_Language_e)langID, name_id);
@@ -1291,7 +1288,7 @@ int Xbox360_XDBF_Private::addFields_avatarAwards_SPA(void)
 			}
 
 			// TODO: Formatting value indicating that the first line should be bold.
-			data_row.emplace_back(std::move(desc));
+			data_row.push_back(std::move(desc));
 		}
 	}
 
@@ -1397,22 +1394,22 @@ int Xbox360_XDBF_Private::addFields_achievements_GPD(void)
 	// a virtual column, much like checkboxes.
 
 	// Columns
-	static const char *const xach_col_names[] = {
+	static const array<const char*, 3> xach_col_names = {{
 		NOP_C_("Xbox360_XDBF|Achievements", "ID"),
 		NOP_C_("Xbox360_XDBF|Achievements", "Description"),
 		NOP_C_("Xbox360_XDBF|Achievements", "Gamerscore"),
-	};
+	}};
 	vector<string> *const v_xach_col_names = RomFields::strArrayToVector_i18n(
-		"Xbox360_XDBF|Achievements", xach_col_names, ARRAY_SIZE(xach_col_names));
+		"Xbox360_XDBF|Achievements", xach_col_names);
 
 	RomFields::ListData_t *vv_xach = new RomFields::ListData_t();
-	auto vv_icons = new RomFields::ListDataIcons_t();
+	auto *const vv_icons = new RomFields::ListDataIcons_t();
 	vv_xach->reserve(16);
 	vv_icons->reserve(16);
 
 	// GPD doesn't have an achievements table.
 	// Instead, each achievement is its own entry in the main resource table.
-#define XACH_GPD_BUF_LEN 4096
+	static constexpr size_t XACH_GPD_BUF_LEN = 4096U;
 	unique_ptr<uint8_t[]> buf(new uint8_t[XACH_GPD_BUF_LEN]);
 	const XDBF_XACH_Entry_Header_GPD *const pGPD =
 		reinterpret_cast<const XDBF_XACH_Entry_Header_GPD*>(buf.get());
@@ -1459,10 +1456,8 @@ int Xbox360_XDBF_Private::addFields_achievements_GPD(void)
 		vv_icons->push_back(loadImage(be32_to_cpu(pGPD->image_id)));
 
 		// TODO: Localized numeric formatting?
-		char s_achievement_id[16];
-		snprintf(s_achievement_id, sizeof(s_achievement_id), "%u", be32_to_cpu(pGPD->achievement_id));
-		char s_gamerscore[16];
-		snprintf(s_gamerscore, sizeof(s_gamerscore), "%u", be32_to_cpu(pGPD->gamerscore));
+		string s_achievement_id = fmt::to_string(be32_to_cpu(pGPD->achievement_id));
+		string s_gamerscore = fmt::to_string(be32_to_cpu(pGPD->gamerscore));
 
 		// Get the strings.
 		const char16_t *pTitle = nullptr, *pUnlockedDesc = nullptr, *pLockedDesc = nullptr;
@@ -1507,10 +1502,10 @@ int Xbox360_XDBF_Private::addFields_achievements_GPD(void)
 		// Add to RFT_LISTDATA.
 		vector<string> data_row;
 		data_row.reserve(3);
-		data_row.emplace_back(s_achievement_id);
-		data_row.emplace_back(std::move(desc));
-		data_row.emplace_back(s_gamerscore);
-		vv_xach->emplace_back(std::move(data_row));
+		data_row.push_back(std::move(s_achievement_id));
+		data_row.push_back(std::move(desc));
+		data_row.push_back(std::move(s_gamerscore));
+		vv_xach->push_back(std::move(data_row));
 	}
 
 	// FIXME: Figure out why Dolphin segfaults if the list is empty.
@@ -1553,37 +1548,7 @@ int Xbox360_XDBF_Private::addFields_achievements_GPD(void)
  *
  * NOTE: Check isValid() to determine if this is a valid ROM.
  *
- * @param file Open XDBF file and/or section.
- */
-Xbox360_XDBF::Xbox360_XDBF(const IRpFilePtr &file)
-	: super(new Xbox360_XDBF_Private(file, false))
-{
-	// This class handles XDBF files and/or sections only.
-	// NOTE: Using the same image settings as Xbox360_XEX.
-	RP_D(Xbox360_XDBF);
-	d->mimeType = "application/x-xbox360-xdbf";	// unofficial, not on fd.o
-	d->fileType = FileType::ResourceFile;
-
-	if (!d->file) {
-		// Could not ref() the file handle.
-		return;
-	}
-
-	init();
-}
-
-/**
- * Read an Xbox 360 XDBF file and/or section.
- *
- * A ROM image must be opened by the caller. The file handle
- * will be ref()'d and must be kept open in order to load
- * data from the file.
- *
- * To close the file, either delete this object or call close().
- *
- * NOTE: Check isValid() to determine if this is a valid ROM.
- *
- * @param file Open XDBF file and/or section.
+ * @param file Open XDBF file and/or section
  * @param xex If true, hide fields that are displayed separately in XEX executables.
  */
 Xbox360_XDBF::Xbox360_XDBF(const IRpFilePtr &file, bool xex)
@@ -1598,16 +1563,6 @@ Xbox360_XDBF::Xbox360_XDBF(const IRpFilePtr &file, bool xex)
 		// Could not ref() the file handle.
 		return;
 	}
-
-	init();
-}
-
-/**
- * Common initialization function for the constructors.
- */
-void Xbox360_XDBF::init(void)
-{
-	RP_D(Xbox360_XDBF);
 
 	// Read the Xbox360_XDBF header.
 	// NOTE: Reading 512 bytes so we can detect SPA vs. GPD.
@@ -1760,9 +1715,9 @@ const char *Xbox360_XDBF::systemName(unsigned int type) const
 
 	// Bits 0-1: Type. (long, short, abbreviation)
 	// TODO: XDBF-specific, or just use Xbox 360?
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Microsoft Xbox 360", "Xbox 360", "X360", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -1811,9 +1766,11 @@ uint32_t Xbox360_XDBF::imgpf(ImageType imageType) const
 	uint32_t ret = 0;
 	switch (imageType) {
 		case IMG_INT_ICON:
-			// Use nearest-neighbor scaling.
-			ret = IMGPF_RESCALE_NEAREST;
+			// Use nearest-neighbor scaling when resizing.
+			// Image is internally stored in PNG format.
+			ret = IMGPF_RESCALE_NEAREST | IMGPF_INTERNAL_PNG_FORMAT;
 			break;
+
 		default:
 			break;
 	}
@@ -1882,7 +1839,7 @@ int Xbox360_XDBF::loadFieldData(void)
 int Xbox360_XDBF::loadMetaData(void)
 {
 	RP_D(Xbox360_XDBF);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -1893,18 +1850,16 @@ int Xbox360_XDBF::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// NOTE: RomMetaData ignores empty strings, so we don't need to
 	// check for them here.
 
 	// Title
-	d->metaData->addMetaData_string(Property::Title, getString(Property::Title));
+	d->metaData.addMetaData_string(Property::Title, getString(Property::Title));
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /**
@@ -1939,7 +1894,7 @@ int Xbox360_XDBF::loadInternalImage(ImageType imageType, rp_image_const_ptr &pIm
 
 	// Load the icon.
 	pImage = d->loadIcon();
-	return ((bool)pImage ? 0 : -EIO);
+	return (pImage) ? 0 : -EIO;
 }
 
 /** Special XDBF accessor functions **/
@@ -1993,4 +1948,4 @@ string Xbox360_XDBF::getString(LibRpBase::Property property) const
 	return s_ret;
 }
 
-}
+} // namespace LibRomData

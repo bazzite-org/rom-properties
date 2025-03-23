@@ -3,7 +3,7 @@
  * Wim.cpp: Microsoft WIM header reader                                    *
  *                                                                         *
  * Copyright (c) 2023 by ecumber.                                          *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -36,6 +36,7 @@ using namespace LibRpText;
 #include <ctime>
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::vector;
 
@@ -44,15 +45,16 @@ namespace LibRomData {
 class WimPrivate final : public RomDataPrivate
 {
 public:
-	WimPrivate(const IRpFilePtr &file);  
+	explicit WimPrivate(const IRpFilePtr &file);
+
 private:
 	typedef RomDataPrivate super;
 	RP_DISABLE_COPY(WimPrivate)
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 3+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -76,22 +78,22 @@ public:
 
 ROMDATA_IMPL(Wim)
 
-const char *const WimPrivate::exts[] = {
+const array<const char*, 3+1> WimPrivate::exts = {{
 	".wim",
 	".esd",
 	".swm",
 	// TODO: More?
-	nullptr
-};
 
-const char *const WimPrivate::mimeTypes[] = {
+	nullptr
+}};
+const array<const char*, 1+1> WimPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	"application/x-ms-wim",
-	nullptr
-};
 
+	nullptr
+}};
 const RomDataInfo WimPrivate::romDataInfo = {
-	"WIM", exts, mimeTypes
+	"WIM", exts.data(), mimeTypes.data()
 };
 
 struct WimWindowsLanguages {
@@ -187,7 +189,7 @@ int WimPrivate::addFields_XML()
 	file->rewind();
 	file->seek(wimHeader.xml_resource.offset_of_xml); 
 	// if seek is invalid
-	if (file->tell() != (off64_t)wimHeader.xml_resource.offset_of_xml) {
+	if (file->tell() != static_cast<off64_t>(wimHeader.xml_resource.offset_of_xml)) {
 		return -EIO;
 	}
 
@@ -332,11 +334,11 @@ int WimPrivate::addFields_XML()
 			currentindex.dispdescription = (s_dispDesc ? s_dispDesc : s_none);
 		}
 
-		images.emplace_back(std::move(currentindex));
+		images.push_back(std::move(currentindex));
 		currentimage = currentimage->NextSiblingElement();
 	}
 
-	auto vv_data = new RomFields::ListData_t();
+	auto *const vv_data = new RomFields::ListData_t();
 	vv_data->reserve(number_of_images);
 
 	// loop for the rows
@@ -345,11 +347,11 @@ int WimPrivate::addFields_XML()
 		vv_data->resize(vv_data->size()+1);
 		auto &data_row = vv_data->at(vv_data->size()-1);
 		data_row.reserve(10);
-		data_row.emplace_back(rp_sprintf("%u", idx++));
-		data_row.emplace_back(image.name);
-		data_row.emplace_back(image.description);
-		data_row.emplace_back(image.dispname);
-		data_row.emplace_back(image.dispdescription);
+		data_row.push_back(fmt::to_string(idx++));
+		data_row.push_back(image.name);
+		data_row.push_back(image.description);
+		data_row.push_back(image.dispname);
+		data_row.push_back(image.dispdescription);
 
 		// Pack the 64-bit time_t into a string.
 		RomFields::TimeString_t time_string;
@@ -365,13 +367,13 @@ int WimPrivate::addFields_XML()
 		}
 
 		const auto &windowsver = image.windowsinfo.version;
-		data_row.emplace_back(
-			rp_sprintf("%u.%u.%u.%u", windowsver.majorversion,
-				windowsver.minorversion, windowsver.buildnumber,
-				windowsver.spbuildnumber));
+		data_row.push_back(
+			fmt::format(FSTR("{:d}.{:d}.{:d}.{:d}"),
+				windowsver.majorversion, windowsver.minorversion,
+				windowsver.buildnumber, windowsver.spbuildnumber));
 
 		const auto &windowsinfo = image.windowsinfo;
-		data_row.emplace_back(windowsinfo.editionid);
+		data_row.push_back(windowsinfo.editionid);
 		const char *archstring;
 		switch (windowsinfo.arch) {
 			default:
@@ -396,13 +398,13 @@ int WimPrivate::addFields_XML()
 		if (archstring) {
 			data_row.emplace_back(archstring);
 		} else {
-			data_row.emplace_back(rp_sprintf(C_("RomData", "Unknown (%d)"),
+			data_row.push_back(fmt::format(FRUN(C_("RomData", "Unknown ({:d})")),
 				static_cast<int>(windowsinfo.arch)));
 		}
-		data_row.emplace_back(windowsinfo.languages.language);
+		data_row.push_back(windowsinfo.languages.language);
 	}	
 
-	static const char *const field_names[] = {
+	static const array<const char*, 10> field_names = {{
 		NOP_C_("Wim|Images", "#"),
 		NOP_C_("Wim|Images", "Name"),
 		NOP_C_("Wim|Images", "Description"),
@@ -413,9 +415,8 @@ int WimPrivate::addFields_XML()
 		NOP_C_("Wim|Images", "Edition"),
 		NOP_C_("Wim|Images", "Architecture"),
 		NOP_C_("Wim|Images", "Language"),
-	};
-	vector<string> *const v_field_names = RomFields::strArrayToVector_i18n(
-		"Wim|Images", field_names, ARRAY_SIZE(field_names));
+	}};
+	vector<string> *const v_field_names = RomFields::strArrayToVector_i18n("Wim|Images", field_names);
 
 	RomFields::AFLD_PARAMS params;
 	params.flags = RomFields::RFT_LISTDATA_SEPARATE_ROW;
@@ -482,7 +483,7 @@ Wim::Wim(const IRpFilePtr &file)
 	};
 	d->versionType = static_cast<WIM_Version_Type>(isRomSupported_static(&info));
 
-	d->isValid = ((int)d->versionType >= 0);
+	d->isValid = (static_cast<int>(d->versionType) >= 0);
 	if (!d->isValid) {
 		d->file.reset();
 		return;
@@ -570,12 +571,9 @@ const char* Wim::systemName(unsigned int type) const
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"Wim::systemName() array index optimization needs to be updated.");
 
-	static const char *const sysNames[4] = {
-		"Microsoft WIM",
-		"WIM Image",
-		"WIM",
-		nullptr
-	};
+	static const array<const char*, 4> sysNames = {{
+		"Microsoft WIM", "WIM Image", "WIM", nullptr
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -600,20 +598,20 @@ int Wim::loadFieldData(void)
 	}
 
 	d->fields.reserve(6);	// Maximum of 6 fields. (5 if XML is disabled)
-	char buffer[32];
 
-	// if the version number is 14, add an indicator that it is an ESD
-	snprintf(buffer, sizeof(buffer), "%u.%02u%s",
-		d->wimHeader.version.major_version, d->wimHeader.version.minor_version,
-		(d->wimHeader.version.minor_version == 14) ? " (ESD)" : "");
-	d->fields.addField_string(C_("Wim", "WIM Version"), buffer, RomFields::STRF_TRIM_END);
+	// If the version number is 14, add an indicator that it is an ESD.
+	d->fields.addField_string(C_("Wim", "WIM Version"),
+		fmt::format(FSTR("{:d}.{:0>2d}{:s}"),
+			d->wimHeader.version.major_version, d->wimHeader.version.minor_version,
+			(d->wimHeader.version.minor_version == 14) ? " (ESD)" : ""),
+		RomFields::STRF_TRIM_END);
 
 	if (d->versionType != Wim113_014) {
 		// The rest of the fields require Wim113_014 or later.
 		return 0;
 	}
 
-	static const char* const wim_flag_names[] = {
+	static const array<const char*, 7> wim_flag_names = {{
 		nullptr,
 		NOP_C_("Wim|Flags", "Compressed"),
 		NOP_C_("Wim|Flags", "Read-only"),
@@ -621,12 +619,11 @@ int Wim::loadFieldData(void)
 		NOP_C_("Wim|Flags", "Resource Only"),
 		NOP_C_("Wim|Flags", "Metadata Only"),
 		NOP_C_("Wim|Flags", "Write in progress"),
-	};
+	}};
 
 	const uint32_t wimflags = d->wimHeader.flags;
 
-	vector<string> *const v_wim_flag_names = RomFields::strArrayToVector_i18n(
-		"RomData", wim_flag_names, ARRAY_SIZE(wim_flag_names));
+	vector<string> *const v_wim_flag_names = RomFields::strArrayToVector_i18n("RomData", wim_flag_names);
 	d->fields.addField_bitfield(C_("RomData", "Flags"),
 		v_wim_flag_names, 3, wimflags);
 
@@ -661,7 +658,7 @@ int Wim::loadFieldData(void)
 	}
 	d->fields.addField_string(C_("Wim", "Compression Method"), compression_method);
 	d->fields.addField_string(C_("Wim", "Part Number"),
-		rp_sprintf("%u/%u", d->wimHeader.part_number, d->wimHeader.total_parts));
+		fmt::format(FSTR("{:d}/{:d}"), d->wimHeader.part_number, d->wimHeader.total_parts));
 	d->fields.addField_string_numeric(C_("Wim", "Total Images"), d->wimHeader.number_of_images);
 
 #ifdef ENABLE_XML
@@ -673,4 +670,4 @@ int Wim::loadFieldData(void)
 	return static_cast<int>(d->fields.count());
 }
 
-}
+} // namespace LibRomData

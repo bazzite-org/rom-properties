@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librptexture)                     *
  * ValveVTF.cpp: Valve VTF image reader.                                   *
  *                                                                         *
- * Copyright (c) 2017-2024 by David Korth.                                 *
+ * Copyright (c) 2017-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -21,7 +21,6 @@
 #include "libi18n/i18n.h"
 using namespace LibRpFile;
 using LibRpBase::RomFields;
-using LibRpText::rp_sprintf;
 
 // librptexture
 #include "ImageSizeCalc.hpp"
@@ -41,7 +40,6 @@ class ValveVTFPrivate final : public FileFormatPrivate
 {
 	public:
 		ValveVTFPrivate(ValveVTF *q, const IRpFilePtr &file);
-		~ValveVTFPrivate() final = default;
 
 	private:
 		typedef FileFormatPrivate super;
@@ -49,8 +47,8 @@ class ValveVTFPrivate final : public FileFormatPrivate
 
 	public:
 		/** TextureInfo **/
-		static const char *const exts[];
-		static const char *const mimeTypes[];
+		static const array<const char*, 1+1> exts;
+		static const array<const char*, 2+1> mimeTypes;
 		static const TextureInfo textureInfo;
 
 	public:
@@ -76,7 +74,7 @@ class ValveVTFPrivate final : public FileFormatPrivate
 		vector<mipmap_data_t> mipmap_data;
 
 		// Invalid pixel format message
-		char invalid_pixel_format[24];
+		mutable string invalid_pixel_format;
 
 	public:
 		// Image format table
@@ -112,13 +110,13 @@ FILEFORMAT_IMPL(ValveVTF)
 /** ValveVTFPrivate **/
 
 /* TextureInfo */
-const char *const ValveVTFPrivate::exts[] = {
+const array<const char*, 1+1> ValveVTFPrivate::exts = {{
 	".vtf",
 	//".vtx",	// TODO: Some files might use the ".vtx" extension.
 
 	nullptr
-};
-const char *const ValveVTFPrivate::mimeTypes[] = {
+}};
+const array<const char*, 2+1> ValveVTFPrivate::mimeTypes = {{
 	// Vendor-specific MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"image/vnd.valve.source.texture",
@@ -128,9 +126,9 @@ const char *const ValveVTFPrivate::mimeTypes[] = {
 	"image/x-vtf",
 
 	nullptr
-};
+}};
 const TextureInfo ValveVTFPrivate::textureInfo = {
-	exts, mimeTypes
+	exts.data(), mimeTypes.data()
 };
 
 // Image format table
@@ -201,7 +199,6 @@ ValveVTFPrivate::ValveVTFPrivate(ValveVTF *q, const IRpFilePtr &file)
 {
 	// Clear the structs and arrays.
 	memset(&vtfHeader, 0, sizeof(vtfHeader));
-	memset(invalid_pixel_format, 0, sizeof(invalid_pixel_format));
 }
 
 /**
@@ -269,7 +266,7 @@ int ValveVTFPrivate::getMipmapInfo(void)
 	// Skip the low-resolution image.
 	if (vtfHeader.lowResImageFormat >= 0) {
 		addr += ImageSizeCalc::calcImageSize_tbl(
-			op_tbl.data(), op_tbl.size(), vtfHeader.lowResImageFormat,
+			op_tbl, vtfHeader.lowResImageFormat,
 			vtfHeader.lowResImageWidth,
 			(vtfHeader.lowResImageHeight > 0 ? vtfHeader.lowResImageHeight : 1));
 	}
@@ -291,7 +288,7 @@ int ValveVTFPrivate::getMipmapInfo(void)
 
 	// Calculate the size of the full image.
 	unsigned int mipmap_size = ImageSizeCalc::calcImageSize_tbl(
-		op_tbl.data(), op_tbl.size(), vtfHeader.highResImageFormat,
+		op_tbl, vtfHeader.highResImageFormat,
 		row_width, height);
 	if (mipmap_size == 0) {
 		// Invalid image size.
@@ -738,13 +735,12 @@ const char *ValveVTF::pixelFormat(void) const
 	}
 
 	// Invalid pixel format.
-	if (d->invalid_pixel_format[0] == '\0') {
-		// TODO: Localization?
-		snprintf(const_cast<ValveVTFPrivate*>(d)->invalid_pixel_format,
-			sizeof(d->invalid_pixel_format),
-			"Unknown (%d)", fmt);
+	// Store an error message instead.
+	if (d->invalid_pixel_format.empty()) {
+		d->invalid_pixel_format = fmt::format(
+			FRUN(C_("RomData", "Unknown ({:d})")), fmt);
 	}
-	return d->invalid_pixel_format;
+	return d->invalid_pixel_format.c_str();
 }
 
 #ifdef ENABLE_LIBRPBASE_ROMFIELDS
@@ -782,11 +778,11 @@ int ValveVTF::getFields(RomFields *fields) const
 
 	// VTF version.
 	fields->addField_string(C_("ValveVTF", "VTF Version"),
-		rp_sprintf("%u.%u", vtfHeader->version[0], vtfHeader->version[1]));
+		fmt::format(FSTR("{:d}.{:d}"), vtfHeader->version[0], vtfHeader->version[1]));
 
 	// Flags.
 	// TODO: Show "deprecated" flags for older versions.
-	static const char *const flags_names[] = {
+	static const array<const char*, 30> flags_names = {{
 		// 0x1-0x8
 		NOP_C_("ValveVTF|Flags", "Point Sampling"),
 		NOP_C_("ValveVTF|Flags", "Trilinear Sampling"),
@@ -825,10 +821,10 @@ int ValveVTF::getFields(RomFields *fields) const
 		// 0x10000000-0x20000000
 		nullptr,
 		NOP_C_("ValveVTF|Flags", "Border"),
-	};
+	}};
 
 	// Convert to ListData_t for RFT_LISTDATA.
-	auto vv_flags = new RomFields::ListData_t();
+	auto *const vv_flags = new RomFields::ListData_t();
 	vv_flags->reserve(ARRAY_SIZE(flags_names));
 	for (const char *pFlagName : flags_names) {
 		if (!pFlagName)
@@ -838,9 +834,7 @@ int ValveVTF::getFields(RomFields *fields) const
 		const size_t j = vv_flags->size()+1;
 		vv_flags->resize(j);
 		auto &data_row = vv_flags->at(j-1);
-		// TODO: Localization.
-		//data_row.emplace_back(pgettext_expr("ValveVTF|Flags", pFlagName));
-		data_row.emplace_back(pFlagName);
+		data_row.emplace_back(pgettext_expr("ValveVTF|Flags", pFlagName));
 	}
 
 	RomFields::AFLD_PARAMS params(RomFields::RFT_LISTDATA_CHECKBOXES, rows_visible);
@@ -857,14 +851,14 @@ int ValveVTF::getFields(RomFields *fields) const
 
 	// Reflectivity vector.
 	fields->addField_string(C_("ValveVTF", "Reflectivity Vector"),
-		rp_sprintf("(%0.1f, %0.1f, %0.1f)",
+		fmt::format(FSTR("({:0.1f}, {:0.1f}, {:0.1f})"),
 			vtfHeader->reflectivity[0],
 			vtfHeader->reflectivity[1],
 			vtfHeader->reflectivity[2]));
 
 	// Bumpmap scale.
 	fields->addField_string(C_("ValveVTF", "Bumpmap Scale"),
-		rp_sprintf("%0.1f", vtfHeader->bumpmapScale));
+		fmt::format(FSTR("{:0.1f}"), vtfHeader->bumpmapScale));
 
 	// Low-resolution image format.
 	const char *img_format;
@@ -882,16 +876,15 @@ int ValveVTF::getFields(RomFields *fields) const
 
 	const char *const low_res_image_format_title = C_("ValveVTF", "Low-Res Image Format");
 	if (img_format) {
-		// TODO: Localization.
-		fields->addField_string(low_res_image_format_title, img_format);
-			//pgettext_expr("ValveVTF|ImageFormat", img_format));
+		fields->addField_string(low_res_image_format_title,
+			pgettext_expr("ValveVTF|ImageFormat", img_format));
 		// Low-res image size.
 		fields->addField_dimensions(C_("ValveVTF", "Low-Res Size"),
 			vtfHeader->lowResImageWidth,
 			vtfHeader->lowResImageHeight);
 	} else {
 		fields->addField_string(low_res_image_format_title,
-			rp_sprintf(C_("RomData", "Unknown (%d)"), vtfHeader->lowResImageFormat));
+			fmt::format(FRUN(C_("RomData", "Unknown ({:d})")), vtfHeader->lowResImageFormat));
 	}
 
 	if (vtfHeader->version[0] > 7 ||
@@ -940,4 +933,4 @@ rp_image_const_ptr ValveVTF::mipmap(int mip) const
 	return const_cast<ValveVTFPrivate*>(d)->loadImage(mip);
 }
 
-}
+} // namespace LibRpTexture

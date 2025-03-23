@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (Win32)                            *
  * ImageTypesTab.cpp: Image type priorities tab. (Part of ConfigDialog.)   *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -403,9 +403,8 @@ void ImageTypesTabPrivate::addComboBoxStrings(unsigned int cbid, int max_prio)
 	// tr: Don't use this image type for this particular system.
 	ComboBox_AddString(cboImageType, TC_("ImageTypesTab|Values", "No"));
 	for (int i = 1; i <= max_prio; i++) {
-		TCHAR buf[16];
-		_sntprintf(buf, _countof(buf), _T("%d"), i);
-		ComboBox_AddString(cboImageType, buf);
+		// FIXME: fmt::to_tstring()?
+		ComboBox_AddString(cboImageType, fmt::to_wstring(i).c_str());
 	}
 	ComboBox_SetCurSel(cboImageType, 0);
 }
@@ -632,7 +631,7 @@ INT_PTR CALLBACK ImageTypesTabPrivate::dlgProc(HWND hDlg, UINT uMsg, WPARAM wPar
 			cbid -= IDC_IMAGETYPES_CBOIMAGETYPE_BASE;
 
 			const int idx = ComboBox_GetCurSel((HWND)lParam);
-			const unsigned int prio = (unsigned int)(idx <= 0 ? 0xFF : idx-1);
+			const unsigned int prio = static_cast<unsigned int>(idx <= 0 ? 0xFF : idx-1);
 			if (d->cboImageType_priorityValueChanged(cbid, prio)) {
 				// Configuration has been changed.
 				PropSheet_Changed(GetParent(d->hWndPropSheet), d->hWndPropSheet);

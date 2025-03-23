@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * WiiTicket.cpp: Nintendo Wii (and Wii U) ticket reader.                  *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -30,7 +30,7 @@ namespace LibRomData {
 class WiiTicketPrivate final : public RomDataPrivate
 {
 public:
-	WiiTicketPrivate(const IRpFilePtr &file);
+	explicit WiiTicketPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -38,8 +38,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 1+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -75,20 +75,20 @@ ROMDATA_IMPL(WiiTicket)
 /** WiiTicketPrivate **/
 
 /* RomDataInfo */
-const char *const WiiTicketPrivate::exts[] = {
+const array<const char*, 1+1> WiiTicketPrivate::exts = {{
 	".tik",
 
 	nullptr
-};
-const char *const WiiTicketPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> WiiTicketPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	"application/x-nintendo-ticket",
 
 	nullptr
-};
+}};
 const RomDataInfo WiiTicketPrivate::romDataInfo = {
-	"WiiTicket", exts, mimeTypes
+	"WiiTicket", exts.data(), mimeTypes.data()
 };
 
 #ifdef ENABLE_DECRYPTION
@@ -214,11 +214,11 @@ int WiiTicketPrivate::getEncKey(void)
 	if (ca == 1 && xs == 3) {
 		// RVL retail
 		encKey = static_cast<WiiTicket::EncryptionKeys>(
-			(int)WiiTicket::EncryptionKeys::Key_RVL_Common + common_key_index);
+			static_cast<int>(WiiTicket::EncryptionKeys::Key_RVL_Common) + common_key_index);
 	} else if (ca == 2 && xs == 6) {
 		// RVT debug (TODO: There's also XS00000004)
 		encKey = static_cast<WiiTicket::EncryptionKeys>(
-			(int)WiiTicket::EncryptionKeys::Key_RVT_Debug + common_key_index);
+			static_cast<int>(WiiTicket::EncryptionKeys::Key_RVT_Debug) + common_key_index);
 	} else if (ca == 3 && xs == 0xc) {
 		// CTR/WUP retail
 		encKey = WiiTicket::EncryptionKeys::Key_WUP_Starbuck_WiiU_Common;
@@ -308,7 +308,7 @@ int WiiTicket::isRomSupported_static(const DetectInfo *info)
 
 	// NOTE: File extension must match.
 	bool ok = false;
-	for (const char *const *ext = WiiTicketPrivate::exts;
+	for (const char *const *ext = WiiTicketPrivate::exts.data();
 	     *ext != nullptr; ext++)
 	{
 		if (!strcasecmp(info->ext, *ext)) {
@@ -406,16 +406,16 @@ const char *WiiTicket::systemName(unsigned int type) const
 		"WiiTicket::systemName() array index optimization needs to be updated.");
 
 	// Use the title ID to determine the system.
-	static const char *const sysNames[8][4] = {
-		{"Nintendo Wii", "Wii", "Wii", nullptr},	// Wii IOS
-		{"Nintendo Wii", "Wii", "Wii", nullptr},	// Wii
-		{"GBA NetCard", "NetCard", "NetCard", nullptr},	// GBA NetCard
-		{"Nintendo DSi", "DSi", "DSi", nullptr},	// DSi
-		{"Nintendo 3DS", "3DS", "3DS", nullptr},	// 3DS
-		{"Nintendo Wii U", "Wii U", "Wii U", nullptr},	// Wii U
-		{nullptr, nullptr, nullptr, nullptr},		// unused
-		{"Nintendo Wii U", "Wii U", "Wii U", nullptr},	// Wii U (vWii)
-	};
+	static const array<array<const char*, 4>, 8> sysNames = {{
+		{{"Nintendo Wii", "Wii", "Wii", nullptr}},		// Wii IOS
+		{{"Nintendo Wii", "Wii", "Wii", nullptr}},		// Wii
+		{{"GBA NetCard", "NetCard", "NetCard", nullptr}},	// GBA NetCard
+		{{"Nintendo DSi", "DSi", "DSi", nullptr}},		// DSi
+		{{"Nintendo 3DS", "3DS", "3DS", nullptr}},		// 3DS
+		{{"Nintendo Wii U", "Wii U", "Wii U", nullptr}},	// Wii U
+		{{nullptr, nullptr, nullptr, nullptr}},			// unused
+		{{"Nintendo Wii U", "Wii U", "Wii U", nullptr}},	// Wii U (vWii)
+	}};
 
 	const unsigned int sysID = be16_to_cpu(d->ticket.v0.title_id.sysID);
 	return (likely(sysID < ARRAY_SIZE(sysNames)))
@@ -447,11 +447,11 @@ int WiiTicket::loadFieldData(void)
 	d->fields.reserve(5);	// Maximum of 4 fields.
 
 	// Title ID
-	char s_title_id[24];
-	snprintf(s_title_id, sizeof(s_title_id), "%08X-%08X",
-		be32_to_cpu(ticket->title_id.hi),
-		be32_to_cpu(ticket->title_id.lo));
-	d->fields.addField_string(C_("Nintendo", "Title ID"), s_title_id, RomFields::STRF_MONOSPACE);
+	d->fields.addField_string(C_("Nintendo", "Title ID"),
+		fmt::format(FSTR("{:0>8X}-{:0>8X}"),
+			be32_to_cpu(ticket->title_id.hi),
+			be32_to_cpu(ticket->title_id.lo)),
+		RomFields::STRF_MONOSPACE);
 
 	// Issuer
 	d->fields.addField_string(C_("Nintendo", "Issuer"),
@@ -492,7 +492,7 @@ int WiiTicket::loadFieldData(void)
 int WiiTicket::loadMetaData(void)
 {
 	RP_D(WiiTicket);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
@@ -503,22 +503,19 @@ int WiiTicket::loadMetaData(void)
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-	d->metaData->reserve(1);	// Maximum of 1 metadata property.
-
 	// Ticket is read in the constructor.
 	const RVL_Ticket *const ticket = &d->ticket.v0;
+	d->metaData.reserve(1);	// Maximum of 1 metadata property.
 
 	// Title ID (using as Title)
-	char s_title_id[24];
-	snprintf(s_title_id, sizeof(s_title_id), "%08X-%08X",
-		be32_to_cpu(ticket->title_id.hi),
-		be32_to_cpu(ticket->title_id.lo));
-	d->metaData->addMetaData_string(Property::Title, s_title_id);
+	d->metaData.addMetaData_string(Property::Title,
+       		fmt::format(FSTR("{:0>8X}-{:0>8X}"),
+			be32_to_cpu(ticket->title_id.hi),
+			be32_to_cpu(ticket->title_id.lo)));
+
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
 /** Ticket accessors **/
@@ -613,13 +610,13 @@ int WiiTicket::decryptTitleKey(uint8_t *pKeyBuf, size_t size)
 	// Get the IV.
 	// First 8 bytes are the title ID.
 	// Second 8 bytes are all 0.
-	uint8_t iv[16];
-	memcpy(iv, d->ticket.v0.title_id.u8, 8);
+	array<uint8_t, 16> iv;
+	memcpy(iv.data(), d->ticket.v0.title_id.u8, 8);
 	memset(&iv[8], 0, 8);
 
 	// Decrypt the title key.
 	memcpy(pKeyBuf, d->ticket.v0.enc_title_key, sizeof(d->ticket.v0.enc_title_key));
-	if (cipher->decrypt(pKeyBuf, sizeof(d->ticket.v0.enc_title_key), iv, sizeof(iv)) != sizeof(d->ticket.v0.enc_title_key)) {
+	if (cipher->decrypt(pKeyBuf, sizeof(d->ticket.v0.enc_title_key), iv.data(), iv.size()) != sizeof(d->ticket.v0.enc_title_key)) {
 		// Error decrypting the title key.
 		// TODO: Return verifyResult?
 		d->verifyResult = KeyManager::VerifyResult::IAesCipherDecryptErr;
@@ -667,7 +664,7 @@ WiiTicket::EncryptionKeys WiiTicket::encKey(void) const
  */
 const char *WiiTicket::encKeyName_static(EncryptionKeys encKey)
 {
-	static const std::array<const char*, (int)EncryptionKeys::Max> wii_key_tbl = {{
+	static const std::array<const char*, static_cast<size_t>(EncryptionKeys::Max)> wii_key_tbl = {{
 		// tr: Key_RVL_Common - Retail Wii encryption key
 		NOP_C_("Wii|EncKey", "Retail"),
 		// tr: Key_RVL_Korean - Korean Wii encryption key
@@ -700,8 +697,8 @@ const char *WiiTicket::encKeyName_static(EncryptionKeys encKey)
 	}};
 
 	const char *s_key_name;
-	if ((int)encKey >= 0 && encKey < EncryptionKeys::Max) {
-		s_key_name = pgettext_expr("Wii|KeyIdx", wii_key_tbl[(int)encKey]);
+	if (static_cast<int>(encKey) >= 0 && encKey < EncryptionKeys::Max) {
+		s_key_name = pgettext_expr("Wii|KeyIdx", wii_key_tbl[static_cast<size_t>(encKey)]);
 	} else if (encKey == WiiTicket::EncryptionKeys::None) {
 		// tr: EncryptionKeys::None - No encryption.
 		s_key_name = C_("Wii|EncKey", "None");
@@ -771,4 +768,4 @@ const uint8_t *WiiTicket::encryptionVerifyData_static(int keyIdx)
 }
 #endif /* ENABLE_DECRYPTION */
 
-}
+} // namespace LibRomData

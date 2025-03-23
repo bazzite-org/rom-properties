@@ -2,16 +2,20 @@
  * ROM Properties Page shell extension. (Win32)                            *
  * AboutTab.cpp: About tab for rp-config.                                  *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
 #include "stdafx.h"
 #include "config.librpbase.h"
+#include "config.win32.h"
 
 #include "AboutTab.hpp"
-#include "UpdateChecker.hpp"
 #include "res/resource.h"
+
+#ifdef ENABLE_NETWORKING
+#  include "UpdateChecker.hpp"
+#endif /* ENABLE_NETWORKING */
 
 // Other rom-properties libraries
 #include "librpbase/config/AboutTabText.hpp"
@@ -31,9 +35,11 @@ using LibWin32UI::LoadDialog_i18n;
 #include "libwin32darkmode/DarkModeCtrl.hpp"
 
 // C++ STL classes
+using std::array;
 using std::string;
 using std::wstring;
 using std::u16string;
+using std::unique_ptr;
 
 // Maximum number of tabs.
 // NOTE: Must be adjusted if more tabs are added!
@@ -69,11 +75,6 @@ using std::u16string;
 
 // Useful RTF strings.
 #define RTF_START "{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033\n"
-// Color table:
-// - cf1: Main text color (COLOR_WINDOWTEXT in light mode, g_darkTextColor in dark mode)
-// - cf2: Link color (Technically not needed on Win8+...)
-// The color table may be automatically updated on theme change.
-#define RTF_COLOR_TABLE "{\\colortbl ;\\red%03d\\green%03d\\blue%03d;\\red%03d\\green%03d\\blue%03d;}\n\\cf1"
 #define RTF_BR "\\par\n"
 #define RTF_TAB "\\tab "
 #define RTF_BULLET "\\bullet "
@@ -132,6 +133,7 @@ public:
 #endif /* MSFTEDIT_USE_41 */
 	bool bUseFriendlyLinks;
 
+#ifdef ENABLE_NETWORKING
 public:
 	/**
 	 * Check for updates.
@@ -139,7 +141,7 @@ public:
 	void checkForUpdates(void);
 
 	bool bCheckedForUpdates;	// Checked for updates yet?
-	UpdateChecker *updChecker;
+	unique_ptr<UpdateChecker> updChecker;
 
 	/**
 	 * An error occurred while trying to retrieve the update version.
@@ -153,6 +155,7 @@ public:
 	 * Called by the WM_UPD_RETRIEVED handler.
 	 */
 	void updChecker_retrieved(void);
+#endif /* ENABLE_NETWORKING */
 
 protected:
 	// Current RichText streaming context
@@ -192,21 +195,23 @@ protected:
 
 protected:
 	// Tab text (RichText format)
-	string sVersionLabel;	// UpdateCheck
 	string sCredits;
 	string sLibraries;
 	string sSupport;
 
-	// RichEdit controls
-	HWND hRichEdit;		// Main RichEdit control
+#ifdef ENABLE_NETWORKING
 	HWND hUpdateCheck;	// UpdateCheck label
+	string sVersionLabel;	// Version string
+#endif /* ENABLE_NETWORKING */
+
+	// Main RichEdit control
+	HWND hRichEdit;
 
 	/**
 	 * Initialize the RTF color table.
-	 * @param buf Buffer for the RTF color table
-	 * @param size Size of buf
+	 * @return RTF color table
 	 */
-	void initRtfColorTable(char *buf, size_t size);
+	string initRtfColorTable(void);
 
 	/**
 	 * Initialize the program title text.
@@ -258,10 +263,11 @@ AboutTabPrivate::AboutTabPrivate()
 	, hWndPropSheet(nullptr)
 	, hFontBold(nullptr)
 	, bUseFriendlyLinks(false)
+#ifdef ENABLE_NETWORKING
 	, bCheckedForUpdates(false)
-	, updChecker(nullptr)
-	, hRichEdit(nullptr)
 	, hUpdateCheck(nullptr)
+#endif /* ENABLE_NETWORKING */
+	, hRichEdit(nullptr)
 	, hbrBkgnd(nullptr)
 	, lastDarkModeEnabled(false)
 {
@@ -288,10 +294,6 @@ AboutTabPrivate::~AboutTabPrivate()
 #endif /* MSFTEDIT_USE_41 */
 	if (hRichEd20_dll) {
 		FreeLibrary(hRichEd20_dll);
-	}
-
-	if (updChecker) {
-		delete updChecker;
 	}
 
 	// Dark mode background brush
@@ -339,6 +341,7 @@ INT_PTR CALLBACK AboutTabPrivate::dlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, L
 			return TRUE;
 		}
 
+#ifdef ENABLE_NETWORKING
 		case WM_SHOWWINDOW: {
 			auto *const d = reinterpret_cast<AboutTabPrivate*>(GetWindowLongPtr(hDlg, GWLP_USERDATA));
 			if (!d) {
@@ -354,6 +357,7 @@ INT_PTR CALLBACK AboutTabPrivate::dlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, L
 
 			break;
 		}
+#endif /* ENABLE_NETWORKING */
 
 		case WM_NOTIFY: {
 			auto *const d = reinterpret_cast<AboutTabPrivate*>(GetWindowLongPtr(hDlg, GWLP_USERDATA));
@@ -421,6 +425,7 @@ INT_PTR CALLBACK AboutTabPrivate::dlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, L
 			break;
 		}
 
+#ifdef ENABLE_NETWORKING
 		case WM_UPD_ERROR: {
 			auto *const d = reinterpret_cast<AboutTabPrivate*>(GetWindowLongPtr(hDlg, GWLP_USERDATA));
 			if (!d) {
@@ -442,6 +447,7 @@ INT_PTR CALLBACK AboutTabPrivate::dlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, L
 			d->updChecker_retrieved();
 			return TRUE;
 		}
+#endif /* ENABLE_NETWORKING */
 
 		/** Dark Mode **/
 
@@ -490,8 +496,10 @@ INT_PTR CALLBACK AboutTabPrivate::dlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, L
 					// adjust its background and text colors.
 
 					// Set the RichEdit colors.
-					DarkMode_InitRichEdit(d->hRichEdit);
+#ifdef ENABLE_NETWORKING
 					DarkMode_InitRichEdit(d->hUpdateCheck);
+#endif /* ENABLE_NETWORKING */
+					DarkMode_InitRichEdit(d->hRichEdit);
 
 					// Update the RTF color tables.
 					// This fixes text colors on Win10 21H2. (On 1809, it worked without this.)
@@ -561,6 +569,7 @@ void AboutTabPrivate::initBoldFont(HFONT hFont)
 	}
 }
 
+#ifdef ENABLE_NETWORKING
 /**
  * Check for updates.
  */
@@ -569,11 +578,7 @@ void AboutTabPrivate::checkForUpdates(void)
 	sVersionLabel.clear();
 	sVersionLabel.reserve(64);
 	sVersionLabel = RTF_START;
-
-	// Color table
-	char rtfColorTable[sizeof(RTF_COLOR_TABLE) + 16];
-	initRtfColorTable(rtfColorTable, sizeof(rtfColorTable));
-	sVersionLabel += rtfColorTable;
+	sVersionLabel += initRtfColorTable();
 
 	sVersionLabel += RTF_ALIGN_RIGHT;
 	sVersionLabel += rtfEscape(C_("AboutTab", "Checking for updates..."));
@@ -587,14 +592,14 @@ void AboutTabPrivate::checkForUpdates(void)
 	SendMessage(hUpdateCheck, EM_STREAMIN, SF_RTF, (LPARAM)&es);
 
 	if (!updChecker) {
-		updChecker = new UpdateChecker();
+		updChecker.reset(new UpdateChecker());
 	}
 	if (!updChecker->run(hWndPropSheet)) {
 		// Failed to run the Update Checker.
 		sVersionLabel.clear();
 		sVersionLabel.reserve(64);
 		sVersionLabel = RTF_START;
-		sVersionLabel += rtfColorTable;
+		sVersionLabel += initRtfColorTable();
 
 		sVersionLabel += RTF_ALIGN_RIGHT;
 		sVersionLabel += rtfEscape(C_("AboutTab", "Update check failed!"));
@@ -626,11 +631,7 @@ void AboutTabPrivate::updChecker_error(void)
 	sVersionLabel.clear();
 	sVersionLabel.reserve(128);
 	sVersionLabel = RTF_START;
-
-	// Color table
-	char rtfColorTable[sizeof(RTF_COLOR_TABLE) + 16];
-	initRtfColorTable(rtfColorTable, sizeof(rtfColorTable));
-	sVersionLabel += rtfColorTable;
+	sVersionLabel += initRtfColorTable();
 
 	sVersionLabel += RTF_ALIGN_RIGHT RTF_BOLD_ON;
 	// tr: Error message template. (Windows version, without formatting)
@@ -663,33 +664,28 @@ void AboutTabPrivate::updChecker_retrieved(void)
 	const uint64_t ourVersion = RP_PROGRAM_VERSION_NO_DEVEL(AboutTabText::getProgramVersion());
 
 	// Format the latest version string.
-	char sUpdVersion[32];
-	const unsigned int upd[3] = {
+	string sUpdVersion;
+	const array<unsigned int, 3> upd = {{
 		RP_PROGRAM_VERSION_MAJOR(updateVersion),
 		RP_PROGRAM_VERSION_MINOR(updateVersion),
 		RP_PROGRAM_VERSION_REVISION(updateVersion)
-	};
+	}};
 
 	if (upd[2] == 0) {
-		snprintf(sUpdVersion, sizeof(sUpdVersion), "%u.%u", upd[0], upd[1]);
+		sUpdVersion = fmt::format(FSTR("{:d}.{:d}"), upd[0], upd[1]);
 	} else {
-		snprintf(sUpdVersion, sizeof(sUpdVersion), "%u.%u.%u", upd[0], upd[1], upd[2]);
+		sUpdVersion = fmt::format(FSTR("{:d}.{:d}.{:d}"), upd[0], upd[1], upd[2]);
 	}
 
 	sVersionLabel.clear();
 	sVersionLabel.reserve(384);
 	sVersionLabel = RTF_START;
-
-	// Color table
-	char rtfColorTable[sizeof(RTF_COLOR_TABLE) + 16];
-	initRtfColorTable(rtfColorTable, sizeof(rtfColorTable));
-	sVersionLabel += rtfColorTable;
+	sVersionLabel += initRtfColorTable();
 
 	sVersionLabel += RTF_ALIGN_RIGHT;
 
-	char s_latest_version[128];
-	snprintf(s_latest_version, sizeof(s_latest_version), C_("AboutTab", "Latest version: %s"), sUpdVersion);
-	sVersionLabel += rtfEscape(s_latest_version);
+	const string s_latest_version = fmt::format(FRUN(C_("AboutTab", "Latest version: {:s}")), sUpdVersion);
+	sVersionLabel += rtfEscape(s_latest_version.c_str());
 	if (updateVersion > ourVersion) {
 		sVersionLabel += RTF_BR RTF_BR RTF_BOLD_ON;
 		sVersionLabel += rtfEscape(C_("AboutTab", "New version available!"));
@@ -705,6 +701,7 @@ void AboutTabPrivate::updChecker_retrieved(void)
 	EDITSTREAM es = { (DWORD_PTR)&rtfCtx_upd, 0, EditStreamCallback };
 	SendMessage(hUpdateCheck, EM_STREAMIN, SF_RTF, (LPARAM)&es);
 }
+#endif /* ENABLE_NETWORKING */
 
 /**
  * RTF EditStream callback.
@@ -767,7 +764,6 @@ string AboutTabPrivate::rtfEscape(const char *str)
 	s_rtf.reserve(u16str.size() * 2);
 
 	// Reference: http://www.zopatista.com/python/2012/06/06/rtf-and-unicode/
-	char buf[12];	// Conversion buffer.
 	for (const char16_t *p = u16str.c_str(); *p != 0; p++) {
 		if (*p == '\n') {
 			// Newline
@@ -778,8 +774,7 @@ string AboutTabPrivate::rtfEscape(const char *str)
 		} else {
 			// Convert to a signed 16-bit integer.
 			// Surrogate pairs are encoded as two separate characters.
-			snprintf(buf, sizeof(buf), "\\u%d?", (int16_t)*p);
-			s_rtf += buf;
+			s_rtf += fmt::format(FSTR("\\u{:d}?"), (int16_t)*p);
 		}
 	}
 
@@ -807,8 +802,8 @@ string AboutTabPrivate::rtfFriendlyLink(const char *link, const char *title)
 		// Reference: https://docs.microsoft.com/en-us/archive/blogs/murrays/richedit-friendly-name-hyperlinks
 		// TODO: Get the "proper" link color.
 		// TODO: Don't include cf2/cf1 on Win8+?
-		return rp_sprintf("{\\field{\\*\\fldinst{HYPERLINK \"%s\"}}{\\fldrslt{\\cf2\\ul %s\\ul0\\cf1 }}}",
-			rtfEscape(link).c_str(), rtfEscape(title).c_str());
+		return fmt::format(FSTR("{{\\field{{\\*\\fldinst{{HYPERLINK \"{:s}\"}}}}{{\\fldrslt{{\\cf2\\ul {:s}\\ul0\\cf1 }}}}}}"),
+			rtfEscape(link), rtfEscape(title));
 	} else {
 		// No friendly links.
 		return rtfEscape(title);
@@ -817,10 +812,9 @@ string AboutTabPrivate::rtfFriendlyLink(const char *link, const char *title)
 
 /**
  * Initialize the RTF color table.
- * @param buf Buffer for the RTF color table
- * @param size Size of buf
+ * @return RTF color table
  */
-void AboutTabPrivate::initRtfColorTable(char *buf, size_t size)
+string AboutTabPrivate::initRtfColorTable(void)
 {
 	union COLORREF_t {
 		struct {
@@ -841,7 +835,11 @@ void AboutTabPrivate::initRtfColorTable(char *buf, size_t size)
 		clink.color = 0x00CC6600;
 	}
 
-	snprintf(buf, size, RTF_COLOR_TABLE,
+	// Color table:
+	// - cf1: Main text color (COLOR_WINDOWTEXT in light mode, g_darkTextColor in dark mode)
+	// - cf2: Link color (Technically not needed on Win8+...)
+	// The color table may be automatically updated on theme change.
+	return fmt::format(FSTR("{{\\colortbl ;\\red{:0>3d}\\green{:0>3d}\\blue{:0>3d};\\red{:0>3d}\\green{:0>3d}\\blue{:0>3d};}}\n\\cf1"),
 		ctext.r, ctext.g, ctext.b,
 		clink.r, clink.g, clink.b);
 }
@@ -883,7 +881,7 @@ void AboutTabPrivate::initProgramTitleText(void)
 	const char *const gitVersion =
 		AboutTabText::getProgramInfoString(AboutTabText::ProgramInfoStringID::GitVersion);
 
-	string s_version = rp_sprintf(C_("AboutTab", "Version %s"), programVersion);
+	string s_version = fmt::format(FRUN(C_("AboutTab", "Version {:s}")), programVersion);
 	s_version.reserve(1024);
 	if (gitVersion) {
 		s_version += "\r\n";
@@ -988,23 +986,19 @@ void AboutTabPrivate::initCreditsTab(void)
 	sCredits.clear();
 	sCredits.reserve(4096);
 	sCredits = RTF_START;
-
-	// Color table
-	char rtfColorTable[sizeof(RTF_COLOR_TABLE) + 16];
-	initRtfColorTable(rtfColorTable, sizeof(rtfColorTable));
-	sCredits += rtfColorTable;
+	sCredits += initRtfColorTable();
 
 	// FIXME: Figure out how to get links to work without
 	// resorting to manually adding CFE_LINK data...
 	// NOTE: Copyright is NOT localized.
 	sCredits += AboutTabText::getProgramInfoString(AboutTabText::ProgramInfoStringID::Copyright);
 	sCredits += RTF_BR RTF_BR;
-	sCredits += rp_sprintf(
-		// tr: %s is the name of the license.
-		rtfEscape(C_("AboutTab|Credits", "This program is licensed under the %s or later.")).c_str(),
+	sCredits += fmt::format(
+		// tr: {:s} is the name of the license.
+		FRUN(rtfEscape(C_("AboutTab|Credits", "This program is licensed under the {:s} or later."))),
 			rtfFriendlyLink(
 				"https://www.gnu.org/licenses/gpl-2.0.html",
-				C_("AboutTabl|Credits", "GNU GPL v2")).c_str());
+				C_("AboutTabl|Credits", "GNU GPL v2")));
 	if (!bUseFriendlyLinks) {
 		sCredits += RTF_BR
 			"https://www.gnu.org/licenses/gpl-2.0.html";
@@ -1017,7 +1011,7 @@ void AboutTabPrivate::initCreditsTab(void)
 		if (creditsData->type != AboutTabText::CreditType::Continue &&
 		    creditsData->type != lastCreditType)
 		{
-			// New credit type.
+			// New credit type
 			sCredits += RTF_BR RTF_BR RTF_BOLD_ON;
 
 			switch (creditsData->type) {
@@ -1055,9 +1049,9 @@ void AboutTabPrivate::initCreditsTab(void)
 			sCredits += '>';
 		}
 		if (creditsData->sub) {
-			// Sub-credit.
-			sCredits += rp_sprintf(rtfEscape(C_("AboutTab|Credits", " (%s)")).c_str(),
-				rtfEscape(creditsData->sub).c_str());
+			// tr: Sub-credit
+			sCredits += fmt::format(FRUN(rtfEscape(C_("AboutTab|Credits", " ({:s})"))),
+				rtfEscape(creditsData->sub));
 		}
 
 		lastCreditType = creditsData->type;
@@ -1078,31 +1072,25 @@ void AboutTabPrivate::initCreditsTab(void)
  */
 void AboutTabPrivate::initLibrariesTab(void)
 {
-	char sVerBuf[64];
-
 	sLibraries.clear();
 	sLibraries.reserve(8192);
 	sLibraries = RTF_START;
-
-	// Color table
-	char rtfColorTable[sizeof(RTF_COLOR_TABLE) + 16];
-	initRtfColorTable(rtfColorTable, sizeof(rtfColorTable));
-	sLibraries += rtfColorTable;
+	sLibraries += initRtfColorTable();
 
 	// NOTE: These strings can NOT be static.
 	// Otherwise, they won't be retranslated if the UI language
 	// is changed at runtime.
 
 	// tr: Using an internal copy of a library.
-	const string sIntCopyOf = rtfEscape(C_("AboutTab|Libraries", "Internal copy of %s."));
+	const string sIntCopyOf = rtfEscape(C_("AboutTab|Libraries", "Internal copy of {:s}."));
 	// tr: Compiled with a specific version of an external library.
-	const string sCompiledWith = rtfEscape(C_("AboutTab|Libraries", "Compiled with %s."));
+	const string sCompiledWith = rtfEscape(C_("AboutTab|Libraries", "Compiled with {:s}."));
 	// tr: Using an external library, e.g. libpcre.so
-	const string sUsingDll = rtfEscape(C_("AboutTab|Libraries", "Using %s."));
+	const string sUsingDll = rtfEscape(C_("AboutTab|Libraries", "Using {:s}."));
 	// tr: License: (libraries with only a single license)
-	const string sLicense = rtfEscape(C_("AboutTab|Libraries", "License: %s"));
+	const string sLicense = rtfEscape(C_("AboutTab|Libraries", "License: {:s}"));
 	// tr: Licenses: (libraries with multiple licenses)
-	const string sLicenses = rtfEscape(C_("AboutTab|Libraries", "Licenses: %s"));
+	const string sLicenses = rtfEscape(C_("AboutTab|Libraries", "Licenses: {:s}"));
 
 	// NOTE: We're only showing the "compiled with" version here,
 	// since the DLLs are delay-loaded and might not be available.
@@ -1114,15 +1102,15 @@ void AboutTabPrivate::initLibrariesTab(void)
 	sZlibVersion += RpPng::zlib_version_string();
 
 #if defined(USE_INTERNAL_ZLIB) && !defined(USE_INTERNAL_ZLIB_DLL)
-	sLibraries += rp_sprintf(sIntCopyOf.c_str(), sZlibVersion.c_str());
+	sLibraries += fmt::format(FRUN(sIntCopyOf), sZlibVersion);
 #else
 #  ifdef ZLIBNG_VERSION
-	sLibraries += rp_sprintf(sCompiledWith.c_str(), "zlib-ng " ZLIBNG_VERSION);
+	sLibraries += fmt::format(FRUN(sCompiledWith), "zlib-ng " ZLIBNG_VERSION);
 #  else /* !ZLIBNG_VERSION */
-	sLibraries += rp_sprintf(sCompiledWith.c_str(), "zlib " ZLIB_VERSION);
+	sLibraries += fmt::format(FRUN(sCompiledWith), "zlib " ZLIB_VERSION);
 #  endif /* ZLIBNG_VERSION */
 	sLibraries += RTF_BR;
-	sLibraries += rp_sprintf(sUsingDll.c_str(), sZlibVersion.c_str());
+	sLibraries += fmt::format(FRUN(sUsingDll), sZlibVersion);
 #endif
 	sLibraries += RTF_BR
 		"Copyright (C) 1995-2022 Jean-loup Gailly and Mark Adler." RTF_BR
@@ -1131,7 +1119,7 @@ void AboutTabPrivate::initLibrariesTab(void)
 	// TODO: Also if zlibVersion() contains "zlib-ng"?
 	sLibraries += "https://github.com/zlib-ng/zlib-ng" RTF_BR;
 #  endif /* ZLIBNG_VERSION */
-	sLibraries += rp_sprintf(sLicense.c_str(), "zlib license");
+	sLibraries += fmt::format(FRUN(sLicense), "zlib license");
 #endif /* HAVE_ZLIB */
 
 	/** libpng **/
@@ -1140,8 +1128,7 @@ void AboutTabPrivate::initLibrariesTab(void)
 #ifdef HAVE_PNG
 	const bool APNG_is_supported = RpPng::libpng_has_APNG();
 	const uint32_t png_version_number = RpPng::libpng_version_number();
-	char pngVersion[48];
-	snprintf(pngVersion, sizeof(pngVersion), "libpng %u.%u.%u%s",
+	const string pngVersion = fmt::format(FSTR("libpng {:d}.{:d}.{:d}{:s}"),
 		png_version_number / 10000,
 		(png_version_number / 100) % 100,
 		png_version_number % 100,
@@ -1149,7 +1136,7 @@ void AboutTabPrivate::initLibrariesTab(void)
 
 	sLibraries += RTF_BR RTF_BR;
 #if defined(USE_INTERNAL_PNG) && !defined(USE_INTERNAL_ZLIB_DLL)
-	sLibraries += rp_sprintf(sIntCopyOf.c_str(), pngVersion);
+	sLibraries += fmt::format(FRUN(sIntCopyOf), pngVersion);
 #else
 	// NOTE: Gentoo's libpng has "+apng" at the end of
 	// PNG_LIBPNG_VER_STRING if APNG is enabled.
@@ -1165,15 +1152,15 @@ void AboutTabPrivate::initLibrariesTab(void)
 	string fullPngVersionCompiled;
 	if (APNG_is_supported) {
 		// PNG version, with APNG support.
-		fullPngVersionCompiled = rp_sprintf("%s + APNG", pngVersionCompiled.c_str());
+		fullPngVersionCompiled = fmt::format(FSTR("{:s} + APNG"), pngVersionCompiled);
 	} else {
 		// PNG version, without APNG support.
-		fullPngVersionCompiled = rp_sprintf("%s (No APNG support)", pngVersionCompiled.c_str());
+		fullPngVersionCompiled = fmt::format(FSTR("{:s} (No APNG support)"), pngVersionCompiled);
 	}
 
-	sLibraries += rp_sprintf(sCompiledWith.c_str(), fullPngVersionCompiled.c_str());
+	sLibraries += fmt::format(FRUN(sCompiledWith), fullPngVersionCompiled);
 	sLibraries += RTF_BR;
-	sLibraries += rp_sprintf(sUsingDll.c_str(), pngVersion);
+	sLibraries += fmt::format(FRUN(sUsingDll), pngVersion);
 #endif
 
 	/**
@@ -1195,47 +1182,48 @@ void AboutTabPrivate::initLibrariesTab(void)
 		sLibraries += rtfEscape(C_("AboutTab|Libraries", "APNG patch:"));
 		sLibraries += " https://sourceforge.net/projects/libpng-apng/" RTF_BR;
 	}
-	sLibraries += rp_sprintf(sLicense.c_str(), "libpng license");
+	sLibraries += fmt::format(FRUN(sLicense), "libpng license");
 #endif /* HAVE_PNG */
 
 	/** TinyXML2 **/
 #ifdef ENABLE_XML
-	snprintf(sVerBuf, sizeof(sVerBuf), "TinyXML2 %u.%u.%u",
+	const string tinyXml2Version = fmt::format(FSTR("TinyXML2 {:d}.{:d}.{:d}"),
 		static_cast<unsigned int>(TIXML2_MAJOR_VERSION),
 		static_cast<unsigned int>(TIXML2_MINOR_VERSION),
 		static_cast<unsigned int>(TIXML2_PATCH_VERSION));
 
 	// FIXME: Runtime version?
 	sLibraries += RTF_BR RTF_BR;
-	sLibraries += rp_sprintf(sCompiledWith.c_str(), sVerBuf);
+	sLibraries += fmt::format(FRUN(sCompiledWith), tinyXml2Version);
 	sLibraries += RTF_BR
 		"Copyright (C) 2000-2021 Lee Thomason" RTF_BR
 		"http://www.grinninglizard.com/" RTF_BR;
-	sLibraries += rp_sprintf(sLicense.c_str(), "zlib license");
+	sLibraries += fmt::format(FRUN(sLicense), "zlib license");
 #endif /* ENABLE_XML */
 
 	/** GNU gettext **/
 	// NOTE: glibc's libintl.h doesn't have the version information,
 	// so we're only printing this if we're using GNU gettext's version.
 #if defined(HAVE_GETTEXT) && defined(LIBINTL_VERSION)
+	string gettextVersion;
 	if (LIBINTL_VERSION & 0xFF) {
-		snprintf(sVerBuf, sizeof(sVerBuf), "GNU gettext %u.%u.%u",
+		gettextVersion = fmt::format(FSTR("GNU gettext {:d}.{:d}.{:d}"),
 			static_cast<unsigned int>( LIBINTL_VERSION >> 16),
 			static_cast<unsigned int>((LIBINTL_VERSION >>  8) & 0xFF),
 			static_cast<unsigned int>( LIBINTL_VERSION        & 0xFF));
 	} else {
-		snprintf(sVerBuf, sizeof(sVerBuf), "GNU gettext %u.%u",
+		gettextVersion = fmt::format(FSTR("GNU gettext {:d}.{:d}"),
 			static_cast<unsigned int>( LIBINTL_VERSION >> 16),
 			static_cast<unsigned int>((LIBINTL_VERSION >>  8) & 0xFF));
 	}
 
 	sLibraries += RTF_BR RTF_BR;
 	// NOTE: Not actually an "internal copy"...
-	sLibraries += rp_sprintf(sIntCopyOf.c_str(), sVerBuf);
+	sLibraries += fmt::format(FRUN(sIntCopyOf), gettextVersion);
 	sLibraries += RTF_BR
 		"Copyright (C) 1995-1997, 2000-2016, 2018-2020 Free Software Foundation, Inc." RTF_BR
 		"https://www.gnu.org/software/gettext/" RTF_BR;
-	sLibraries += rp_sprintf(sLicense.c_str(), "GNU LGPL v2.1+");
+	sLibraries += fmt::format(FRUN(sLicense), "GNU LGPL v2.1+");
 #endif /* HAVE_GETTEXT && LIBINTL_VERSION */
 
 	sLibraries += '}';
@@ -1256,11 +1244,7 @@ void AboutTabPrivate::initSupportTab(void)
 	sSupport.clear();
 	sSupport.reserve(4096);
 	sSupport = RTF_START;
-
-	// Color table
-	char rtfColorTable[sizeof(RTF_COLOR_TABLE) + 16];
-	initRtfColorTable(rtfColorTable, sizeof(rtfColorTable));
-	sSupport += rtfColorTable;
+	sSupport += initRtfColorTable();
 
 	sSupport += rtfEscape(C_("AboutTab|Support",
 		"For technical support, you can visit the following websites:"));
@@ -1341,28 +1325,29 @@ void AboutTabPrivate::setTabContents(int index)
 void AboutTabPrivate::updateRtfColorTablesInRtfStrings(void)
 {
 	// Color table
-	char rtfColorTable[sizeof(RTF_COLOR_TABLE) + 16];
-	initRtfColorTable(rtfColorTable, sizeof(rtfColorTable));
+	const string sRtfColorTable = initRtfColorTable();
 
 	// Update the strings, assuming the color table is present.
 	const size_t pos = sizeof(RTF_START) - 1;
-	const size_t len = strlen(rtfColorTable);
+	const size_t len = sRtfColorTable.size();
 
+#ifdef ENABLE_NETWORKING
 	if (!sVersionLabel.empty()) {
-		sVersionLabel.replace(pos, len, rtfColorTable);
+		sVersionLabel.replace(pos, len, sRtfColorTable);
 	}
+#endif /* ENABLE_NETWORKING */
 
 	bool areTabsEmpty = true;
 	if (!sCredits.empty()) {
-		sCredits.replace(pos, len, rtfColorTable);
+		sCredits.replace(pos, len, sRtfColorTable);
 		areTabsEmpty = false;
 	}
 	if (!sLibraries.empty()) {
-		sLibraries.replace(pos, len, rtfColorTable);
+		sLibraries.replace(pos, len, sRtfColorTable);
 		areTabsEmpty = false;
 	}
 	if (!sSupport.empty()) {
-		sSupport.replace(pos, len, rtfColorTable);
+		sSupport.replace(pos, len, sRtfColorTable);
 		areTabsEmpty = false;
 	}
 
@@ -1377,6 +1362,7 @@ void AboutTabPrivate::updateRtfColorTablesInRtfStrings(void)
 		}
 	}
 
+#ifdef ENABLE_NETWORKING
 	// Update the version label.
 	// FIXME: Only if we're not currently checking for updates?
 	if (!sVersionLabel.empty()) {
@@ -1388,6 +1374,7 @@ void AboutTabPrivate::updateRtfColorTablesInRtfStrings(void)
 		EDITSTREAM es = { (DWORD_PTR)&rtfCtx_upd, 0, EditStreamCallback };
 		SendMessage(hUpdateCheck, EM_STREAMIN, SF_RTF, (LPARAM)&es);
 	}
+#endif /* ENABLE_NETWORKING */
 }
 
 /**
@@ -1417,13 +1404,20 @@ void AboutTabPrivate::initDialog(void)
 		return;
 	}
 
+#ifdef ENABLE_NETWORKING
+	hUpdateCheck = GetDlgItem(hWndPropSheet, IDC_ABOUT_UPDATE_CHECK);
+	assert(hUpdateCheck != nullptr);
+	if (unlikely(!hUpdateCheck)) {
+		// Something went wrong...
+		return;
+	}
+#endif /* ENABLE_NETWORKING */
+
 	// NOTE: We can't seem to set the dialog ID correctly
 	// when using CreateWindowEx(), so we'll save hRichEdit here.
 	hRichEdit = GetDlgItem(hWndPropSheet, IDC_ABOUT_RICHEDIT);
-	hUpdateCheck = GetDlgItem(hWndPropSheet, IDC_ABOUT_UPDATE_CHECK);
 	assert(hRichEdit != nullptr);
-	assert(hUpdateCheck != nullptr);
-	if (unlikely(!hRichEdit || !hUpdateCheck)) {
+	if (unlikely(!hRichEdit)) {
 		// Something went wrong...
 		return;
 	}
@@ -1457,6 +1451,7 @@ void AboutTabPrivate::initDialog(void)
 			bUseFriendlyLinks = true;
 		}
 
+#ifdef ENABLE_NETWORKING
 		// IDC_ABOUT_UPDATE_CHECK
 		RECT rectUpdateCheck;
 		GetClientRect(hUpdateCheck, &rectUpdateCheck);
@@ -1477,6 +1472,7 @@ void AboutTabPrivate::initDialog(void)
 			// FIXME: Not working...
 			SetWindowLong(hUpdateCheck41, GWL_ID, IDC_ABOUT_UPDATE_CHECK);
 		}
+#endif /* ENABLE_NETWORKING */
 	}
 #endif /* MSFTEDIT_USE_41 */
 
@@ -1495,11 +1491,13 @@ void AboutTabPrivate::initDialog(void)
 	// NOTE: Might only work on Win8+.
 	SendMessage(hRichEdit, EM_AUTOURLDETECT, AURL_ENABLEEMAILADDR, 0);
 
+#ifdef ENABLE_NETWORKING
 	// RichEdit adjustments for IDC_ABOUT_UPDATE_CHECK.
 	// Enable links.
 	eventMask = SendMessage(hUpdateCheck, EM_GETEVENTMASK, 0, 0);
 	SendMessage(hUpdateCheck, EM_SETEVENTMASK, 0, (LPARAM)(eventMask | ENM_LINK));
 	SendMessage(hUpdateCheck, EM_AUTOURLDETECT, AURL_ENABLEURL, 0);
+#endif /* ENABLE_NETWORKING */
 
 	// Initialize the tab text.
 	initCreditsTab();
@@ -1508,14 +1506,16 @@ void AboutTabPrivate::initDialog(void)
 
 	// Subclass the RichEdit controls.
 	// TODO: Error handling?
-	SetWindowSubclass(hRichEdit,
-		LibWin32UI::MultiLineEditProc,
-		IDC_ABOUT_RICHEDIT,
-		reinterpret_cast<DWORD_PTR>(GetParent(hWndPropSheet)));
+#ifdef ENABLE_NETWORKING
 	SetWindowSubclass(hUpdateCheck,
 		LibWin32UI::MultiLineEditProc,
 		IDC_ABOUT_UPDATE_CHECK,
 		reinterpret_cast<DWORD_PTR>(GetParent(hWndPropSheet)));
+#endif /* ENABLE_NETWORKING */
+	SetWindowSubclass(hRichEdit,
+			  LibWin32UI::MultiLineEditProc,
+		   IDC_ABOUT_RICHEDIT,
+		   reinterpret_cast<DWORD_PTR>(GetParent(hWndPropSheet)));
 
 	// Remove the dummy tab.
 	TabCtrl_DeleteItem(hTabControl, MAX_TABS);
@@ -1527,8 +1527,10 @@ void AboutTabPrivate::initDialog(void)
 		// adjust its background and text colors.
 
 		// NOTE: These functions must be called again on theme change!
-		DarkMode_InitRichEdit(hRichEdit);
+#ifdef ENABLE_NETWORKING
 		DarkMode_InitRichEdit(hUpdateCheck);
+#endif /* ENABLE_NETWORKING */
+		DarkMode_InitRichEdit(hRichEdit);
 		// ...but not this function.
 		DarkMode_InitTabControl(hTabControl);
 	}

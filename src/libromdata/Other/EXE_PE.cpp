@@ -3,7 +3,7 @@
  * EXE_PE.cpp: DOS/Windows executable reader.                              *
  * 32-bit/64-bit Portable Executable format.                               *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * Copyright (c) 2022 by Egor.                                             *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
@@ -69,9 +69,9 @@ int EXEPrivate::loadPESectionTable(void)
 
 	// Read the section table, up to SizeOfHeaders.
 	const uint32_t section_count = (SizeOfHeaders - section_table_start) / sizeof(IMAGE_SECTION_HEADER);
-	assert(section_count <= 128);
-	if (section_count > 128) {
-		// Sanity check: Maximum of 128 sections.
+	assert(section_count <= 256);
+	if (section_count > 256) {
+		// Sanity check: Maximum of 256 sections.
 		return -ENOMEM;
 	}
 	pe_sections.resize(section_count);
@@ -314,8 +314,9 @@ int EXEPrivate::readPENullBlock(uint32_t low, uint32_t high, uint32_t minExtra,
  */
 int EXEPrivate::readPEImportDir(void)
 {
-	if (peImportDirLoaded)
+	if (!peImportDir.empty()) {
 		return 0;
+	}
 
 	// NOTE: There appears to be two copies of the DLL listing.
 	// There's one in the file header before any sections, and
@@ -333,8 +334,9 @@ int EXEPrivate::readPEImportDir(void)
 	rp::uvector<uint8_t> impDirTbl;
 	int res = readPEImpExpDir(dataDir, IMAGE_DATA_DIRECTORY_IMPORT_TABLE,
 		sizeof(IMAGE_IMPORT_DIRECTORY), 4*1024*1024, impDirTbl);
-	if (res)
+	if (res) {
 		return res;
+	}
 
 	// Find the lowest and highest DLL name VAs in the import directory table.
 	uint32_t dll_vaddr_low = ~0U;
@@ -381,18 +383,18 @@ int EXEPrivate::readPEImportDir(void)
 	dll_name_data[dll_size_read-1] = '\0';
 
 	// Copy to peImportDir
-	peImportDir.clear();
 	peImportDir.insert(peImportDir.begin(), pImpDirTbl, p);
 
 	// Fill peImportNames
-	peImportNames.clear();
 	peImportNames.reserve(peImportDir.size());
-	for(auto &ent : peImportDir) {
+	for (const auto &ent : peImportDir) {
 		const uint32_t vaddr = le32_to_cpu(ent.rvaModuleName);
 		assert(vaddr >= dll_vaddr_low);
 		assert(vaddr <= dll_vaddr_high);
 		if (vaddr < dll_vaddr_low || vaddr > dll_vaddr_high) {
 			// Out of bounds? This shouldn't have happened...
+			peImportDir.clear();
+			peImportNames.clear();
 			return -ENOENT;
 		}
 
@@ -400,8 +402,8 @@ int EXEPrivate::readPEImportDir(void)
 		const char *const dll_name = &dll_name_data[vaddr - dll_vaddr_low];
 		peImportNames.emplace_back(dll_name);
 	}
+	assert(peImportDir.size() == peImportNames.size());
 
-	peImportDirLoaded = true;
 	return 0;
 }
 /**
@@ -473,8 +475,8 @@ int EXEPrivate::findPERuntimeDLL(string &refDesc, string &refLink)
 		// Check for MSVC 2015-2019. (vcruntime140.dll)
 		if (!strcasecmp(dll_name, "vcruntime140.dll")) {
 			// TODO: If host OS is Windows XP or earlier, limit it to 2017?
-			refDesc = rp_sprintf(
-				C_("EXE|Runtime", "Microsoft Visual C++ %s Runtime"), "2015-2022");
+			refDesc = fmt::format(
+				FRUN(C_("EXE|Runtime", "Microsoft Visual C++ {:s} Runtime")), "2015-2022");
 			switch (le16_to_cpu(hdr.pe.FileHeader.Machine)) {
 				case IMAGE_FILE_MACHINE_I386:
 					refLink = "https://aka.ms/vs/17/release/VC_redist.x86.exe";
@@ -490,8 +492,8 @@ int EXEPrivate::findPERuntimeDLL(string &refDesc, string &refLink)
 			}
 			break;
 		} else if (!strcasecmp(dll_name, "vcruntime140d.dll")) {
-			refDesc = rp_sprintf(
-				C_("EXE|Runtime", "Microsoft Visual C++ %s Debug Runtime"), "2015-2022");
+			refDesc = fmt::format(
+				FRUN(C_("EXE|Runtime", "Microsoft Visual C++ {:s} Debug Runtime")), "2015-2022");
 			break;
 		}
 
@@ -508,8 +510,8 @@ int EXEPrivate::findPERuntimeDLL(string &refDesc, string &refLink)
 				for (const auto &p : msvc_dll_tbl) {
 					if (p.dll_name_version == dll_name_version) {
 						// Found a matching version.
-						refDesc = rp_sprintf(
-							C_("EXE|Runtime", "Microsoft Visual C++ %s Debug Runtime"),
+						refDesc = fmt::format(
+							FRUN(C_("EXE|Runtime", "Microsoft Visual C++ {:s} Debug Runtime")),
 							p.display_version);
 						found = true;
 						break;
@@ -525,8 +527,8 @@ int EXEPrivate::findPERuntimeDLL(string &refDesc, string &refLink)
 				for (const auto &p : msvc_dll_tbl) {
 					if (p.dll_name_version == dll_name_version) {
 						// Found a matching version.
-						refDesc = rp_sprintf(
-							C_("EXE|Runtime", "Microsoft Visual C++ %s Runtime"),
+						refDesc = fmt::format(
+							FRUN(C_("EXE|Runtime", "Microsoft Visual C++ {:s} Runtime")),
 							p.display_version);
 						if (is64) {
 							if (p.url_amd64) {
@@ -553,8 +555,8 @@ int EXEPrivate::findPERuntimeDLL(string &refDesc, string &refLink)
 			refDesc = C_("EXE|Runtime", "Microsoft System C++ Runtime");
 			break;
 		} else if (!strcasecmp(dll_name, "msvcrtd.dll")) {
-			refDesc = rp_sprintf(
-				C_("EXE|Runtime", "Microsoft Visual C++ %s Debug Runtime"), "6.0");
+			refDesc = fmt::format(
+				FRUN(C_("EXE|Runtime", "Microsoft Visual C++ {:s} Debug Runtime")), "6.0");
 			break;
 		}
 
@@ -564,7 +566,7 @@ int EXEPrivate::findPERuntimeDLL(string &refDesc, string &refLink)
 		for (const auto &p : msvb_dll_tbl) {
 			if (!strcasecmp(dll_name, p.dll_name)) {
 				// Found a matching version.
-				refDesc = rp_sprintf(C_("EXE|Runtime", "Microsoft Visual Basic %u.%u Runtime"),
+				refDesc = fmt::format(FRUN(C_("EXE|Runtime", "Microsoft Visual Basic {:d}.{:d} Runtime")),
 					p.ver_major, p.ver_minor);
 				refLink = p.url;
 				break;
@@ -626,7 +628,7 @@ void EXEPrivate::addFields_PE(void)
 	if (hybridMetadataPointer != 0) {
 		switch (machine) {
 			case IMAGE_FILE_MACHINE_I386:
-				s_cpu = "CHPE i386";
+				s_cpu = "CHPEv1 i386";
 				break;
 			case IMAGE_FILE_MACHINE_AMD64:
 				s_cpu = "CHPEv2 ARM64EC";
@@ -643,7 +645,7 @@ void EXEPrivate::addFields_PE(void)
 		if (cpu != nullptr) {
 			s_cpu = cpu;
 		} else {
-			s_cpu = rp_sprintf(C_("RomData", "Unknown (0x%04X)"), machine);
+			s_cpu = fmt::format(FRUN(C_("RomData", "Unknown (0x{:0>4X})")), machine);
 		}
 	}
 	if (dotnet) {
@@ -655,21 +657,21 @@ void EXEPrivate::addFields_PE(void)
 
 	// OS version
 	fields.addField_string(C_("RomData", "OS Version"),
-		rp_sprintf("%u.%u", os_ver_major, os_ver_minor));
+		fmt::format(FSTR("{:d}.{:d}"), os_ver_major, os_ver_minor));
 
 	// Subsystem name and version
 	string subsystem_display;
 	const char *const s_subsystem = EXEData::lookup_pe_subsystem(pe_subsystem);
 	if (s_subsystem) {
-		subsystem_display = rp_sprintf("%s %u.%u", s_subsystem,
+		subsystem_display = fmt::format(FSTR("{:s} {:d}.{:d}"), s_subsystem,
 			subsystem_ver_major, subsystem_ver_minor);
 	} else {
 		const char *const s_unknown = C_("RomData", "Unknown");
 		if (pe_subsystem == IMAGE_SUBSYSTEM_UNKNOWN) {
-			subsystem_display = rp_sprintf("%s %u.%u",
+			subsystem_display = fmt::format(FSTR("{:s} {:d}.{:d}"),
 				s_unknown, subsystem_ver_major, subsystem_ver_minor);
 		} else {
-			subsystem_display = rp_sprintf("%s (%u) %u.%u",
+			subsystem_display = fmt::format(FSTR("{:s} ({:d}) {:d}.{:d}"),
 				s_unknown, pe_subsystem, subsystem_ver_major, subsystem_ver_minor);
 		}
 	}
@@ -677,7 +679,7 @@ void EXEPrivate::addFields_PE(void)
 
 	// PE flags (characteristics)
 	// NOTE: Only important flags will be listed.
-	static const char *const pe_flags_names[] = {
+	static const array<const char*, 16> pe_flags_names = {{
 		nullptr,
 		NOP_C_("EXE|PEFlags", "Executable"),
 		nullptr, nullptr, nullptr,
@@ -687,14 +689,13 @@ void EXEPrivate::addFields_PE(void)
 		nullptr,
 		NOP_C_("EXE|PEFlags", "DLL"),
 		nullptr, nullptr,
-	};
-	vector<string> *const v_pe_flags_names = RomFields::strArrayToVector_i18n(
-		"EXE|PEFlags", pe_flags_names, ARRAY_SIZE(pe_flags_names));
+	}};
+	vector<string> *const v_pe_flags_names = RomFields::strArrayToVector_i18n("EXE|PEFlags", pe_flags_names);
 	fields.addField_bitfield(C_("EXE", "PE Flags"),
 		v_pe_flags_names, 3, pe_flags);
 
 	// DLL flags (characteristics)
-	static const char *const dll_flags_names[] = {
+	static const array<const char*, 16> dll_flags_names = {{
 		nullptr, nullptr, nullptr, nullptr, nullptr,
 		NOP_C_("EXE|DLLFlags", "High Entropy VA"),
 		NOP_C_("EXE|DLLFlags", "Dynamic Base"),
@@ -707,11 +708,27 @@ void EXEPrivate::addFields_PE(void)
 		NOP_C_("EXE|DLLFlags", "WDM Driver"),
 		NOP_C_("EXE|DLLFlags", "Control Flow Guard"),
 		NOP_C_("EXE|DLLFlags", "TS Aware"),
-	};
-	vector<string> *const v_dll_flags_names = RomFields::strArrayToVector_i18n(
-		"EXE|DLLFlags", dll_flags_names, ARRAY_SIZE(dll_flags_names));
+	}};
+	vector<string> *const v_dll_flags_names = RomFields::strArrayToVector_i18n("EXE|DLLFlags", dll_flags_names);
 	fields.addField_bitfield(C_("EXE", "DLL Flags"),
 		v_dll_flags_names, 3, dll_flags);
+
+	// Dependent Load Flags (if present)
+	// NOTE: Displaying as "DLL Search Dirs".
+	uint16_t dependentLoadFlags = getDependentLoadFlags();
+	if (dependentLoadFlags != 0) {
+		// NOTE: Valid flags start at 0x200.
+		dependentLoadFlags >>= 9;
+		static const array<const char*, 4> dependent_load_flags_names = {{
+			NOP_C_("EXE|DependentLoadFlags", "Application Dir"),	// 0x200
+			NOP_C_("EXE|DependentLoadFlags", "User Dirs"),		// 0x400
+			"System32",						// 0x800 (not translatable)
+			NOP_C_("EXE|DependentLoadFlags", "Default Dirs"),	// 0x1000
+		}};
+		vector<string> *const v_dependent_load_flags_names = RomFields::strArrayToVector_i18n("EXE|DependentLoadFlags", dependent_load_flags_names);
+		fields.addField_bitfield(C_("EXE", "DLL Search Dirs"),
+			v_dependent_load_flags_names, 3, dependentLoadFlags);
+	}
 
 	// Timestamp
 	// TODO: Windows 10 modules have hashes here instead of timestamps.
@@ -805,23 +822,31 @@ int EXEPrivate::addFields_PE_Export(void)
 	szExpAddrTbl = std::min(65536-ordinalBase, szExpAddrTbl);
 	const uint32_t *expAddrTbl = reinterpret_cast<const uint32_t*>(
 		checkBounds(rvaExpAddrTbl, szExpAddrTbl*sizeof(uint32_t)));
-	if (!expAddrTbl)
+	if (!expAddrTbl) {
 		return -ENOENT;
+	}
 
 	// Export Name Table
 	const uint32_t rvaExpNameTbl = le32_to_cpu(pExpDirTbl->AddressOfNames);
 	const uint32_t szExpNameTbl = le32_to_cpu(pExpDirTbl->NumberOfNames);
-	const uint32_t *expNameTbl = reinterpret_cast<const uint32_t*>(
-		checkBounds(rvaExpNameTbl, szExpAddrTbl*sizeof(uint32_t)));
-	if (!expNameTbl)
+	static constexpr uint32_t szExpNameTbl_MAX = 16U * 1024U * 1024U;
+	assert(szExpNameTbl <= szExpNameTbl_MAX);
+	if (szExpNameTbl > szExpNameTbl_MAX) {
+		return -ENOMEM;
+	}
+	const uint32_t *const expNameTbl = reinterpret_cast<const uint32_t*>(
+		checkBounds(rvaExpNameTbl, szExpNameTbl*sizeof(uint32_t)));
+	if (!expNameTbl) {
 		return -ENOENT;
+	}
 
 	// Export Ordinal Table
 	const uint32_t rvaExpOrdTbl = le32_to_cpu(pExpDirTbl->AddressOfNameOrdinals);
-	const uint16_t *expOrdTbl = reinterpret_cast<const uint16_t*>(
-		checkBounds(rvaExpOrdTbl, szExpAddrTbl*sizeof(uint16_t)));
-	if (!expOrdTbl)
+	const uint16_t *const expOrdTbl = reinterpret_cast<const uint16_t*>(
+		checkBounds(rvaExpOrdTbl, szExpNameTbl*sizeof(uint16_t)));
+	if (!expOrdTbl) {
 		return -ENOENT;
+	}
 
 	struct ExportEntry {
 		int ordinal;	// index in the address table + ordinal base
@@ -835,10 +860,11 @@ int EXEPrivate::addFields_PE_Export(void)
 	ents.reserve(std::max(szExpAddrTbl, szExpNameTbl));
 
 	// Read address table
-	const uint32_t expDirTbl_base = le32_to_cpu(pExpDirTbl->Base);
 	for (uint32_t i = 0; i < szExpAddrTbl; i++) {
-		ExportEntry ent;
-		ent.ordinal = expDirTbl_base + i;
+		const size_t next_idx = ents.size();
+		ents.resize(next_idx + 1);
+		ExportEntry &ent = ents[next_idx];
+		ent.ordinal = ordinalBase + i;
 		ent.hint = -1;
 		ent.vaddr = le32_to_cpu(expAddrTbl[i]);
 		ent.paddr = pe_vaddr_to_paddr(ent.vaddr, 0);
@@ -850,29 +876,34 @@ int EXEPrivate::addFields_PE_Export(void)
 			const char *fwd = reinterpret_cast<const char *>(expDirTbl.data() + (ent.vaddr - rvaMin));
 			ent.forwarder.assign(fwd, strnlen(fwd, rvaMax - ent.vaddr));
 		}
-		ents.emplace_back(std::move(ent));
 	}
 
 	// Read name table
 	for (uint32_t i = 0; i < szExpNameTbl; i++) {
 		const uint32_t rvaName = le32_to_cpu(expNameTbl[i]);
 		const uint16_t ord = le16_to_cpu(expOrdTbl[i]);
-		if (ord >= szExpAddrTbl) // out of bounds ordinal
+		if (ord >= szExpAddrTbl) {
+			// out of bounds ordinal
 			continue;
-		if (rvaName < rvaMin || rvaName >= rvaMax)
+		}
+		if (rvaName < rvaMin || rvaName >= rvaMax) {
 			continue;
+		}
 		const char *pName = reinterpret_cast<const char*>(expDirTbl.data() + (rvaName - rvaMin));
 		string name(pName, strnlen(pName, rvaMax - rvaName));
 		if (ents[ord].hint != -1) {
 			// This ordinal already has a name.
-			// Temporarily move the old name out to avoid a copy.
-			string oldname = std::move(ents[ord].name);
 			// Duplicate the entry, replace name and hint in the copy.
-			ExportEntry ent = ents[ord];
-			ents[ord].name = std::move(oldname);
-			ent.name = std::move(name);
+			const size_t next_idx = ents.size();
+			ents.resize(next_idx + 1);
+			const ExportEntry &src = ents[ord];
+			ExportEntry &ent = ents[next_idx];
+			ent.ordinal = src.ordinal;
 			ent.hint = i;
-			ents.emplace_back(std::move(ent));
+			ent.vaddr = src.vaddr;
+			ent.paddr = src.paddr;
+			ent.name = std::move(name);
+			ent.forwarder =  src.forwarder;
 		} else {
 			ents[ord].name = std::move(name);
 			ents[ord].hint = i;
@@ -902,7 +933,7 @@ int EXEPrivate::addFields_PE_Export(void)
 		});
 
 	// Convert to ListData
-	auto vv_data = new RomFields::ListData_t();
+	auto *const vv_data = new RomFields::ListData_t();
 	vv_data->reserve(ents.size());
 	for (const ExportEntry &ent : ents) {
 		// Filter out any unused ordinals.
@@ -911,20 +942,23 @@ int EXEPrivate::addFields_PE_Export(void)
 		vv_data->emplace_back();
 		auto &row = vv_data->back();
 		row.reserve(5);
-		row.emplace_back(ent.name);
-		row.emplace_back(rp_sprintf("%d", ent.ordinal));
-		row.emplace_back(ent.hint != -1
-			? rp_sprintf("%d", ent.hint)
-			: C_("EXE|Exports", "None"));
+		row.push_back(ent.name);
+		row.push_back(fmt::to_string(ent.ordinal));
+		if (ent.hint != -1) {
+			row.push_back(fmt::to_string(ent.hint));
+		} else {
+			row.emplace_back(C_("EXE|Exports", "None"));
+		}
 		if (ent.forwarder.size() != 0) {
-			row.emplace_back(ent.forwarder);
+			row.push_back(ent.forwarder);
 			row.emplace_back();
 		} else {
-			row.emplace_back(rp_sprintf("0x%08X", ent.vaddr));
-			if (ent.paddr)
-				row.emplace_back(rp_sprintf("0x%08X", ent.paddr));
-			else
+			row.push_back(fmt::format(FSTR("0x{:0>8X}"), ent.vaddr));
+			if (ent.paddr) {
+				row.push_back(fmt::format(FSTR("0x{:0>8X}"), ent.paddr));
+			} else {
 				row.emplace_back(); // it's probably in the bss section
+			}
 		}
 	}
 
@@ -933,15 +967,14 @@ int EXEPrivate::addFields_PE_Export(void)
 		fields.addTab(C_("EXE", "Exports"));
 		fields.reserve(1);
 
-		static const char *const field_names[] = {
+		static const array<const char*, 5> field_names = {{
 			NOP_C_("EXE|Exports", "Name"),
 			NOP_C_("EXE|Exports", "Ordinal"),
 			NOP_C_("EXE|Exports", "Hint"),
 			NOP_C_("EXE|Exports", "Virtual Address"),
 			NOP_C_("EXE|Exports", "File Offset"),
-		};
-		vector<string> *const v_field_names = RomFields::strArrayToVector_i18n(
-			"EXE|Exports", field_names, ARRAY_SIZE(field_names));
+		}};
+		vector<string> *const v_field_names = RomFields::strArrayToVector_i18n("EXE|Exports", field_names);
 
 		RomFields::AFLD_PARAMS params;
 		params.flags = RomFields::RFT_LISTDATA_SEPARATE_ROW;
@@ -1102,24 +1135,25 @@ int EXEPrivate::addFields_PE_Import(void)
 	}
 
 	// Generate list data
-	auto vv_data = new RomFields::ListData_t();
+	auto *const vv_data = new RomFields::ListData_t();
 	vv_data->reserve(import_count);
 	for (IltIterator it(ilt_end); iltAdvance(it); ) {
 		vv_data->emplace_back();
 		auto &row = vv_data->back();
 		row.reserve(3);
 		if (it.is_ordinal) {
-			row.emplace_back(rp_sprintf(C_("EXE|Exports", "Ordinal #%u"), it.value));
-			row.emplace_back();
+			row.push_back(fmt::format(FRUN(C_("EXE|Exports", "Ordinal #{:d}")), it.value));
+			row.push_back(fmt::to_string(it.value));
 		} else {
 			// RVA to hint number followed by NUL terminated name.
 			// FIXME: How does XEX handle this?
-			auto ent = &dll_hint_data[it.value - dll_hint_base];
+			const char *const ent = &dll_hint_data[it.value - dll_hint_base];
+			// FIXME: This may break on non-i386/amd64 systems...
 			const uint16_t hint = le16_to_cpu(*reinterpret_cast<const uint16_t*>(ent));
 			row.emplace_back(ent+2);
-			row.emplace_back(rp_sprintf("%u", hint));
+			row.push_back(fmt::to_string(hint));
 		}
-		row.emplace_back(*(it.dllname));
+		row.push_back(*(it.dllname));
 	}
 
 	// Sort the list data by (module, name, hint).
@@ -1155,13 +1189,12 @@ int EXEPrivate::addFields_PE_Import(void)
 	fields.reserve(1);
 
 	// Intentionally sharing the translation context with the exports tab.
-	static const char *const field_names[] = {
+	static const array<const char*, 3> field_names = {{
 		NOP_C_("EXE|Exports", "Name"),
 		NOP_C_("EXE|Exports", "Hint"),
 		NOP_C_("EXE|Exports", "Module"),
-	};
-	vector<string> *const v_field_names = RomFields::strArrayToVector_i18n(
-		"EXE|Exports", field_names, ARRAY_SIZE(field_names));
+	}};
+	vector<string> *const v_field_names = RomFields::strArrayToVector_i18n("EXE|Exports", field_names);
 
 	RomFields::AFLD_PARAMS params;
 	params.flags = RomFields::RFT_LISTDATA_SEPARATE_ROW;
@@ -1177,14 +1210,18 @@ int EXEPrivate::addFields_PE_Import(void)
 }
 
 /**
- * Get the hybrid metadata pointer, if present.
- * @return Hybrid metadata pointer, or 0 if not present.
+ * Load the IMAGE_LOAD_CONFIG_DIRECTORY.
+ * @return 0 on success; negative POSIX error code on error. (-ENOENT if not found)
  */
-uint64_t EXEPrivate::getHybridMetadataPointer(void)
+int EXEPrivate::loadPEImageLoadConfigDirectory(void)
 {
-	// Get the Load Config Table.
+	if (ilcd) {
+		// Already loaded.
+		return 0;
+	}
+
 	if (exeType == EXEPrivate::ExeType::PE) {
-		IMAGE_LOAD_CONFIG_DIRECTORY32 load_config;
+		// 32-bit version
 
 		// FIXME: How does XEX handle this?
 #if SYS_BYTEORDER == SYS_LIL_ENDIAN
@@ -1195,29 +1232,33 @@ uint64_t EXEPrivate::getHybridMetadataPointer(void)
 		dirEntry.Size = le32_to_cpu(dirEntry.Size);
 #endif /* SYS_BYTEORDER == SYS_BIG_ENDIAN */
 
+		// TODO: Larger maximum in case it's expanded?
 		if (dirEntry.VirtualAddress == 0 || dirEntry.Size == 0 ||
-		    dirEntry.Size < (offsetof(IMAGE_LOAD_CONFIG_DIRECTORY32, CHPEMetadataPointer) + sizeof(uint32_t)) ||
-		    dirEntry.Size > sizeof(load_config))
+		    dirEntry.Size > sizeof(IMAGE_LOAD_CONFIG_DIRECTORY32))
 		{
-			return 0;
+			return -EIO;
 		}
 
 		uint32_t size = dirEntry.Size;
 		const uint32_t paddr = pe_vaddr_to_paddr(dirEntry.VirtualAddress, size);
-		if (paddr == 0)
-			return 0;
+		if (paddr == 0) {
+			return -ENOENT;
+		};
 
-		size_t sz_read = file->seekAndRead(paddr, &load_config, size);
-		if (sz_read != size)
-			return 0;
+		ilcd.reset(new ImageLoadConfigDirectory);
+		size_t sz_read = file->seekAndRead(paddr, &ilcd->ilcd32, size);
+		if (sz_read != size) {
+			ilcd.reset();
+			return -EIO;
+		}
 
-		// Verify the size of load_config.
-		if (size != le32_to_cpu(load_config.Size))
-			return 0;
-
-		return le32_to_cpu(load_config.CHPEMetadataPointer);
-	} else /*if (exeType == EXEPrivate::ExeType::PE32PLUS)*/ {
-		IMAGE_LOAD_CONFIG_DIRECTORY64 load_config;
+		// Verify the size of the loaded ILCD.
+		if (size != le32_to_cpu(ilcd->ilcd32.Size)) {
+			ilcd.reset();
+			return -EIO;
+		}
+	} else if (exeType == EXEPrivate::ExeType::PE32PLUS) {
+		// 64-bit version
 
 #if SYS_BYTEORDER == SYS_LIL_ENDIAN
 		const auto &dirEntry = hdr.pe.OptionalHeader.opt64.DataDirectory[IMAGE_DATA_DIRECTORY_LOAD_CONFIG_TABLE];
@@ -1227,27 +1268,103 @@ uint64_t EXEPrivate::getHybridMetadataPointer(void)
 		dirEntry.Size = le32_to_cpu(dirEntry.Size);
 #endif /* SYS_BYTEORDER == SYS_BIG_ENDIAN */
 
+		// TODO: Larger maximum in case it's expanded?
 		if (dirEntry.VirtualAddress == 0 || dirEntry.Size == 0 ||
-		    dirEntry.Size < (offsetof(IMAGE_LOAD_CONFIG_DIRECTORY64, CHPEMetadataPointer) + sizeof(uint64_t)) ||
-		    dirEntry.Size > sizeof(load_config))
+		    dirEntry.Size > sizeof(IMAGE_LOAD_CONFIG_DIRECTORY64))
 		{
-			return 0;
+			return -EIO;
 		}
 
 		uint32_t size = dirEntry.Size;
 		const uint32_t paddr = pe_vaddr_to_paddr(dirEntry.VirtualAddress, size);
-		if (paddr == 0)
-			return 0;
+		if (paddr == 0) {
+			return -ENOENT;
+		};
 
-		size_t sz_read = file->seekAndRead(paddr, &load_config, size);
-		if (sz_read != size)
-			return 0;
+		ilcd.reset(new ImageLoadConfigDirectory);
+		size_t sz_read = file->seekAndRead(paddr, &ilcd->ilcd64, size);
+		if (sz_read != size) {
+			ilcd.reset();
+			return -EIO;
+		}
 
-		// Verify the size of load_config.
-		if (size != le32_to_cpu(load_config.Size))
-			return 0;
+		// Verify the size of the loaded ILCD.
+		if (size != le32_to_cpu(ilcd->ilcd64.Size)) {
+			ilcd.reset();
+			return -EIO;
+		}
+	}
 
-		return le64_to_cpu(load_config.CHPEMetadataPointer);
+	return 0;
+}
+
+/**
+ * Get the hybrid metadata pointer, if present.
+ * @return Hybrid metadata pointer, or 0 if not present.
+ */
+uint64_t EXEPrivate::getHybridMetadataPointer(void)
+{
+	if (!ilcd) {
+		// Load the ILCD.
+		if (loadPEImageLoadConfigDirectory() != 0) {
+			// Unable to load the ILCD.
+			return 0;
+		}
+	}
+
+	if (exeType == EXEPrivate::ExeType::PE) {
+		const IMAGE_LOAD_CONFIG_DIRECTORY32 ilcd32 = ilcd->ilcd32;
+		if (ilcd32.Size < (offsetof(IMAGE_LOAD_CONFIG_DIRECTORY32, CHPEMetadataPointer) + sizeof(uint32_t))) {
+			// No CHPE metadata pointer.
+			return 0;
+		}
+
+		return le32_to_cpu(ilcd32.CHPEMetadataPointer);
+	} else if (exeType == EXEPrivate::ExeType::PE32PLUS) {
+		const IMAGE_LOAD_CONFIG_DIRECTORY64 ilcd64 = ilcd->ilcd64;
+		if (ilcd64.Size < (offsetof(IMAGE_LOAD_CONFIG_DIRECTORY64, CHPEMetadataPointer) + sizeof(uint64_t))) {
+			// No CHPE metadata pointer.
+			return 0;
+		}
+
+		return le64_to_cpu(ilcd64.CHPEMetadataPointer);
+	}
+
+	// FIXME: Shouldn't get here...
+	assert(!"Unreachable code!");
+	return 0;
+}
+
+/**
+ * Get the Dependent Load Flags, if present.
+ * @return Dependent Load Flags, or 0 if not present.
+ */
+uint16_t EXEPrivate::getDependentLoadFlags(void)
+{
+	if (!ilcd) {
+		// Load the ILCD.
+		if (loadPEImageLoadConfigDirectory() != 0) {
+			// Unable to load the ILCD.
+			return 0;
+		}
+	}
+
+	if (exeType == EXEPrivate::ExeType::PE) {
+		const IMAGE_LOAD_CONFIG_DIRECTORY32 ilcd32 = ilcd->ilcd32;
+		if (ilcd32.Size < (offsetof(IMAGE_LOAD_CONFIG_DIRECTORY32, DependentLoadFlags) + sizeof(uint16_t))) {
+			// No Dependent Load Flags.
+			return 0;
+		}
+
+		return le16_to_cpu(ilcd32.DependentLoadFlags);
+	} else if (exeType == EXEPrivate::ExeType::PE32PLUS) {
+		const IMAGE_LOAD_CONFIG_DIRECTORY64 ilcd64 = ilcd->ilcd64;
+		if (ilcd64.Size < (offsetof(IMAGE_LOAD_CONFIG_DIRECTORY64, DependentLoadFlags) + sizeof(uint16_t))) {
+			// No Dependent Load Flags.
+			return 0;
+		}
+
+		return le16_to_cpu(ilcd64.DependentLoadFlags);
 	}
 
 	// FIXME: Shouldn't get here...

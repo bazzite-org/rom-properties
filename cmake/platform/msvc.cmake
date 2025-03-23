@@ -89,24 +89,29 @@ FOREACH(FLAG_TEST "/Zc:wchar_t" "/Zc:inline")
 	UNSET(CFLAG_${FLAG_TEST_VARNAME})
 ENDFOREACH()
 
-# MSVC: C/C++ conformance settings (debug builds only)
-FOREACH(FLAG_TEST "/permissive-")
-	# CMake doesn't like certain characters in variable names.
-	STRING(REGEX REPLACE "/|:|=" "_" FLAG_TEST_VARNAME "${FLAG_TEST}")
+# MSVC: C/C++ conformance settings
+IF(CMAKE_SYSTEM_VERSION VERSION_GREATER 9.9)
+	FOREACH(FLAG_TEST "/permissive-")
+		# CMake doesn't like certain characters in variable names.
+		STRING(REGEX REPLACE "/|:|=" "_" FLAG_TEST_VARNAME "${FLAG_TEST}")
 
-	CHECK_C_COMPILER_FLAG("${FLAG_TEST}" CFLAG_${FLAG_TEST_VARNAME})
-	IF(CFLAG_${FLAG_TEST_VARNAME})
-		SET(RP_C_FLAGS_DEBUG "${RP_C_FLAGS_DEBUG} ${FLAG_TEST}")
-		SET(RP_CXX_FLAGS_DEBUG "${RP_CXX_FLAGS_DEBUG} ${FLAG_TEST}")
-	ENDIF(CFLAG_${FLAG_TEST_VARNAME})
-	UNSET(CFLAG_${FLAG_TEST_VARNAME})
-ENDFOREACH()
+		CHECK_C_COMPILER_FLAG("${FLAG_TEST}" CFLAG_${FLAG_TEST_VARNAME})
+		IF(CFLAG_${FLAG_TEST_VARNAME})
+			SET(RP_C_FLAGS_COMMON "${RP_C_FLAGS_COMMON} ${FLAG_TEST}")
+			SET(RP_CXX_FLAGS_COMMON "${RP_CXX_FLAGS_COMMON} ${FLAG_TEST}")
+		ENDIF(CFLAG_${FLAG_TEST_VARNAME})
+		UNSET(CFLAG_${FLAG_TEST_VARNAME})
+	ENDFOREACH()
+ENDIF()
 
 # MSVC: C++ conformance settings
 INCLUDE(CheckCXXCompilerFlag)
-SET(CXX_CONFORMANCE_FLAGS "/Zc:__cplusplus" "/Zc:rvalueCast" "/Zc:ternary")
+SET(CXX_CONFORMANCE_FLAGS "/Zc:__cplusplus" "/Zc:checkGwOdr" "/Zc:rvalueCast" "/Zc:templateScope" "/Zc:ternary")
 IF(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-	SET(CXX_CONFORMANCE_FLAGS "/Zc:externC" "/Zc:noexceptTypes")
+	# clang-cl enables certain conformance options by default,
+	# and these cause warnings to be printed if specified.
+	# Only enable these for original MSVC.
+	SET(CXX_CONFORMANCE_FLAGS ${CXX_CONFORMANCE_FLAGS} "/Zc:externC" "/Zc:noexceptTypes" "/Zc:throwingNew")
 ENDIF(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 FOREACH(FLAG_TEST ${CXX_CONFORMANCE_FLAGS})
 	# CMake doesn't like certain characters in variable names.
@@ -118,18 +123,6 @@ FOREACH(FLAG_TEST ${CXX_CONFORMANCE_FLAGS})
 	ENDIF(CXXFLAG_${FLAG_TEST_VARNAME})
 	UNSET(CXXFLAG_${FLAG_TEST_VARNAME})
 ENDFOREACH()
-
-# "/Zc:throwingNew" is always enabled on clang-cl, and causes
-# warnings to be printed if it's specified.
-# NOTE: "/Zc:throwingNew" was added in MSVC 2015.
-IF(NOT CMAKE_CXX_COMPILER_ID STREQUAL Clang)
-	INCLUDE(CheckCXXCompilerFlag)
-	CHECK_CXX_COMPILER_FLAG("/Zc:throwingNew" CXXFLAG__Zc_throwingNew)
-	IF(CXXFLAG__Zc_throwingNew)
-		SET(RP_CXX_FLAGS_COMMON "${RP_CXX_FLAGS_COMMON} /Zc:throwingNew")
-	ENDIF(CXXFLAG__Zc_throwingNew)
-	UNSET(CXXFLAG__Zc_throwingNew)
-ENDIF(NOT CMAKE_CXX_COMPILER_ID STREQUAL Clang)
 
 # Disable warning C4996 (deprecated), then re-enable it.
 # Otherwise, it gets handled as an error due to /sdl.
@@ -179,6 +172,30 @@ ENDIF(NOT CMAKE_SIZEOF_VOID_P)
 # (It ignores the "\0" in string tables, too.)
 SET(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} /n")
 
+# Dependent load flags (MSVC 2017+, Windows 10 1607+)
+# For most executables and DLLs, this will be set to 0x800 (LOAD_LIBRARY_SEARCH_SYSTEM32),
+# which disables loading DLLs from the current directory and application directory.
+# For unit tests, we have to use 0xA00, which adds LOAD_LIBRARY_SEARCH_APPLICATION_DIR,
+# because Google Test doesn't support delay-load due to exported data symbols.
+#
+# LINK : fatal error LNK1194: cannot delay-load 'gtestd.dll' due to import of data symbol
+# '"__declspec(dllimport) class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > testing::FLAGS_gtest_death_test_style"'
+# link without /DELAYLOAD:gtestd.dll
+IF(MSVC_VERSION GREATER 1909)
+	SET(RP_LINKER_FLAG_DEPENDENT_LOAD_FLAG_DEFAULT "/DEPENDENTLOADFLAG:0x800")
+	SET(RP_LINKER_FLAG_DEPENDENT_LOAD_FLAG_GTEST   "/DEPENDENTLOADFLAG:0xA00")
+
+	MACRO(SET_DEPENDENT_LOAD_FLAG_GTEST)
+		FOREACH(_type EXE SHARED MODULE)
+			STRING(REPLACE "${RP_LINKER_FLAG_DEPENDENT_LOAD_FLAG_DEFAULT}" "${RP_LINKER_FLAG_DEPENDENT_LOAD_FLAG_GTEST}" CMAKE_${_type}_LINKER_FLAGS "${CMAKE_${_type}_LINKER_FLAGS}")
+		ENDFOREACH(_type)
+	ENDMACRO(SET_DEPENDENT_LOAD_FLAG_GTEST)
+ENDIF(MSVC_VERSION GREATER 1909)
+
+FOREACH(_type EXE SHARED MODULE)
+	SET(RP_${_type}_LINKER_FLAGS_COMMON "${RP_${_type}_LINKER_FLAGS_COMMON} ${RP_LINKER_FLAG_DEPENDENT_LOAD_FLAG_DEFAULT}")
+ENDFOREACH(_type)
+
 # TODO: Code coverage checking for MSVC?
 IF(ENABLE_COVERAGE)
 	MESSAGE(FATAL_ERROR "Code coverage testing is currently only supported on gcc and clang.")
@@ -188,21 +205,21 @@ ENDIF(ENABLE_COVERAGE)
 
 SET(RP_C_FLAGS_DEBUG			"/Zi ${RP_C_FLAGS_DEBUG}")
 SET(RP_CXX_FLAGS_DEBUG			"/Zi ${RP_CXX_FLAGS_DEBUG}")
-SET(RP_EXE_LINKER_FLAGS_DEBUG		 "/DEBUG /INCREMENTAL")
+SET(RP_EXE_LINKER_FLAGS_DEBUG		"/DEBUG /INCREMENTAL")
 SET(RP_SHARED_LINKER_FLAGS_DEBUG 	"${RP_EXE_LINKER_FLAGS_DEBUG}")
 SET(RP_MODULE_LINKER_FLAGS_DEBUG 	"${RP_EXE_LINKER_FLAGS_DEBUG}")
 
-#SET(RP_C_FLAGS_RELEASE			"/Zi")
-#SET(RP_CXX_FLAGS_RELEASE		"/Zi")
+SET(RP_C_FLAGS_RELEASE			"/Zi")
+SET(RP_CXX_FLAGS_RELEASE		"/Zi")
 SET(RP_EXE_LINKER_FLAGS_RELEASE		"/DEBUG /INCREMENTAL:NO /OPT:ICF,REF")
 SET(RP_SHARED_LINKER_FLAGS_RELEASE	"${RP_EXE_LINKER_FLAGS_RELEASE}")
 SET(RP_MODULE_LINKER_FLAGS_RELEASE	"${RP_EXE_LINKER_FLAGS_RELEASE}")
 
-SET(RP_C_FLAGS_RELWITHDEBINFO		"/Zi")
-SET(RP_CXX_FLAGS_RELWITHDEBINFO		"/Zi")
-SET(RP_EXE_LINKER_FLAGS_RELEASE		"/DEBUG /INCREMENTAL:NO /OPT:ICF,REF")
-SET(RP_SHARED_LINKER_FLAGS_RELEASE	"${RP_EXE_LINKER_FLAGS_RELEASE}")
-SET(RP_MODULE_LINKER_FLAGS_RELEASE	"${RP_EXE_LINKER_FLAGS_RELEASE}")
+SET(RP_C_FLAGS_RELWITHDEBINFO			"/Zi")
+SET(RP_CXX_FLAGS_RELWITHDEBINFO			"/Zi")
+SET(RP_EXE_LINKER_FLAGS_RELWITHDEBINFO		"/DEBUG /INCREMENTAL:NO /OPT:ICF,REF")
+SET(RP_SHARED_LINKER_FLAGS_RELWITHDEBINFO	"${RP_EXE_LINKER_FLAGS_RELWITHDEBINFO}")
+SET(RP_MODULE_LINKER_FLAGS_RELWITHDEBINFO	"${RP_EXE_LINKER_FLAGS_RELWITHDEBINFO}")
 
 # Check for link-time optimization. (Release builds only.)
 IF(ENABLE_LTO)

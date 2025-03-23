@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (Win32)                            *
  * RP_ContextMenu.hpp: IContextMenu implementation.                        *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -38,8 +38,8 @@ using std::vector;
 const CLSID CLSID_RP_ContextMenu =
 	{0x150715EA, 0x6843, 0x472C, {0x97, 0x09, 0x2C, 0xFA, 0x56, 0x69, 0x05, 0x01}};
 
-#define CTX_VERB_A "rp-convert-to-png"
-#define CTX_VERB_W L"rp-convert-to-png"
+static const char CTX_VERB_A[] = "rp-convert-to-png";
+static const wchar_t CTX_VERB_W[] = L"rp-convert-to-png";
 
 #define IDM_RP_CONVERT_TO_PNG 0
 
@@ -130,9 +130,9 @@ int RP_ContextMenu_Private::convert_to_png(LPCTSTR source_filename)
 	// tEXt chunks
 	RpPngWriter::kv_vector kv;
 
-	unique_ptr<RpPngWriter> pngWriter(new RpPngWriter(output_filename.get(),
-		img->width(), height, img->format()));
-	if (!pngWriter->isOpen()) {
+	RpPngWriter pngWriter(output_filename.get(),
+		img->width(), height, img->format());
+	if (!pngWriter.isOpen()) {
 		// Could not open the PNG writer.
 		return RPCT_ERROR_OUTPUT_FILE_FAILED;
 	}
@@ -143,7 +143,7 @@ int RP_ContextMenu_Private::convert_to_png(LPCTSTR source_filename)
 	kv.emplace_back("Software", "ROM Properties Page shell extension (Win32)");
 
 	// Write the tEXt chunks.
-	pngWriter->write_tEXt(kv);
+	pngWriter.write_tEXt(kv);
 
 	/** IHDR **/
 
@@ -153,7 +153,7 @@ int RP_ContextMenu_Private::convert_to_png(LPCTSTR source_filename)
 	if (img->get_sBIT(&sBIT) != 0) {
 		memset(&sBIT, 0, sizeof(sBIT));
 	}
-	int pwRet = pngWriter->write_IHDR(&sBIT,
+	int pwRet = pngWriter.write_IHDR(&sBIT,
 		img->palette(), img->palette_len());
 	if (pwRet != 0) {
 		// Error writing IHDR.
@@ -172,7 +172,7 @@ int RP_ContextMenu_Private::convert_to_png(LPCTSTR source_filename)
 	}
 
 	// Write the IDAT section.
-	pwRet = pngWriter->write_IDAT(row_pointers.get());
+	pwRet = pngWriter.write_IDAT(row_pointers.get());
 	if (pwRet != 0) {
 		// Error writing IDAT.
 		// TODO: Unlink the PNG image.
@@ -447,7 +447,7 @@ IFACEMETHODIMP RP_ContextMenu::Initialize(
 
 		if (is_texture) {
 			// It's a supported texture. Save the filename.
-			d->tfilenames->emplace_back(tfilename);
+			d->tfilenames->push_back(tfilename);
 		} else {
 			// Not a supported texture.
 			free(tfilename);
@@ -560,10 +560,10 @@ IFACEMETHODIMP RP_ContextMenu::GetCommandString(_In_ UINT_PTR idCmd, _In_ UINT u
 	if (idCmd == IDM_RP_CONVERT_TO_PNG) {
 		switch (uType) {
 			case GCS_VERBA:
-				snprintf(pszName, cchMax, CTX_VERB_A);
+				snprintf(pszName, cchMax, "%s", CTX_VERB_A);
 				return S_OK;
 			case GCS_VERBW:
-				_snwprintf(reinterpret_cast<LPWSTR>(pszName), cchMax, CTX_VERB_W);
+				_snwprintf(reinterpret_cast<LPWSTR>(pszName), cchMax, _T("%s"), CTX_VERB_W);
 				return S_OK;
 
 			case GCS_HELPTEXTA:

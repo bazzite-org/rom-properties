@@ -8,6 +8,7 @@ MACRO(FIND_QT5_AND_KF5)
 
 	SET(ENV{QT_SELECT} qt5)
 	SET(QT_DEFAULT_MAJOR_VERSION 5)
+	SET(QT_NO_CREATE_VERSIONLESS_TARGETS TRUE)
 
 	# FIXME: Search for Qt5 first instead of ECM?
 
@@ -24,10 +25,6 @@ MACRO(FIND_QT5_AND_KF5)
 		LIST(APPEND CMAKE_MODULE_PATH ${ECM_MODULE_PATH} ${ECM_KDE_MODULE_DIR})
 		INCLUDE(KDEInstallDirs)
 		INCLUDE(KDECMakeSettings)
-
-		# Qt5 requires "-fpic -fPIC" due to reduced relocations.
-		SET(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -fpic -fPIC")
-		SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpic -fPIC")
 
 		# Find Qt5.
 		SET(Qt5_NO_LINK_QTMAIN 1)
@@ -61,7 +58,8 @@ MACRO(FIND_QT5_AND_KF5)
 
 			# Get the plugin directory and Qt prefix.
 			# Prefix will be removed from the plugin directory if necessary.
-			EXEC_PROGRAM(${QTPATHS5} ARGS --plugin-dir OUTPUT_VARIABLE KF5_PLUGIN_INSTALL_DIR)
+			EXECUTE_PROCESS(COMMAND ${QTPATHS5} --plugin-dir OUTPUT_VARIABLE KF5_PLUGIN_INSTALL_DIR)
+			STRING(STRIP "${KF5_PLUGIN_INSTALL_DIR}" KF5_PLUGIN_INSTALL_DIR)
 			IF(NOT KF5_PLUGIN_INSTALL_DIR)
 				MESSAGE(FATAL_ERROR "`qtpaths5` isn't working correctly.")
 			ENDIF(NOT KF5_PLUGIN_INSTALL_DIR)
@@ -72,11 +70,11 @@ MACRO(FIND_QT5_AND_KF5)
 			SET(QT_PLUGIN_INSTALL_DIR "${KF5_PLUGIN_INSTALL_DIR}")
 
 			# Find KF5. (TODO: Version?)
-			FIND_PACKAGE(KF5 ${REQUIRE_KF5} COMPONENTS CoreAddons KIO WidgetsAddons FileMetaData)
-			IF(NOT KF5CoreAddons_FOUND OR NOT KF5KIO_FOUND OR NOT KF5WidgetsAddons_FOUND OR NOT KF5FileMetaData_FOUND)
+			FIND_PACKAGE(KF5 ${REQUIRE_KF5} COMPONENTS CoreAddons KIO WidgetsAddons FileMetaData Crash)
+			IF(NOT KF5CoreAddons_FOUND OR NOT KF5KIO_FOUND OR NOT KF5WidgetsAddons_FOUND OR NOT KF5FileMetaData_FOUND OR NOT KF5Crash_FOUND)
 				# KF5 not found.
 				SET(BUILD_KF5 OFF CACHE INTERNAL "Build the KDE Frameworks 5 plugin." FORCE)
-			ENDIF(NOT KF5CoreAddons_FOUND OR NOT KF5KIO_FOUND OR NOT KF5WidgetsAddons_FOUND OR NOT KF5FileMetaData_FOUND)
+			ENDIF(NOT KF5CoreAddons_FOUND OR NOT KF5KIO_FOUND OR NOT KF5WidgetsAddons_FOUND OR NOT KF5FileMetaData_FOUND OR NOT KF5Crash_FOUND)
 
 			# CoreAddons: If earlier than 5.85, install service menus in ${SERVICES_INSTALL_DIR}.
 			IF(TARGET KF5::CoreAddons AND KF5CoreAddons_VERSION VERSION_LESS 5.84.79)

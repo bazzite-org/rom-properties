@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (KDE)                              *
  * ImageTypesTab.cpp: Image Types tab for rp-config.                       *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -19,6 +19,9 @@ using namespace LibRomData;
 // Other rom-properties libraries
 using LibRpBase::RomData;
 using namespace LibRpText;
+
+// C++ STL classes
+using std::string;
 
 #include "ui_ImageTypesTab.h"
 class ImageTypesTabPrivate final : public TImageTypesConfig<QComboBox*>
@@ -59,7 +62,10 @@ protected:
 	/**
 	 * Finish adding the ComboBoxes.
 	 */
-	void finishComboBoxes(void) final;
+	void finishComboBoxes(void) final
+	{
+		// Nothing to do here.
+	}
 
 	/**
 	 * Initialize the Save subsystem.
@@ -100,15 +106,13 @@ public:
 	/** Other ImageTypesTabPrivate functions **/
 
 	/**
-	 * Initialize strings.
+	 * Initialize the Credits label.
 	 */
-	void initStrings(void);
+	void initCreditsLabel(void);
 
 public:
-	// Last ComboBox added.
-	// Needed in order to set the correct
-	// tab order for the credits label.
-	QComboBox *cboImageType_lastAdded;
+	// Credits label
+	QLabel *lblCredits;
 
 	// Temporary QSettings object.
 	// Set and cleared by ImageTypesTab::save();
@@ -119,15 +123,15 @@ public:
 
 ImageTypesTabPrivate::ImageTypesTabPrivate(ImageTypesTab* q)
 	: q_ptr(q)
-	, cboImageType_lastAdded(nullptr)
+	, lblCredits(nullptr)
 	, pSettings(nullptr)
 { }
 
 ImageTypesTabPrivate::~ImageTypesTabPrivate()
 {
-	// cboImageType_lastAdded should be nullptr.
-	// (Cleared by finishComboBoxes().)
-	assert(cboImageType_lastAdded == nullptr);
+	// lblCredits should *not* be nullptr.
+	// (Created by initCreditsLabel().)
+	assert(lblCredits != nullptr);
 
 	// pSettings should be nullptr,
 	// since it's only used when saving.
@@ -157,9 +161,8 @@ void ImageTypesTabPrivate::createGridLabels(void)
 		}
 
 		QLabel *const lblImageType = new QLabel(U82Q(imageTypeName(i)), q);
-		char lbl_name[32];
-		snprintf(lbl_name, sizeof(lbl_name), "lblImageType%u", i);
-		lblImageType->setObjectName(QLatin1String(lbl_name));
+		lblImageType->setObjectName(QLatin1String(
+			fmt::format(FSTR("lblImageType{:d}"), i).c_str()));
 
 		lblImageType->setAlignment(Qt::AlignTop|Qt::AlignHCenter);
 		lblImageType->setStyleSheet(cssImageType);
@@ -172,9 +175,8 @@ void ImageTypesTabPrivate::createGridLabels(void)
 	const unsigned int sysCount = ImageTypesConfig::sysCount();
 	for (unsigned int sys = 0; sys < sysCount; sys++) {
 		QLabel *const lblSysName = new QLabel(U82Q(sysName(sys)), q);
-		char lbl_name[32];
-		snprintf(lbl_name, sizeof(lbl_name), "lblSysName%u", sys);
-		lblSysName->setObjectName(QLatin1String(lbl_name));
+		lblSysName->setObjectName(QLatin1String(
+			fmt::format(FSTR("lblSysName{:d}"), sys).c_str()));
 
 		lblSysName->setAlignment(Qt::AlignVCenter|Qt::AlignLeft);
 		lblSysName->setStyleSheet(cssSysName);
@@ -204,9 +206,8 @@ void ImageTypesTabPrivate::createComboBox(unsigned int cbid)
 	// Create the ComboBox.
 	Q_Q(ImageTypesTab);
 	QComboBox *const cbo = new QComboBox(q);
-	char cbo_name[32];
-	snprintf(cbo_name, sizeof(cbo_name), "cbo%04X", cbid);
-	cbo->setObjectName(QLatin1String(cbo_name));
+	const string cbo_name = fmt::format(FSTR("cbo{:0>4X}"), cbid);
+	cbo->setObjectName(QLatin1String(cbo_name.c_str()));
 	ui.gridImageTypes->addWidget(cbo, sys+1, imageType+1);
 	sysData.cboImageType[imageType] = cbo;
 
@@ -214,12 +215,6 @@ void ImageTypesTabPrivate::createComboBox(unsigned int cbid)
 	cbo->setProperty("rp-config.cbid", cbid);
 	QObject::connect(cbo, SIGNAL(currentIndexChanged(int)),
 			 q, SLOT(cboImageType_currentIndexChanged()));
-
-	// Adjust the tab order.
-	if (cboImageType_lastAdded) {
-		q->setTabOrder(cboImageType_lastAdded, cbo);
-	}
-	cboImageType_lastAdded = cbo;
 }
 
 /**
@@ -251,22 +246,6 @@ void ImageTypesTabPrivate::addComboBoxStrings(unsigned int cbid, int max_prio)
 	}
 	cbo->setCurrentIndex(0);
 	cbo->blockSignals(blockCbo);
-}
-
-/**
- * Finish adding the ComboBoxes.
- */
-void ImageTypesTabPrivate::finishComboBoxes(void)
-{
-	if (!cboImageType_lastAdded) {
-		// Nothing to do here.
-		return;
-	}
-
-	// Set the tab order for the credits label.
-	Q_Q(ImageTypesTab);
-	q->setTabOrder(cboImageType_lastAdded, ui.lblCredits);
-	cboImageType_lastAdded = nullptr;
 }
 
 /**
@@ -349,10 +328,31 @@ void ImageTypesTabPrivate::cboImageType_setPriorityValue(unsigned int cbid, unsi
 /** Other ImageTypesTabPrivate functions **/
 
 /**
- * Initialize strings.
+ * Initialize the Credits label.
  */
-void ImageTypesTabPrivate::initStrings(void)
+void ImageTypesTabPrivate::initCreditsLabel(void)
 {
+	// Create the Credits label if it hasn't been created yet.
+	if (!lblCredits) {
+		RP_Q(ImageTypesTab);
+
+		QSizePolicy sizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+		sizePolicy.setHorizontalStretch(0);
+		sizePolicy.setVerticalStretch(0);
+
+		lblCredits = new QLabel(q);
+		sizePolicy.setHeightForWidth(lblCredits->sizePolicy().hasHeightForWidth());
+		lblCredits->setSizePolicy(sizePolicy);
+		lblCredits->setFocusPolicy(Qt::StrongFocus);
+		lblCredits->setTextFormat(Qt::RichText);
+		lblCredits->setAlignment(Qt::AlignBottom|Qt::AlignLeading|Qt::AlignLeft);
+		lblCredits->setWordWrap(true);
+		lblCredits->setOpenExternalLinks(true);
+		lblCredits->setTextInteractionFlags(Qt::LinksAccessibleByKeyboard|Qt::LinksAccessibleByMouse);
+
+		ui.vboxMain->addWidget(lblCredits);
+	}
+
 	// tr: External image credits.
 	QString sCredits = QC_("ImageTypesTab",
 		"GameCube, Wii, Wii U, Nintendo DS, and Nintendo 3DS external images\n"
@@ -362,7 +362,7 @@ void ImageTypesTabPrivate::initStrings(void)
 
 	// Replace "\n" with "<br/>".
 	sCredits.replace(QChar(L'\n'), QLatin1String("<br/>"));
-	ui.lblCredits->setText(sCredits);
+	lblCredits->setText(sCredits);
 }
 
 /** ImageTypesTab **/
@@ -374,11 +374,14 @@ ImageTypesTab::ImageTypesTab(QWidget *parent)
 	Q_D(ImageTypesTab);
 	d->ui.setupUi(this);
 
-	// Initialize strings.
-	d->initStrings();
-
 	// Create the control grid.
 	d->createGrid();
+
+	// Create the credits label.
+	// NOTE: Creating it here instead of in the UI file in order to work around
+	// issues with tab ordering. (setTabOrder() isn't working if the control
+	// right before it is the final QComboBox that was created...)
+	d->initCreditsLabel();
 }
 
 ImageTypesTab::~ImageTypesTab()
@@ -396,7 +399,7 @@ void ImageTypesTab::changeEvent(QEvent *event)
 		// Retranslate the UI.
 		Q_D(ImageTypesTab);
 		d->ui.retranslateUi(this);
-		d->initStrings();
+		d->initCreditsLabel();
 	}
 
 	// Pass the event to the base class.
@@ -466,7 +469,7 @@ void ImageTypesTab::cboImageType_currentIndexChanged(void)
 	const unsigned int cbid = cbo->property("rp-config.cbid").toUInt();
 
 	const int idx = cbo->currentIndex();
-	const unsigned int prio = (unsigned int)(idx <= 0 ? 0xFF : idx-1);
+	const unsigned int prio = static_cast<unsigned int>(idx <= 0 ? 0xFF : idx-1);
 	if (d->cboImageType_priorityValueChanged(cbid, prio)) {
 		// Configuration has been changed.
 		emit modified();

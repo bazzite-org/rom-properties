@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * WiiWAD_ops.cpp: Nintendo Wii WAD file reader. (ROM operations)          *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -50,7 +50,7 @@ vector<RomData::RomOp> WiiWAD::romOps_int(void) const
 	op.flags &= ~RomOp::ROF_ENABLED;
 #endif /* ENABLE_DECRYPTION */
 
-	ops.emplace_back(std::move(op));
+	ops.push_back(std::move(op));
 	return ops;
 }
 
@@ -126,7 +126,7 @@ int WiiWAD::doRomOp_int(int id, RomOpParams *pParams)
 	assert((bool)srcFile);
 	if (!srcFile) {
 		// No source file...
-		// TODO: More useful message? (may need std::string)
+		// TODO: More useful message?
 		pParams->status = -EIO;
 		pParams->msg = C_("WiiWAD", "Unable to open the SRL.");
 		goto out;
@@ -135,7 +135,7 @@ int WiiWAD::doRomOp_int(int id, RomOpParams *pParams)
 	// Create the output file.
 	destFile = new RpFile(pParams->save_filename, RpFile::FM_CREATE_WRITE);
 	if (!destFile->isOpen()) {
-		// TODO: More useful message? (may need std::string)
+		// TODO: More useful message?
 		pParams->status = -destFile->lastError();
 		pParams->msg = C_("WiiWAD", "Could not open output SRL file.");
 		goto out;

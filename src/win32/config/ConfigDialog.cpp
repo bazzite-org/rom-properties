@@ -96,6 +96,7 @@ ConfigDialogPrivate::ConfigDialogPrivate()
 		ICC_LISTVIEW_CLASSES |
 		ICC_LINK_CLASS |
 		ICC_TAB_CLASSES |
+		ICC_USEREX_CLASSES |
 		ICC_PROGRESS_CLASS;
 
 	// TODO: Also ICC_STANDARD_CLASSES on XP+?
@@ -536,9 +537,8 @@ int CALLBACK rp_show_config_dialog(
 	InitDarkMode();
 	lastDarkModeEnabled = g_darkModeEnabled;
 
-	ConfigDialog *cfg = new ConfigDialog();
-	INT_PTR ret = cfg->exec();
-	delete cfg;
+	ConfigDialog cfg;
+	INT_PTR ret = cfg.exec();
 
 	// Dark mode background brush
 	if (hbrBkgnd) {

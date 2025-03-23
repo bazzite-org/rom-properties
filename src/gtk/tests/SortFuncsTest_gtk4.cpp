@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (gtk/tests)                        *
  * SortFuncsTest_gtk4.cpp: sort_funcs.c test (GTK4)                        *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -26,6 +26,9 @@
 // C++ STL classes
 using std::array;
 using std::string;
+
+// libfmt
+#include "rp-libfmt.h"
 
 // Test data
 #include "SortFuncsTest_data.h"
@@ -112,7 +115,7 @@ void SortFuncsTest_gtk4::SetUp()
 	// Add the "randomized" list data.
 	// NOTE: Outer vector is rows, not columns!
 	// TODO: Add from the sorted data, then do a random sort?
-	for (auto *p : list_data_randomized) {
+	for (const auto *const p : list_data_randomized) {
 		RpListDataItem *const item = rp_list_data_item_new(4, RP_LIST_DATA_ITEM_COL0_TYPE_TEXT);
 		rp_list_data_item_set_column_text(item, 0, p[0]);
 		rp_list_data_item_set_column_text(item, 1, p[1]);
@@ -149,16 +152,13 @@ TEST_F(SortFuncsTest_gtk4, ascendingSort)
 		for (row = 0; row < rowCount; row++) {
 			RpListDataItem *const item = RP_LIST_DATA_ITEM(g_list_model_get_item(G_LIST_MODEL(sortProxy), row));
 			EXPECT_NE(item, nullptr) << "Unexpected NULL item received";
-			if (!item)
+			if (!item) {
 				continue;
+			}
 
 			// Get the string from this column.
 			const char *str = rp_list_data_item_get_column_text(item, col);
-			EXPECT_NE(str, nullptr) << "Unexpected NULL string pointer";
-			if (str) {
-				EXPECT_NE(str[0], '\0') << "Unexpected empty string";
-				EXPECT_STREQ(sorted_strings_asc[col][row], str) << "sorting column " << col << ", checking row " << row;
-			}
+			EXPECT_STREQ(sorted_strings_asc[col][row], str) << "sorting column " << col << ", checking row " << row;
 		};
 
 		ASSERT_EQ(rowCount, row) << "Row count does not match the number of rows received";
@@ -184,18 +184,14 @@ TEST_F(SortFuncsTest_gtk4, descendingSort)
 		for (row = 0; row < rowCount; row++) {
 			RpListDataItem *const item = RP_LIST_DATA_ITEM(g_list_model_get_item(G_LIST_MODEL(sortProxy), row));
 			EXPECT_NE(item, nullptr) << "Unexpected NULL item received";
-			if (!item)
+			if (!item) {
 				continue;
+			}
 
 			// Get the string from this column.
 			const char *str = rp_list_data_item_get_column_text(item, col);
-			EXPECT_NE(str, nullptr) << "Unexpected NULL string pointer";
-			if (str) {
-				EXPECT_NE(str[0], '\0') << "Unexpected empty string";
-
-				const int drow = ARRAY_SIZE(sorted_strings_asc[row]) - row - 1;
-				EXPECT_STREQ(sorted_strings_asc[col][drow], str) << "sorting column " << col << ", checking row " << row;
-			}
+			const int drow = ARRAY_SIZE(sorted_strings_asc[row]) - row - 1;
+			EXPECT_STREQ(sorted_strings_asc[col][drow], str) << "sorting column " << col << ", checking row " << row;
 		};
 
 		ASSERT_EQ(rowCount, row) << "Row count does not match the number of rows received";
@@ -209,7 +205,7 @@ TEST_F(SortFuncsTest_gtk4, descendingSort)
  */
 extern "C" int gtest_main(int argc, TCHAR *argv[])
 {
-	fprintf(stderr, "GTK%d UI frontend test suite: SortFuncs tests.\n\n", GTK_MAJOR_VERSION);
+	fmt::print(stderr, FSTR("GTK{:d} UI frontend test suite: SortFuncs tests.\n\n"), GTK_MAJOR_VERSION);
 	fflush(nullptr);
 
 	// coverity[fun_call_w_exception]: uncaught exceptions cause nonzero exit anyway, so don't warn.

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * SegaSaturn.hpp: Sega Saturn disc image reader.                          *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -33,7 +33,7 @@ namespace LibRomData {
 class SegaSaturnPrivate final : public RomDataPrivate
 {
 public:
-	SegaSaturnPrivate(const IRpFilePtr &file);
+	explicit SegaSaturnPrivate(const IRpFilePtr &file);
 
 private:
 	typedef RomDataPrivate super;
@@ -41,8 +41,8 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const char *const exts[];
-	static const char *const mimeTypes[];
+	static const array<const char*, 2+1> exts;
+	static const array<const char*, 1+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
 public:
@@ -148,7 +148,7 @@ public:
 ROMDATA_IMPL(SegaSaturn)
 
 /* RomDataInfo */
-const char *const SegaSaturnPrivate::exts[] = {
+const array<const char*, 2+1> SegaSaturnPrivate::exts = {{
 	".iso",	// ISO-9660 (2048-byte)
 	".bin",	// Raw (2352-byte)
 
@@ -157,15 +157,15 @@ const char *const SegaSaturnPrivate::exts[] = {
 	//".nrg",	// Nero
 
 	nullptr
-};
-const char *const SegaSaturnPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> SegaSaturnPrivate::mimeTypes = {{
 	// Unofficial MIME types from FreeDesktop.org.
 	"application/x-saturn-rom",
 
 	nullptr
-};
+}};
 const RomDataInfo SegaSaturnPrivate::romDataInfo = {
-	"SegaSaturn", exts, mimeTypes
+	"SegaSaturn", exts.data(), mimeTypes.data()
 };
 
 SegaSaturnPrivate::SegaSaturnPrivate(const IRpFilePtr &file)
@@ -405,6 +405,9 @@ SegaSaturn::SegaSaturn(const IRpFilePtr &file)
 	// Parse the Saturn region code.
 	d->saturn_region = d->parseRegionCodes(
 		d->discHeader.area_symbols, sizeof(d->discHeader.area_symbols));
+
+	// Is PAL? (TODO: Multi-region?)
+	d->isPAL = (d->saturn_region == SegaSaturnPrivate::SATURN_REGION_EUROPE);
 }
 
 /**
@@ -470,9 +473,9 @@ const char *SegaSaturn::systemName(unsigned int type) const
 	static_assert(SYSNAME_TYPE_MASK == 3,
 		"SegaSaturn::systemName() array index optimization needs to be updated.");
 
-	static const char *const sysNames[4] = {
+	static const array<const char*, 4> sysNames = {{
 		"Sega Saturn", "Saturn", "Sat", nullptr
-	};
+	}};
 
 	return sysNames[type & SYSNAME_TYPE_MASK];
 }
@@ -491,12 +494,12 @@ int SegaSaturn::loadFieldData(void)
 	} else if (!d->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->discType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->discType) < 0) {
 		// Unknown ROM image type.
 		return -EIO;
 	}
 
-	// Sega Saturn disc header.
+	// Sega Saturn disc header
 	const Saturn_IP0000_BIN_t *const discHeader = &d->discHeader;
 	d->fields.reserve(8);	// Maximum of 8 fields.
 	d->fields.setTabName(0, C_("SegaSaturn", "Saturn"));
@@ -506,58 +509,56 @@ int SegaSaturn::loadFieldData(void)
 		latin1_to_utf8(discHeader->title, sizeof(discHeader->title)),
 		RomFields::STRF_TRIM_END);
 
-	// Publisher.
+	// Publisher
 	d->fields.addField_string(C_("RomData", "Publisher"), d->getPublisher());
 
 	// TODO: Latin-1, cp1252, or Shift-JIS?
 
-	// Product number.
+	// Product number
 	d->fields.addField_string(C_("SegaSaturn", "Product #"),
 		latin1_to_utf8(discHeader->product_number, sizeof(discHeader->product_number)),
 		RomFields::STRF_TRIM_END);
 
-	// Product version.
+	// Product version
 	d->fields.addField_string(C_("RomData", "Version"),
 		latin1_to_utf8(discHeader->product_version, sizeof(discHeader->product_version)),
 		RomFields::STRF_TRIM_END);
 
-	// Release date.
+	// Release date
 	const time_t release_date = d->ascii_yyyymmdd_to_unix_time(discHeader->release_date);
 	d->fields.addField_dateTime(C_("RomData", "Release Date"), release_date,
 		RomFields::RFT_DATETIME_HAS_DATE |
 		RomFields::RFT_DATETIME_IS_UTC  // Date only.
 	);
 
-	// Region code.
+	// Region code
 	// Sega Saturn uses position-independent region code flags.
-	// This is similar to older Mega Drive games, but different
-	// compared to Dreamcast. The region code is parsed in the
-	// constructor, since it might be used for branding purposes
-	// later.
-	static const char *const region_code_bitfield_names[] = {
+	// This is similar to older Mega Drive games, but different compared
+	// to Dreamcast. The region code is parsed in the constructor, since
+	// it might be used for branding purposes later.
+	static const array<const char*, 4> region_code_bitfield_names = {{
 		NOP_C_("Region", "Japan"),
 		NOP_C_("Region", "Taiwan"),
 		NOP_C_("Region", "USA"),
 		NOP_C_("Region", "Europe"),
-	};
-	vector<string> *const v_region_code_bitfield_names = RomFields::strArrayToVector_i18n(
-		"Region", region_code_bitfield_names, ARRAY_SIZE(region_code_bitfield_names));
+	}};
+	vector<string> *const v_region_code_bitfield_names = RomFields::strArrayToVector_i18n("Region", region_code_bitfield_names);
 	d->fields.addField_bitfield(C_("RomData", "Region Code"),
 		v_region_code_bitfield_names, 0, d->saturn_region);
 
-	// Disc number.
+	// Disc number
 	uint8_t disc_num, disc_total;
 	d->parseDiscNumber(disc_num, disc_total);
 	if (disc_num != 0 && disc_total > 1) {
 		const char *const disc_number_title = C_("RomData", "Disc #");
 		d->fields.addField_string(disc_number_title,
 			// tr: Disc X of Y (for multi-disc games)
-			rp_sprintf_p(C_("RomData|Disc", "%1$u of %2$u"),
+			fmt::format(FRUN(C_("RomData|Disc", "{0:d} of {1:d}")),
 				disc_num, disc_total));
 	}
 
-	// Peripherals.
-	static const char *const peripherals_bitfield_names[] = {
+	// Peripherals
+	static const array<const char*, 15> peripherals_bitfield_names = {{
 		NOP_C_("SegaSaturn|Peripherals", "Control Pad"),
 		NOP_C_("SegaSaturn|Peripherals", "Analog Controller"),
 		NOP_C_("SegaSaturn|Peripherals", "Mouse"),
@@ -573,9 +574,9 @@ int SegaSaturn::loadFieldData(void)
 		NOP_C_("SegaSaturn|Peripherals", "Floppy Drive"),
 		NOP_C_("SegaSaturn|Peripherals", "ROM Cartridge"),
 		NOP_C_("SegaSaturn|Peripherals", "MPEG Card"),
-	};
+	}};
 	vector<string> *const v_peripherals_bitfield_names = RomFields::strArrayToVector_i18n(
-		"SegaSaturn|Peripherals", peripherals_bitfield_names, ARRAY_SIZE(peripherals_bitfield_names));
+		"SegaSaturn|Peripherals", peripherals_bitfield_names);
 	// Parse peripherals.
 	const uint32_t peripherals = d->parsePeripherals(discHeader->peripherals, sizeof(discHeader->peripherals));
 	d->fields.addField_bitfield(C_("SegaSaturn", "Peripherals"),
@@ -584,17 +585,16 @@ int SegaSaturn::loadFieldData(void)
 	// Try to open the ISO-9660 object.
 	// NOTE: Only done here because the ISO-9660 fields
 	// are used for field info only.
-	ISO *const isoData = new ISO(d->file);
-	if (isoData->isOpen()) {
+	ISO isoData(d->file);
+	if (isoData.isOpen()) {
 		// Add the fields.
-		const RomFields *const isoFields = isoData->fields();
+		const RomFields *const isoFields = isoData.fields();
 		assert(isoFields != nullptr);
 		if (isoFields) {
 			d->fields.addFields_romFields(isoFields,
 				RomFields::TabOffset_AddTabs);
 		}
 	}
-	delete isoData;
 
 	// Finished reading the field data.
 	return static_cast<int>(d->fields.count());
@@ -608,45 +608,42 @@ int SegaSaturn::loadFieldData(void)
 int SegaSaturn::loadMetaData(void)
 {
 	RP_D(SegaSaturn);
-	if (d->metaData != nullptr) {
+	if (!d->metaData.empty()) {
 		// Metadata *has* been loaded...
 		return 0;
 	} else if (!d->file) {
 		// File isn't open.
 		return -EBADF;
-	} else if (!d->isValid || (int)d->discType < 0) {
+	} else if (!d->isValid || static_cast<int>(d->discType) < 0) {
 		// Unknown disc image type.
 		return -EIO;
 	}
 
-	// Create the metadata object.
-	d->metaData = new RomMetaData();
-
-	// Sega Saturn disc header.
+	// Sega Saturn disc header
 	const Saturn_IP0000_BIN_t *const discHeader = &d->discHeader;
-	d->metaData->reserve(4);	// Maximum of 4 metadata properties.
+	d->metaData.reserve(4);	// Maximum of 4 metadata properties.
 
-	// Title. (TODO: Encoding?)
-	d->metaData->addMetaData_string(Property::Title,
+	// Title (TODO: Encoding?)
+	d->metaData.addMetaData_string(Property::Title,
 		latin1_to_utf8(discHeader->title, sizeof(discHeader->title)),
 		RomMetaData::STRF_TRIM_END);
 
-	// Publisher.
-	d->metaData->addMetaData_string(Property::Publisher, d->getPublisher());
+	// Publisher
+	d->metaData.addMetaData_string(Property::Publisher, d->getPublisher());
 
-	// Release date.
-	d->metaData->addMetaData_timestamp(Property::CreationDate,
+	// Release date
+	d->metaData.addMetaData_timestamp(Property::CreationDate,
 		d->ascii_yyyymmdd_to_unix_time(discHeader->release_date));
 
-	// Disc number. (multiple disc sets only)
+	// Disc number (multiple disc sets only)
 	uint8_t disc_num, disc_total;
 	d->parseDiscNumber(disc_num, disc_total);
 	if (disc_num != 0 && disc_total > 1) {
-		d->metaData->addMetaData_integer(Property::DiscNumber, disc_num);
+		d->metaData.addMetaData_integer(Property::DiscNumber, disc_num);
 	}
 
 	// Finished reading the metadata.
-	return static_cast<int>(d->metaData->count());
+	return static_cast<int>(d->metaData.count());
 }
 
-}
+} // namespace LibRomData

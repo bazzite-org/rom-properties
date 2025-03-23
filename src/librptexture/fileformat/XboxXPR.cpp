@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librptexture)                     *
  * XboxXPR.cpp: Microsoft Xbox XPR0 texture reader.                        *
  *                                                                         *
- * Copyright (c) 2019-2024 by David Korth.                                 *
+ * Copyright (c) 2019-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -16,7 +16,6 @@
 #include "libi18n/i18n.h"
 using namespace LibRpFile;
 using LibRpBase::RomFields;
-using LibRpText::rp_sprintf;
 
 // librptexture
 #include "img/rp_image.hpp"
@@ -25,6 +24,7 @@ using LibRpText::rp_sprintf;
 
 // C++ STL classes
 using std::array;
+using std::string;
 
 namespace LibRpTexture {
 
@@ -32,7 +32,6 @@ class XboxXPRPrivate final : public FileFormatPrivate
 {
 	public:
 		XboxXPRPrivate(XboxXPR *q, const IRpFilePtr &file);
-		~XboxXPRPrivate() final = default;
 
 	private:
 		typedef FileFormatPrivate super;
@@ -40,8 +39,8 @@ class XboxXPRPrivate final : public FileFormatPrivate
 
 	public:
 		/** TextureInfo **/
-		static const char *const exts[];
-		static const char *const mimeTypes[];
+		static const array<const char*, 2+1> exts;
+		static const array<const char*, 1+1> mimeTypes;
 		static const TextureInfo textureInfo;
 
 	public:
@@ -63,7 +62,7 @@ class XboxXPRPrivate final : public FileFormatPrivate
 		rp_image_ptr img;
 
 		// Invalid pixel format message
-		char invalid_pixel_format[24];
+		mutable string invalid_pixel_format;
 
 		/**
 		 * Generate swizzle masks for unswizzling ARGB textures.
@@ -158,21 +157,21 @@ FILEFORMAT_IMPL(XboxXPR)
 /** XboxXPRPrivate **/
 
 /* TextureInfo */
-const char *const XboxXPRPrivate::exts[] = {
+const array<const char*, 2+1> XboxXPRPrivate::exts = {{
 	".xbx", ".xpr",
 
 	nullptr
-};
-const char *const XboxXPRPrivate::mimeTypes[] = {
+}};
+const array<const char*, 1+1> XboxXPRPrivate::mimeTypes = {{
 	// Unofficial MIME types.
 	// TODO: Get these upstreamed on FreeDesktop.org.
 	// TODO: Add additional MIME types for XPR1/XPR2. (archive files)
 	"image/x-xbox-xpr0",
 
 	nullptr
-};
+}};
 const TextureInfo XboxXPRPrivate::textureInfo = {
-	exts, mimeTypes
+	exts.data(), mimeTypes.data()
 };
 
 XboxXPRPrivate::XboxXPRPrivate(XboxXPR *q, const IRpFilePtr &file)
@@ -181,7 +180,6 @@ XboxXPRPrivate::XboxXPRPrivate(XboxXPR *q, const IRpFilePtr &file)
 {
 	// Clear the structs and arrays.
 	memset(&xpr0Header, 0, sizeof(xpr0Header));
-	memset(invalid_pixel_format, 0, sizeof(invalid_pixel_format));
 }
 
 /**
@@ -540,7 +538,7 @@ rp_image_const_ptr XboxXPRPrivate::loadXboxXPR0Image(void)
 			width, height,
 			static_cast<uint8_t*>(imgunswz->bits()),
 			img->stride(), sizeof(uint32_t));
-		img = imgunswz;
+		img = std::move(imgunswz);
 	}
 
 	return img;
@@ -637,7 +635,7 @@ XboxXPR::XboxXPR(const IRpFilePtr &file)
 const char *XboxXPR::pixelFormat(void) const
 {
 	RP_D(const XboxXPR);
-	if (!d->isValid || (int)d->xprType < 0) {
+	if (!d->isValid || static_cast<int>(d->xprType) < 0) {
 		// Not supported.
 		return nullptr;
 	}
@@ -704,13 +702,12 @@ const char *XboxXPR::pixelFormat(void) const
 
 	// Invalid pixel format.
 	// Store an error message instead.
-	// TODO: Localization?
-	if (d->invalid_pixel_format[0] == '\0') {
-		snprintf(const_cast<XboxXPRPrivate*>(d)->invalid_pixel_format,
-			sizeof(d->invalid_pixel_format),
-			"Unknown (0x%02X)", d->xpr0Header.pixel_format);
+	if (d->invalid_pixel_format.empty()) {
+		d->invalid_pixel_format = fmt::format(
+			FRUN(C_("RomData", "Unknown (0x{:0>2X})")),
+			d->xpr0Header.pixel_format);
 	}
-	return d->invalid_pixel_format;
+	return d->invalid_pixel_format.c_str();
 }
 
 #ifdef ENABLE_LIBRPBASE_ROMFIELDS
@@ -726,7 +723,7 @@ int XboxXPR::getFields(RomFields *fields) const
 		return 0;
 
 	RP_D(const XboxXPR);
-	if (!d->isValid || (int)d->xprType < 0) {
+	if (!d->isValid || static_cast<int>(d->xprType) < 0) {
 		// Unknown XPR image type.
 		return -EIO;
 	}
@@ -740,12 +737,12 @@ int XboxXPR::getFields(RomFields *fields) const
 		"XPR0", "XPR1", "XPR2"
 	};
 	if (d->xprType > XboxXPRPrivate::XPRType::Unknown &&
-	    (int)d->xprType < ARRAY_SIZE_I(type_tbl))
+	    static_cast<int>(d->xprType) < ARRAY_SIZE_I(type_tbl))
 	{
-		fields->addField_string(s_type_title, type_tbl[(int)d->xprType]);
+		fields->addField_string(s_type_title, type_tbl[static_cast<size_t>(d->xprType)]);
 	} else {
 		fields->addField_string(s_type_title,
-			rp_sprintf(C_("RomData", "Unknown (%d)"), (int)d->xprType));
+			fmt::format(FRUN(C_("RomData", "Unknown ({:d})")), static_cast<int>(d->xprType)));
 	}
 
 	// Finished reading the field data.
@@ -764,7 +761,7 @@ int XboxXPR::getFields(RomFields *fields) const
 rp_image_const_ptr XboxXPR::image(void) const
 {
 	RP_D(const XboxXPR);
-	if (!d->isValid || (int)d->xprType < 0) {
+	if (!d->isValid || static_cast<int>(d->xprType) < 0) {
 		// Unknown file type.
 		return nullptr;
 	}
@@ -773,4 +770,4 @@ rp_image_const_ptr XboxXPR::image(void) const
 	return const_cast<XboxXPRPrivate*>(d)->loadXboxXPR0Image();
 }
 
-}
+} // namespace LibRpTexture

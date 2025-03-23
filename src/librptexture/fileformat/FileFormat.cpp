@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librptexture)                     *
  * FileFormat.cpp: Texture file format base class.                         *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -28,7 +28,6 @@ namespace LibRpTexture {
  */
 FileFormatPrivate::FileFormatPrivate(FileFormat *q, const IRpFilePtr &file, const TextureInfo *pTextureInfo)
 	: q_ptr(q)
-	, ref_cnt(1)
 	, isValid(false)
 	, file(file)
 	, pTextureInfo(pTextureInfo)
@@ -39,8 +38,8 @@ FileFormatPrivate::FileFormatPrivate(FileFormat *q, const IRpFilePtr &file, cons
 	assert(pTextureInfo != nullptr);
 
 	// Clear the arrays.
-	memset(dimensions, 0, sizeof(dimensions));
-	memset(rescale_dimensions, 0, sizeof(rescale_dimensions));
+	dimensions.fill(0);
+	rescale_dimensions.fill(0);
 
 	// Initialize i18n.
 	rp_i18n_init();
@@ -143,7 +142,7 @@ int FileFormat::getDimensions(int pBuf[3]) const
 		return -EBADF;
 	}
 
-	memcpy(pBuf, d->dimensions, sizeof(d->dimensions));
+	memcpy(pBuf, d->dimensions.data(), d->dimensions.size() * sizeof(int));
 	return 0;
 }
 
@@ -170,7 +169,7 @@ int FileFormat::getRescaleDimensions(int pBuf[2]) const
 		return -ENOENT;
 	}
 
-	memcpy(pBuf, d->rescale_dimensions, sizeof(d->rescale_dimensions));
+	memcpy(pBuf, d->rescale_dimensions.data(), d->rescale_dimensions.size() * sizeof(int));
 	return 0;
 }
 

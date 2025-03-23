@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (GTK+ common)                      *
  * RpGtk.c: glib/gtk+ wrappers for some libromdata functionality.          *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -14,9 +14,9 @@
 #include "stdboolx.h"
 
 // Use the new GtkFileDialog class on GTK 4.10 and later.
-#if GTK_CHECK_VERSION(4,9,1)
+#if GTK_CHECK_VERSION(4, 9, 1)
 #  define USE_GTK4_FILE_DIALOG 1
-#endif /* GTK_CHECK_VERSION(4,9,1) */
+#endif /* GTK_CHECK_VERSION(4, 9, 1) */
 
 // Simple struct for passing multiple values to the rpGtk_getFileName_int() callback functions.
 typedef struct _rpGtk_getFileName_int_callback_data_t {
@@ -139,7 +139,7 @@ static int rpFileFilterToGtkFileChooser(GtkFileChooser *fileChooser, const char 
 }
 #endif /* !USE_GTK4_FILE_DIALOG */
 
-#if USE_GTK4_FILE_DIALOG
+#ifdef USE_GTK4_FILE_DIALOG
 /**
  * Convert an RP file dialog filter to GTK4 for GtkFileDialog.
  *
@@ -250,11 +250,11 @@ rpGtk_getFileName_fileDialog_response(GtkFileChooserDialog *fileDialog, gint res
 	}
 
 	// Dialog is no longer needed.
-#if GTK_CHECK_VERSION(4,0,0)
+#if GTK_CHECK_VERSION(4, 0, 0)
 	gtk_window_destroy(GTK_WINDOW(fileDialog));
-#else /* !GTK_CHECK_VERSION(4,0,0) */
+#else /* !GTK_CHECK_VERSION(4, 0, 0) */
 	gtk_widget_destroy(GTK_WIDGET(fileDialog));
-#endif /* GTK_CHECK_VERSION(4,0,0) */
+#endif /* GTK_CHECK_VERSION(4, 0, 0) */
 
 	// Run the callback.
 	// NOTE: Callback function takes ownership of the GFile.
@@ -275,7 +275,7 @@ rpGtk_getFileName_fileDialog_response(GtkFileChooserDialog *fileDialog, gint res
  */
 static int rpGtk_getFileName_int(const rpGtk_getFileName_t *gfndata, bool bSave)
 {
-#if USE_GTK4_FILE_DIALOG
+#ifdef USE_GTK4_FILE_DIALOG
 	// GTK 4.10.0 introduces a new GtkFileDialog.
 	GtkFileDialog *const fileDialog = gtk_file_dialog_new();
 	if (gfndata->title) {
@@ -301,13 +301,13 @@ static int rpGtk_getFileName_int(const rpGtk_getFileName_t *gfndata, bool bSave)
 	gtk_widget_set_name(fileDialog, "rpGtk_getFileName");
 #endif /* USE_GTK4_FILE_DIALOG */
 
-#if GTK_CHECK_VERSION(4,0,0)
+#if GTK_CHECK_VERSION(4, 0, 0)
 	// GTK4, GtkFileChooserDialog and/or GtkFileDialog
 	// Set the initial folder. (A GFile is required.)
 	if (gfndata->init_dir) {
 		GFile *const set_file = g_file_new_for_path(gfndata->init_dir);
 		if (set_file) {
-#  if USE_GTK4_FILE_DIALOG
+#  ifdef USE_GTK4_FILE_DIALOG
 			gtk_file_dialog_set_initial_folder(fileDialog, set_file);
 #  else /* !USE_GTK4_FILE_DIALOG */
 			gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(fileDialog), set_file, NULL);
@@ -315,7 +315,7 @@ static int rpGtk_getFileName_int(const rpGtk_getFileName_t *gfndata, bool bSave)
 			g_object_unref(set_file);
 		}
 	}
-#else /* !GTK_CHECK_VERSION(4,0,0) */
+#else /* !GTK_CHECK_VERSION(4, 0, 0) */
 	// GTK2/GTK3: Require overwrite confirmation. (save dialogs only)
 	// NOTE: GTK4 has *mandatory* overwrite confirmation.
 	// Reference: https://gitlab.gnome.org/GNOME/gtk/-/commit/063ad28b1a06328e14ed72cc4b99cd4684efed12
@@ -331,7 +331,7 @@ static int rpGtk_getFileName_int(const rpGtk_getFileName_t *gfndata, bool bSave)
 
 	// Set the initial name.
 	if (gfndata->init_name) {
-#  if USE_GTK4_FILE_DIALOG
+#  ifdef USE_GTK4_FILE_DIALOG
 		gtk_file_dialog_set_initial_name(fileDialog, gfndata->init_name);
 #  else /* !USE_GTK4_FILE_DIALOG */
 		gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(fileDialog), gfndata->init_name);
@@ -340,7 +340,7 @@ static int rpGtk_getFileName_int(const rpGtk_getFileName_t *gfndata, bool bSave)
 
 	// Set the file filters.
 	if (gfndata->filter) {
-#if USE_GTK4_FILE_DIALOG
+#ifdef USE_GTK4_FILE_DIALOG
 		rpFileFilterToGtkFileDialog(fileDialog, gfndata->filter);
 #else /* !USE_GTK4_FILE_DIALOG */
 		rpFileFilterToGtkFileChooser(GTK_FILE_CHOOSER(fileDialog), gfndata->filter);
@@ -355,7 +355,7 @@ static int rpGtk_getFileName_int(const rpGtk_getFileName_t *gfndata, bool bSave)
 	gfncbdata->bSave = bSave;
 
 	// Prompt for a filename.
-#if USE_GTK4_FILE_DIALOG
+#ifdef USE_GTK4_FILE_DIALOG
 	gtk_file_dialog_set_modal(fileDialog, true);
 	if (bSave) {
 		gtk_file_dialog_save(fileDialog, gfndata->parent, NULL,

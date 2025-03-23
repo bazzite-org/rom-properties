@@ -24,7 +24,7 @@ ADD_DEFINITIONS(-D_GNU_SOURCE=1)
 # Test for common CFLAGS and CXXFLAGS.
 # NOTE: Not adding -Werror=format-nonliteral because there are some
 # legitimate uses of non-literal format strings.
-SET(CFLAGS_WARNINGS -Wall -Wextra -Wno-multichar -Werror=return-type -Wheader-hygiene)
+SET(CFLAGS_WARNINGS -Wall -Wextra -Wno-multichar -Werror=return-type -Wheader-hygiene -Wno-psabi)
 SET(CFLAGS_WERROR_FORMAT -Werror=format -Werror=format-security -Werror=format-signedness -Werror=format-truncation -Werror=format-y2k)
 SET(CFLAGS_OPTIONS -fstrict-aliasing -Werror=strict-aliasing -fno-common -fcf-protection -fno-math-errno)
 IF(MINGW)
@@ -89,7 +89,7 @@ IF(ENABLE_COVERAGE)
 
 	# Don't bother checking for the coverage options.
 	# We're assuming they're always supported.
-	SET(RP_C_FLAGS_COVERAGE "--coverage -fprofile-arcs -ftest-coverage")
+	SET(RP_C_FLAGS_COVERAGE "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic")
 	SET(RP_C_FLAGS_COMMON "${RP_C_FLAGS_COMMON} ${RP_C_FLAGS_COVERAGE}")
 	SET(RP_CXX_FLAGS_COMMON "${RP_CXX_FLAGS_COMMON} ${RP_C_FLAGS_COVERAGE}")
 	SET(RP_EXE_LINKER_FLAGS_COMMON "${RP_CXX_FLAGS_COMMON} ${RP_C_FLAGS_COVERAGE}")
@@ -283,6 +283,11 @@ SET(RP_CXX_FLAGS_RELEASE	"-O2 -DNDEBUG ${CFLAGS_VECTORIZE}")
 
 SET(RP_C_FLAGS_RELWITHDEBINFO	"-O2 -ggdb -DNDEBUG ${CFLAGS_VECTORIZE}")
 SET(RP_CXX_FLAGS_RELWITHDEBINFO	"-O2 -ggdb -DNDEBUG ${CFLAGS_VECTORIZE}")
+
+# Enable C++ assertions. (libstdc++ / libc++)
+# Also enable C++ debug mode. (libstdc++ only)
+# TODO: Only enable GLIBCXX for libstdc++, and LIBCPP for libc++.
+SET(RP_CXX_FLAGS_DEBUG "${RP_CXX_FLAGS_DEBUG} -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_DEBUG -D_GLIBCXX_DEBUG_PEDANTIC -D_LIBCPP_ENABLE_ASSERTIONS -D_LIBCPP_ENABLE_HARDENED_MODE")
 
 # Unset temporary variables.
 UNSET(CFLAG_OPTIMIZE_DEBUG)

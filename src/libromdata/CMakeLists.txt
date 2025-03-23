@@ -1,10 +1,10 @@
 # RomData subclasses and factory class.
 PROJECT(romdata LANGUAGES CXX)
 
-IF(NOT WIN32)
+IF(ENABLE_NETWORKING AND NOT WIN32)
 	INCLUDE(CheckSymbolExists)
 	CHECK_SYMBOL_EXISTS(posix_spawn "spawn.h" HAVE_POSIX_SPAWN)
-ENDIF(NOT WIN32)
+ENDIF(ENABLE_NETWORKING AND NOT WIN32)
 
 # Sources.
 SET(${PROJECT_NAME}_SRCS
@@ -51,6 +51,7 @@ SET(${PROJECT_NAME}_SRCS
 	Handheld/DMG.cpp
 	Handheld/GameBoyAdvance.cpp
 	Handheld/GameCom.cpp
+	Handheld/J2ME.cpp
 	Handheld/Lynx.cpp
 	Handheld/NGPC.cpp
 	Handheld/Nintendo3DS.cpp
@@ -114,6 +115,7 @@ SET(${PROJECT_NAME}_SRCS
 	data/Xbox360_STFS_ContentType.cpp
 
 	disc/Cdrom2352Reader.cpp
+	disc/CdiReader.cpp
 	disc/CIAReader.cpp
 	disc/CisoGcnReader.cpp
 	disc/CisoPspReader.cpp
@@ -221,6 +223,7 @@ SET(${PROJECT_NAME}_H
 	Handheld/DMG.hpp
 	Handheld/GameBoyAdvance.hpp
 	Handheld/GameCom.hpp
+	Handheld/J2ME.hpp
 	Handheld/Lynx.hpp
 	Handheld/NGPC.hpp
 	Handheld/Nintendo3DS.hpp
@@ -329,6 +332,7 @@ SET(${PROJECT_NAME}_H
 	data/XboxPublishers_data.h
 	data/Xbox360_STFS_ContentType.hpp
 
+	disc/CdiReader.hpp
 	disc/Cdrom2352Reader.hpp
 	disc/CIAReader.hpp
 	disc/CisoGcnReader.hpp
@@ -341,6 +345,7 @@ SET(${PROJECT_NAME}_H
 	disc/GdiReader.hpp
 	disc/IResourceReader.hpp
 	disc/IsoPartition.hpp
+	disc/MultiTrackSparseDiscReader.hpp
 	disc/NASOSReader.hpp
 	disc/NCCHReader.hpp
 	disc/NCCHReader_p.hpp
@@ -396,18 +401,23 @@ IF(ENABLE_DECRYPTION)
 		)
 ENDIF(ENABLE_DECRYPTION)
 
-# OS-specific sources.
-IF(WIN32)
-	SET(${PROJECT_NAME}_OS_SRCS img/ExecRpDownload_win32.cpp)
-	IF(RP_LIBROMDATA_IS_DLL)
-		SET(${PROJECT_NAME}_RC res/resource.rc)
-	ENDIF(RP_LIBROMDATA_IS_DLL)
-ELSEIF(UNIX)
-	SET(${PROJECT_NAME}_OS_SRCS img/ExecRpDownload_posix.cpp)
-ELSE()
-	# Dummy implementation for unsupported systems.
-	SET(${PROJECT_NAME}_OS_SRCS img/ExecRpDownload_dummy.cpp)
-ENDIF()
+# Network-related sources
+IF(ENABLE_NETWORKING)
+	IF(WIN32)
+		SET(${PROJECT_NAME}_NETWORKING_SRCS img/ExecRpDownload_win32.cpp)
+	ELSEIF(UNIX)
+		SET(${PROJECT_NAME}_NETWORKING_SRCS img/ExecRpDownload_posix.cpp)
+	ENDIF()
+ENDIF(ENABLE_NETWORKING)
+IF(NOT ${PROJECT_NAME}_NETWORKING_SRCS)
+	# Dummy implementation for unsupported systems, or if networking is disabled.
+	SET(${PROJECT_NAME}_NETWORKING_SRCS img/ExecRpDownload_dummy.cpp)
+ENDIF(NOT ${PROJECT_NAME}_NETWORKING_SRCS)
+
+# Windows resource file (for RomData DLL builds only)
+IF(WIN32 AND RP_LIBROMDATA_IS_DLL)
+	SET(${PROJECT_NAME}_RC res/resource.rc)
+ENDIF(WIN32 AND RP_LIBROMDATA_IS_DLL)
 
 # Optimized sources.
 INCLUDE(CPUInstructionSetFlags)
@@ -450,8 +460,8 @@ IF(RP_LIBROMDATA_IS_DLL)
 	ADD_DEFINITIONS(-DRP_BUILDING_FOR_DLL=1)
 	# NOTE: Not using the project version here.
 	# This represents the ABI version.
-	SET(${PROJECT_NAME}_VERSION 5.0)
-	SET(${PROJECT_NAME}_SOVERSION 5)
+	SET(${PROJECT_NAME}_VERSION 6.0)
+	SET(${PROJECT_NAME}_SOVERSION 6)
 	IF(MSVC)
 		# Delay-load sources.
 		SET(${PROJECT_NAME}-DELAYLOAD_SRC ../libwin32common/DelayLoadHelper.c)
@@ -517,7 +527,7 @@ ENDIF(WIN32)
 ADD_LIBRARY(${PROJECT_NAME} ${${PROJECT_NAME}_LINKAGE}
 	${${PROJECT_NAME}-DELAYLOAD_SRC} ${${PROJECT_NAME}-DELAYLOAD_H}
 	${${PROJECT_NAME}_SRCS} ${${PROJECT_NAME}_H}
-	${${PROJECT_NAME}_OS_SRCS} ${${PROJECT_NAME}_OS_H}
+	${${PROJECT_NAME}_NETWORKING_SRCS}
 	${${PROJECT_NAME}_CRYPTO_SRCS} ${${PROJECT_NAME}_CRYPTO_H}
 	${${PROJECT_NAME}_IFUNC_SRCS}
 	${${PROJECT_NAME}_MMX_SRCS}
@@ -530,6 +540,9 @@ IF(ENABLE_PCH)
 		stdafx.h
 		)
 ENDIF(ENABLE_PCH)
+
+# Enable PIC.
+SET_TARGET_PROPERTIES(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 
 IF(WIN32)
 	# Append the SOVERSION and "d" for debug.
@@ -635,6 +648,11 @@ ELSE()
 ENDIF()
 TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE inih)
 
+# libfmt
+IF(Fmt_FOUND)
+	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE ${Fmt_LIBRARY})
+ENDIF(Fmt_FOUND)
+
 # Shared library stuff
 TARGET_COMPILE_DEFINITIONS(${PROJECT_NAME} PRIVATE RP_BUILDING_LIBROMDATA=1)
 IF(${PROJECT_NAME}_LINKAGE STREQUAL SHARED)
@@ -655,7 +673,6 @@ IF(${PROJECT_NAME}_LINKAGE STREQUAL SHARED)
 		RP_LibRpBase_TextOut_json_ForceLinkage
 		RP_LibRpBase_TextOut_text_ForceLinkage
 		RP_LibRpFile_RecursiveScan_ForceLinkage
-		RP_LibRpFile_VectorFile_ForceLinkage
 		RP_LibRpFile_XAttrReader_ForceLinkage
 		RP_LibRpFile_XAttrReader_impl_ForceLinkage
 		)
@@ -718,6 +735,9 @@ IF(ZLIB_FOUND)
 	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE ${ZLIB_LIBRARIES})
 	TARGET_INCLUDE_DIRECTORIES(${PROJECT_NAME} PUBLIC ${ZLIB_INCLUDE_DIRS})
 	TARGET_COMPILE_DEFINITIONS(${PROJECT_NAME} PRIVATE ${ZLIB_DEFINITIONS})
+
+	# MiniZip (used by J2ME)
+	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE minizip)
 ELSE(ZLIB_FOUND)
 	MESSAGE(FATAL_ERROR "ZLIB_LIBRARIES has not been set by CheckZLIB.cmake.")
 ENDIF(ZLIB_FOUND)
@@ -758,12 +778,6 @@ ENDIF(ENABLE_LZ4 AND LZ4_FOUND)
 IF(ENABLE_LZO AND LZO_FOUND)
 	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE ${LZO_LIBRARY})
 ENDIF(ENABLE_LZO AND LZO_FOUND)
-
-# Unix: Add -fpic/-fPIC in order to use this static library in plugins.
-IF(UNIX AND NOT APPLE)
-	SET(CMAKE_C_FLAGS	"${CMAKE_C_FLAGS} -fpic -fPIC")
-	SET(CMAKE_CXX_FLAGS	"${CMAKE_CXX_FLAGS} -fpic -fPIC")
-ENDIF(UNIX AND NOT APPLE)
 
 # Test suite.
 IF(BUILD_TESTING)

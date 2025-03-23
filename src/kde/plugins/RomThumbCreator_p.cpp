@@ -2,18 +2,25 @@
  * ROM Properties Page shell extension. (KDE4/KF5)                         *
  * RomThumbCreator_p.cpp: Thumbnail creator. (PRIVATE CLASS)               *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
 #include "stdafx.h"
+#include "config.kde.h"
+
 #include "RomThumbCreator_p.hpp"
 
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0) && defined(HAVE_QtDBus)
+#if defined(ENABLE_NETWORKING) && QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) && defined(HAVE_QtDBus)
 // NetworkManager D-Bus interface to determine if the connection is metered.
 // FIXME: Broken on Qt4.
+#  define ENABLE_METER_CHECK 1
+#endif /* defined(ENABLE_NETWORKING) && QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) && defined(HAVE_QtDBus) */
+
+#ifdef ENABLE_METER_CHECK
+// NetworkManager D-Bus interface to determine if the connection is metered.
 #  include "networkmanagerinterface.h"
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,0,0) && HAVE_QtDBus */
+#endif /* ENABLE_METER_CHECK */
 
 /** TCreateThumbnail functions **/
 
@@ -46,11 +53,11 @@ QImage RomThumbCreatorPrivate::rescaleImgClass(const QImage &imgClass, ImgSize s
 	// being changes to QImage::Format_ARGB32_Premultiplied.
 	// Convert it back to plain ARGB32 if that happens.
 	if (img.format() == QImage::Format_ARGB32_Premultiplied) {
-#if QT_VERSION >= QT_VERSION_CHECK(5,13,0)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 13, 0)
 		img.convertTo(QImage::Format_ARGB32);
-#else /* QT_VERSION < QT_VERSION_CHECK(5,13,0) */
+#else /* QT_VERSION < QT_VERSION_CHECK(5, 13, 0) */
 		img = img.convertToFormat(QImage::Format_ARGB32);
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,13,0) */
+#endif /* QT_VERSION >= QT_VERSION_CHECK(5, 13, 0) */
 	}
 
 	return img;
@@ -67,7 +74,7 @@ QImage RomThumbCreatorPrivate::rescaleImgClass(const QImage &imgClass, ImgSize s
  */
 bool RomThumbCreatorPrivate::isMetered(void)
 {
-#if QT_VERSION >= QT_VERSION_CHECK(5,0,0) && defined(HAVE_QtDBus)
+#ifdef ENABLE_METER_CHECK
 	org::freedesktop::NetworkManager iface(
 		QLatin1String("org.freedesktop.NetworkManager"),
 		QLatin1String("/org/freedesktop/NetworkManager"),
@@ -88,8 +95,8 @@ bool RomThumbCreatorPrivate::isMetered(void)
 	};
 	const NMMetered metered = static_cast<NMMetered>(iface.metered());
 	return (metered == NM_METERED_YES || metered == NM_METERED_GUESS_YES);
-#else
+#else /* !ENABLE_METER_CHECK */
 	// FIXME: Broken on Qt4.
 	return false;
-#endif /* QT_VERSION >= QT_VERSION_CHECK(5,0,0) && HAVE_QtDBus */
+#endif /* ENABLE_METER_CHECK */
 }
