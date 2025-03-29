@@ -46,6 +46,7 @@ using namespace LibRomData;
 #include "librptexture/img/rp_image.hpp"
 #ifdef _WIN32
 #  include "libwin32common/RpWin32_sdk.h"
+#  include "libwin32common/rp_versionhelpers.h"
 #  include "librptexture/img/GdiplusHelper.hpp"
 #endif /* _WIN32 */
 using namespace LibRpTexture;
@@ -502,6 +503,16 @@ static void DoAtaIdentifyDevice(const TCHAR *filename, bool json, bool packet)
 }
 #endif /* RP_OS_SCSI_SUPPORTED */
 
+#ifdef _WIN32
+static UINT old_console_cp = 0;
+static void RestoreConsoleCP(void)
+{
+	if (old_console_cp != 0) {
+		SetConsoleOutputCP(old_console_cp);
+	}
+}
+#endif /* _WIN32 */
+
 static void ShowUsage(void)
 {
 	// TODO: Use argv[0] instead of hard-coding 'rpcli'?
@@ -583,7 +594,12 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 #endif /* __GLIBC__ */
 
 	// Set the C and C++ locales.
+#if defined(_WIN32) && defined(__MINGW32__)
+	// FIXME: MinGW-w64 12.0.0 doesn't like setting the C++ locale to "".
+	setlocale(LC_ALL, "");
+#else /* !_WIN32 || !__MINGW32__ */
 	locale::global(locale(""));
+#endif /* _WIN32 && __MINGW32__ */
 #ifdef _WIN32
 	// NOTE: Revert LC_CTYPE to "C" to fix UTF-8 output.
 	// (Needed for MSVC 2022; does nothing for MinGW-w64 11.0.0)
@@ -637,6 +653,17 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 		return EXIT_FAILURE;
 	}
 #endif /* ENABLE_NLS && _MSC_VER */
+
+#ifdef _WIN32
+	// Enable UTF-8 console output.
+	// Tested on Windows XP (fails) and Windows 7 (works).
+	// TODO: Does it work on Windows Vista?
+	if (IsWindowsVistaOrGreater()) {
+		old_console_cp = GetConsoleOutputCP();
+		atexit(RestoreConsoleCP);
+		SetConsoleOutputCP(CP_UTF8);
+	}
+#endif /* _WIN32 */
 
 	// Initialize i18n.
 	rp_i18n_init();
@@ -710,14 +737,17 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 				break;
 			}
 #endif /* ENABLE_DECRYPTION */
+
 			case _T('c'):
 				// Print the system region information.
 				PrintSystemRegion();
 				break;
+
 			case _T('p'):
 				// Print pathnames.
 				PrintPathnames();
 				break;
+
 			case _T('l'): {
 				// Language code.
 				// NOTE: Actual language may be immediately after 'l',
@@ -753,20 +783,35 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 				lc = new_lc;
 				break;
 			}
+
 			case _T('K'): {
 				// Skip internal images. (NOTE: Not documented.)
 				flags |= LibRpBase::OF_SkipInternalImages;
 				break;
 			}
+
 			case _T('d'): {
 				// Skip RFT_LISTDATA with more than 10 items. (Text only)
 				flags |= LibRpBase::OF_SkipListDataMoreThan10;
 				break;
 			}
+
 			case _T('x'): {
-				// TODO: Switch from _ttol() to _tcstol() and implement better error checking?
-				const long num = _ttol(argv[i] + 2);
-				if (num < RomData::IMG_INT_MIN || num > RomData::IMG_INT_MAX) {
+				const TCHAR *const ts_imgType = argv[i] + 2;
+				TCHAR *endptr = nullptr;
+				const long num = _tcstol(ts_imgType, &endptr, 10);
+				if (*endptr != '\0') {
+#ifdef _WIN32
+					// fmt::print() doesn't allow mixing narrow and wide strings.
+					const string s_imgType = T2U8(ts_imgType);
+#else /* !_WIN32 */
+					const char *const s_imgType = ts_imgType;
+#endif /* _WIN32 */
+					fmt::print(stderr, FRUN(C_("rpcli", "Warning: skipping invalid image type '{:s}'")), s_imgType);
+					fputc('\n', stderr);
+					fflush(stderr);
+					i++; continue;
+				} else if (num < RomData::IMG_INT_MIN || num > RomData::IMG_INT_MAX) {
 					fmt::print(stderr, FRUN(C_("rpcli", "Warning: skipping unknown image type {:d}")), num);
 					fputc('\n', stderr);
 					fflush(stderr);
@@ -775,11 +820,24 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 				extract.emplace_back(argv[++i], num);
 				break;
 			}
+
 			case _T('m'): {
-				// TODO: Switch from _ttol() to _tcstol() and implement better error checking?
-				const long num = _ttol(argv[i] + 2);
-				if (num < -1 || num > 1024) {
-					fmt::print(stderr, FRUN(C_("rpcli", "Warning: skipping invalid mipmap level {:d}")), num);
+				const TCHAR *const ts_mipmapLevel = argv[i] + 2;
+				TCHAR *endptr = nullptr;
+				const long num = _tcstol(ts_mipmapLevel, &endptr, 10);
+				if (*endptr != '\0') {
+#ifdef _WIN32
+					// fmt::print() doesn't allow mixing narrow and wide strings.
+					const string s_mipmapLevel = T2U8(ts_mipmapLevel);
+#else /* !_WIN32 */
+					const char *const s_mipmapLevel = ts_mipmapLevel;
+#endif /* _WIN32 */
+					fmt::print(stderr, FRUN(C_("rpcli", "Warning: skipping invalid mipmap level '{:s}'")), s_mipmapLevel);
+					fputc('\n', stderr);
+					fflush(stderr);
+					i++; continue;
+				} else if (num < -1 || num > 1024) {
+					fmt::print(stderr, FRUN(C_("rpcli", "Warning: skipping out-of-range mipmap level {:d}")), num);
 					fputc('\n', stderr);
 					fflush(stderr);
 					i++; continue;
@@ -787,12 +845,15 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 				extract.emplace_back(argv[++i], RomData::IMG_INT_IMAGE, num);
 				break;
 			}
+
 			case _T('a'):
 				extract.emplace_back(argv[++i], -1);
 				break;
+
 			case _T('j'): // do nothing
 			case _T('J'): // still do nothing
 				break;
+
 #ifdef RP_OS_SCSI_SUPPORTED
 			case _T('i'):
 				// These commands take precedence over the usual rpcli functionality.
@@ -823,6 +884,7 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 				}
 				break;
 #endif /* RP_OS_SCSI_SUPPORTED */
+
 			default:
 				// FIXME: Unicode character on Windows.
 				fmt::print(stderr, FRUN(C_("rpcli", "Warning: skipping unknown switch '{:c}'")), (char)argv[i][1]);

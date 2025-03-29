@@ -12,9 +12,8 @@
 
 // Windows SDK
 #include "libwin32common/RpWin32_sdk.h"
-
-// librptext
-#include "librptext/wchar.hpp"
+#include "libwin32common/MiniU82T.hpp"
+using namespace LibWin32Common;
 
 // C++ STL classes
 using std::string;

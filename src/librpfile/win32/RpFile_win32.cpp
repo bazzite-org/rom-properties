@@ -13,10 +13,8 @@
 
 // libwin32common
 #include "libwin32common/w32err.hpp"
-
-// librptext
-#include "librptext/conversion.hpp"
-#include "librptext/wchar.hpp"
+#include "libwin32common/MiniU82T.hpp"
+using namespace LibWin32Common;
 
 // librpbyteswap
 #include "librpbyteswap/byteswap_rp.h"
@@ -27,6 +25,9 @@
 // C++ STL classes
 using std::string;
 using std::wstring;
+
+// tcharx
+#include "tcharx.h"
 
 #ifdef _MSC_VER
 // MSVC: Exception handling for /DELAYLOAD.
@@ -312,7 +313,6 @@ RpFile::RpFile(const wchar_t *filenameW, FileMode mode)
 	if (tryGzip) { do {
 #if defined(_MSC_VER) && defined(ZLIB_IS_DLL)
 		// Delay load verification.
-		// TODO: Only if linked with /DELAYLOAD?
 		if (DelayLoad_test_get_crc_table() != 0) {
 			// Delay load failed.
 			// Don't do any gzip checking.
