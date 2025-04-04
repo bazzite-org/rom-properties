@@ -455,7 +455,7 @@ void WiiUPackage::init(void)
 
 #if ENABLE_DECRYPTION
 	// Decrypt the title key.
-	int ret = d->ticket->decryptTitleKey(d->title_key, sizeof(d->title_key));
+	int ret = ticket->decryptTitleKey(d->title_key, sizeof(d->title_key));
 	if (ret != 0) {
 		// Failed to decrypt the title key.
 		// TODO: verifyResult
@@ -495,11 +495,12 @@ void WiiUPackage::init(void)
 
 	// Need to load the entire FST, which will be memcpy()'d by WiiUFst.
 	// TODO: Eliminate a copy.
-	off64_t fst_size = fstReader->size();
-	if (fst_size <= 0 || fst_size > 1048576U) {
+	off64_t fst_size64 = fstReader->size();
+	if (fst_size64 <= 0 || fst_size64 > 1048576U) {
 		// FST is empty and/or too big?
 		return;
 	}
+	const size_t fst_size = static_cast<size_t>(fst_size64);
 	unique_ptr<uint8_t[]> fst_buf(new uint8_t[fst_size]);
 	size_t size = fstReader->read(fst_buf.get(), fst_size);
 	if (size != static_cast<size_t>(fst_size)) {
@@ -748,7 +749,12 @@ int WiiUPackage::loadFieldData(void)
 	// Parse the Wii U System XMLs.
 	// NOTE: Only if the FST was loaded, or reading an extracted package.
 	if (canLoadXMLs) {
-		d->addFields_System_XMLs();
+		int ret = d->addFields_System_XMLs();
+		if (ret != 0) {
+			d->fields.addField_string(C_("RomData", "Warning"),
+				C_("RomData", "XML parsing failed."),
+				RomFields::STRF_WARNING);
+		}
 	}
 #else /* !ENABLE_XML */
 	d->fields.addField_string(C_("RomData", "Warning"),

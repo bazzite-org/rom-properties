@@ -23,6 +23,7 @@ using namespace LibRpFile;
 using namespace LibRpTexture;
 
 // C++ STL classes
+#include <limits>
 using std::array;
 using std::map;
 using std::string;
@@ -143,7 +144,7 @@ public:
 	 * @param max_size Maximum size
 	 * @return rp::uvector with the file data, or empty vector on error
 	 */
-	rp::uvector<uint8_t> loadFileFromZip(const char *filename, size_t max_size = ~0ULL);
+	rp::uvector<uint8_t> loadFileFromZip(const char *filename, size_t max_size = std::numeric_limits<size_t>::max());
 
 	/**
 	 * Load MANIFEST.MF from this->jarFile.
@@ -286,15 +287,15 @@ rp::uvector<uint8_t> J2MEPrivate::loadFileFromZip(const char *filename, size_t m
 		return {};
 	}
 
+	size_t size = static_cast<size_t>(file_info.uncompressed_size);
 	rp::uvector<uint8_t> buf;
-	buf.resize(file_info.uncompressed_size);
+	buf.resize(size);
 
 	// Read the file.
 	// NOTE: zlib and minizip are only guaranteed to be able to
 	// read UINT16_MAX (64 KB) at a time, and the updated MiniZip
 	// from https://github.com/nmoinvaz/minizip enforces this.
 	uint8_t *p = buf.data();
-	size_t size = file_info.uncompressed_size;
 	while (size > 0) {
 		int to_read = static_cast<int>(size > UINT16_MAX ? UINT16_MAX : size);
 		ret = unzReadCurrentFile(jarFile, p, to_read);
@@ -705,8 +706,6 @@ J2ME::J2ME(const IRpFilePtr &file)
 		case J2MEPrivate::JFileType::JAR:
 #ifdef _MSC_VER
 			// Delay load verification.
-			// TODO: Only if linked with /DELAYLOAD?
-
 #  ifdef ZLIB_IS_DLL
 			// Only if zlib is a DLL.
 			if (DelayLoad_test_get_crc_table() != 0) {

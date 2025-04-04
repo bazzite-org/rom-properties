@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpbase)                        *
  * HashCAPI.cpp: Hash class. (Win32 CryptoAPI implementation)              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -135,7 +135,6 @@ HashPrivate::~HashPrivate()
 void HashPrivate::delayload_check_once(void)
 {
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 	has_zlib = (DelayLoad_test_get_crc_table() == 0);
 }
 #endif /* CHECK_DELAYLOAD */
@@ -265,7 +264,8 @@ int Hash::process(const void *pData, size_t len)
 			return -EIO;	// TODO: Better error code?
 		}
 #endif /* CHECK_DELAYLOAD */
-		d->ctx.crc32 = crc32(d->ctx.crc32, static_cast<const uint8_t*>(pData), len);
+		d->ctx.crc32 = static_cast<uint32_t>(crc32(
+			d->ctx.crc32, static_cast<const uint8_t*>(pData), static_cast<unsigned int>(len)));
 		return 0;
 	}
 
