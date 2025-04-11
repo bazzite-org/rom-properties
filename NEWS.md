@@ -8,8 +8,6 @@
     will be ignored. Android packages (.apk) are also not currently
     supported.
   * Qoi: Quite OK Image Format parser. Uses qoi.h from upstream.
-  * rpcli: Text output for "warning" messages is now colorized if
-    printing to a terminal.
 
 * New parser features:
   * WiiUPackage: Add support for extracted Wii U packages.
@@ -64,6 +62,15 @@
     * Affects: V2.4 - v2.4.1
   * GTK UI frontends: Ensure the description label is also bold+red if the
     field is a "warning" field.
+  * DpfReader: Fixed a regression that broke reading RPF files.
+    * Affects: v2.4 - v2.4.1
+  * Wim: Fix image timestamp parsing. Previously, the "HIGHPART" was used
+    for both the high and low 32 bits. The date would usually be correct,
+    but the timestamp would be off by minutes. Both "HIGHPART" and "LOWPART"
+    are now correctly used to build the 64-bit FILETIME timestamp.
+  * Fix build issues on Mac OS X.
+    * Pull request: #444
+      * Submitted by @ccawley2011.
 
 * Other changes:
   * CMake: Added an ENABLE_NETWORKING option to control whether or not
@@ -74,6 +81,14 @@
     libfmt has faster string parsing than printf() and stringstream, and has
     guaranteed type-safe format handling using C++ templates, whereas printf
     can get tripped up because it uses C-style varargs.
+  * rpcli: Text output for "warning" messages is now colorized if
+    printing to a terminal.
+  * Removed IFUNC support. It's only supported by glibc on Linux (and possibly
+    some of the BSDs), and it adds a lot of complexity. The regular C dispatch
+    functions only have a few instructions of overhead in most cases.
+  * Added NEON-optimized byteswap functions for 32-bit ARM (untested) and
+    64-bit ARM (tested on Android).
+  * Switched XML parsers from TinyXML2 to PugiXML.
 
 ## v2.4.1 (released 2024/11/12)
 

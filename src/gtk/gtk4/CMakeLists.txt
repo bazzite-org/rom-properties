@@ -49,6 +49,10 @@ ENDIF()
 # NOTE: GTK 4.0.0 requires GLib 2.66, so we'll use that as a minimum here.
 ADD_DEFINITIONS(-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_66 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_66)
 
+# FIXME: Get all GTK3 stuff ported to GTK4 when building for GTK4.
+SET(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -Wno-error=deprecated-declarations")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=deprecated-declarations")
+
 # Sources and headers (GTK+ common)
 STRING(REGEX REPLACE "([^;]+)" "../\\1" ${PROJECT_NAME}_SRCS "${rom-properties-gtk_SRCS}")
 STRING(REGEX REPLACE "([^;]+)" "../\\1" ${PROJECT_NAME}_H    "${rom-properties-gtk_H}")
@@ -77,7 +81,6 @@ SET(${PROJECT_NAME}_SRCS
 	${${PROJECT_NAME}_GTK3MIN_SRCS}
 	${${PROJECT_NAME}_GTK4MIN_SRCS}
 	${${PROJECT_NAME}-notify_SRCS}
-	${${PROJECT_NAME}_IFUNC_SRCS}
 	${${PROJECT_NAME}_SSSE3_SRCS}
 	NautilusPlugin.cpp
 	NautilusPropertiesModelProvider.cpp
@@ -153,6 +156,9 @@ IF(BUILD_GTK4)
 	ENDIF(CMAKE_DL_LIBS)
 
 	TARGET_COMPILE_DEFINITIONS(${PROJECT_NAME} PRIVATE RP_UI_GTK4)
+
+	# PugiXML headers are needed for AboutTab.
+	TARGET_INCLUDE_DIRECTORIES(${PROJECT_NAME} PRIVATE ${pugixml_INCLUDE_DIR})
 
 	# libfmt
 	IF(Fmt_FOUND)
