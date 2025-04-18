@@ -40,12 +40,6 @@
 #  include <cstdio>
 #endif /* _WIN32 */
 
-// Windows uses INVALID_HANDLE_VALUE for invalid handles.
-// Other systems generally use nullptr.
-#ifndef _WIN32
-#  define INVALID_HANDLE_VALUE nullptr
-#endif
-
 #ifdef RP_OS_SCSI_SUPPORTED
 // OS-specific headers for DeviceInfo.
 #  if defined(__FreeBSD__) || defined(__DragonFly__)
@@ -172,21 +166,12 @@ public:
 		DWORD *pdwCreationDisposition);
 #else /* !_WIN32 */
 	/**
-	 * Convert an RpFile::FileMode to an fopen() mode string.
-	 * @param mode	[in] FileMode
-	 * @return fopen() mode string.
+	 * fopen() wrapper with O_CLOEXEC handling.
+	 * @param pathname	[in] Pathname
+	 * @param mode		[in] FileMode
+	 * @return FILE*, or nullptr on error.
 	 */
-	static inline const char *mode_to_str(RpFile::FileMode mode);
-
-#  if !defined(HAVE_FOPEN_CLOEXEC) && defined(FD_CLOEXEC)
-	/**
-	 * Set FD_CLOEXEC on the specified file.
-	 * @param file File
-	 * @param value True to set FD_CLOEXEC; false to clear it.
-	 * @return 0 on success; non-zero on error.
-	 */
-	static int set_FD_CLOEXEC_flag(FILE *file, bool value);
-#  endif /* !defined(HAVE_FOPEN_CLOEXEC) && defined(FD_CLOEXEC) */
+	static FILE *fopen_cloexec(const char *pathname, RpFile::FileMode mode);
 #endif /* _WIN32 */
 
 	/**
@@ -235,8 +220,8 @@ public:
 	 * @return 0 on success, positive for SCSI sense key, negative for POSIX error code.
 	 */
 	ATTR_ACCESS_SIZE(read_only, 2, 3)
-	ATTR_ACCESS_SIZE(read_write, 4, 5)
-	int scsi_send_cdb(const void *cdb, uint8_t cdb_len,
+	//ATTR_ACCESS_SIZE(read_write, 4, 5)
+	int scsi_send_cdb(const void *cdb, size_t cdb_len,
 		void *data, size_t data_len,
 		ScsiDirection direction);
 
@@ -252,13 +237,13 @@ public:
 
 	/**
 	 * Read data from a device using SCSI commands.
-	 * @param lbaStart	[in] Starting LBA of the data to read.
-	 * @param lbaCount	[in] Number of LBAs to read.
-	 * @param pBuf		[out] Output buffer.
-	 * @param bufLen	[in] Output buffer length.
+	 * @param lbaStart	[in] Starting LBA of the data to read
+	 * @param lbaCount	[in] Number of LBAs to read
+	 * @param pBuf		[out] Output buffer
+	 * @param bufLen	[in] Output buffer length
 	 * @return 0 on success, positive for SCSI sense key, negative for POSIX error code.
 	 */
-	ATTR_ACCESS_SIZE(write_only, 4, 5)
+	//ATTR_ACCESS_SIZE(write_only, 4, 5)
 	int scsi_read(uint32_t lbaStart, uint16_t lbaCount, uint8_t *pBuf, size_t bufLen);
 };
 

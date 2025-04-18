@@ -187,7 +187,7 @@ RomMetaData::MetaData *RomMetaDataPrivate::addProperty(Property name)
 		pMetaData = &metaData[static_cast<size_t>(map_metaData[static_cast<size_t>(name)])];
 		// If a string is present, delete it.
 		if (pMetaData->type == PropertyType::String) {
-			delete pMetaData->data.str;
+			free(const_cast<char*>(pMetaData->data.str));
 			pMetaData->data.str = nullptr;
 		}
 	} else {
@@ -597,11 +597,11 @@ int RomMetaData::addMetaData_string(Property name, const char *str, unsigned int
 	// Trim the string if requested.
 	if (nstr && (flags & STRF_TRIM_END)) {
 		trimEnd(nstr);
-	}
-	if (nstr[0] == '\0') {
-		// String is now empty. Ignore it.
-		free(nstr);
-		return -1;
+		if (nstr[0] == '\0') {
+			// String is now empty. Ignore it.
+			free(nstr);
+			return -1;
+		}
 	}
 
 	RP_D(RomMetaData);

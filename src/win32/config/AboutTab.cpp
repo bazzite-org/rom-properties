@@ -43,7 +43,7 @@ using std::unique_ptr;
 
 // Maximum number of tabs.
 // NOTE: Must be adjusted if more tabs are added!
-#define MAX_TABS 3
+static constexpr int MAX_TABS = 3;
 
 // Windows: RichEdit control.
 #include <richedit.h>
@@ -70,7 +70,7 @@ using std::unique_ptr;
 #include "librpbase/img/RpPng.hpp"
 // TODO: JPEG
 #ifdef ENABLE_XML
-#  include "tinyxml2.h"
+#  include <pugixml.hpp>
 #endif
 
 // Useful RTF strings.
@@ -382,7 +382,7 @@ INT_PTR CALLBACK AboutTabPrivate::dlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, L
 					ENLINK *pENLink = reinterpret_cast<ENLINK*>(pHdr);
 					if (pENLink->msg == WM_LBUTTONUP) {
 						TCHAR urlbuf[256];
-						if ((pENLink->chrg.cpMax - pENLink->chrg.cpMin) >= _countof(urlbuf)) {
+						if ((pENLink->chrg.cpMax - pENLink->chrg.cpMin) >= static_cast<LONG>(_countof(urlbuf))) {
 							// URL is too big.
 							break;
 						}
@@ -390,10 +390,11 @@ INT_PTR CALLBACK AboutTabPrivate::dlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, L
 						range.chrg = pENLink->chrg;
 						range.lpstrText = urlbuf;
 						LRESULT lResult = SendMessage(pHdr->hwndFrom, EM_GETTEXTRANGE, 0, (LPARAM)&range);
-						if (lResult > 0 && lResult < _countof(urlbuf)) {
+						if (lResult > 0 && lResult < static_cast<LRESULT>(_countof(urlbuf))) {
 							ShellExecute(nullptr, _T("open"), urlbuf, nullptr, nullptr, SW_SHOW);
 						}
 					}
+					break;
 				}
 
 				case NM_CLICK:
@@ -1185,20 +1186,34 @@ void AboutTabPrivate::initLibrariesTab(void)
 	sLibraries += fmt::format(FRUN(sLicense), "libpng license");
 #endif /* HAVE_PNG */
 
-	/** TinyXML2 **/
+	/** PugiXML **/
 #ifdef ENABLE_XML
-	const string tinyXml2Version = fmt::format(FSTR("TinyXML2 {:d}.{:d}.{:d}"),
-		static_cast<unsigned int>(TIXML2_MAJOR_VERSION),
-		static_cast<unsigned int>(TIXML2_MINOR_VERSION),
-		static_cast<unsigned int>(TIXML2_PATCH_VERSION));
+	// PugiXML 1.10 and later uses this format: 1140 == 1.14.0
+	// PugiXML 1.9 and earlier uses this format: 190 == 1.9.0
+	unsigned int pugixml_major, pugixml_minor, pugixml_patch;
+	if (PUGIXML_VERSION >= 1000) {
+		pugixml_major = PUGIXML_VERSION / 1000;
+		pugixml_minor = (PUGIXML_VERSION % 1000) / 10;
+		pugixml_patch = PUGIXML_VERSION  % 10;
+	} else {
+		pugixml_major = PUGIXML_VERSION / 100;
+		pugixml_minor = (PUGIXML_VERSION % 100) / 10;
+		pugixml_patch = PUGIXML_VERSION % 10;
+	}
+
+	string pugiXmlVersion = fmt::format(FSTR("PugiXML {:d}.{:d}"),
+		pugixml_major, pugixml_minor);
+	if (pugixml_patch > 0) {
+		pugiXmlVersion += fmt::format(FSTR(".{:d}"), pugixml_patch);
+	}
 
 	// FIXME: Runtime version?
 	sLibraries += RTF_BR RTF_BR;
-	sLibraries += fmt::format(FRUN(sCompiledWith), tinyXml2Version);
+	sLibraries += fmt::format(FRUN(sCompiledWith), pugiXmlVersion);
 	sLibraries += RTF_BR
-		"Copyright (C) 2000-2021 Lee Thomason" RTF_BR
-		"http://www.grinninglizard.com/" RTF_BR;
-	sLibraries += fmt::format(FRUN(sLicense), "zlib license");
+		"Copyright (C) 2006-2025, by Arseny Kapoulkine (arseny.kapoulkine@gmail.com)" RTF_BR
+		"https://pugixml.org/" RTF_BR;
+	sLibraries += fmt::format(FRUN(sLicense), "MIT license");
 #endif /* ENABLE_XML */
 
 	/** GNU gettext **/

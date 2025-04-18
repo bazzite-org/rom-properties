@@ -46,7 +46,14 @@ include(CheckCSourceRuns)
 include(CheckCCompilerFlag)
 include(CMakeDependentOption)
 include(CMakePackageConfigHelpers)
+IF(0) # rom-properties
 include(FeatureSummary)
+ENDIF(0) # rom-properties
+# dummy function for rom-properties
+IF(NOT COMMAND add_feature_info)
+    FUNCTION(add_feature_info)
+    ENDFUNCTION(add_feature_info)
+ENDIF(NOT COMMAND add_feature_info)
 
 include(cmake/detect-arch.cmake)
 include(cmake/detect-install-dirs.cmake)
@@ -1040,7 +1047,9 @@ if(WITH_OPTIM)
     endif()
 endif()
 
+IF(0) # rom-properties
 message(STATUS "Architecture-specific source files: ${ZLIB_ARCH_SRCS}")
+ENDIF(0) # rom-properties
 
 #============================================================================
 # zconf.h
@@ -1522,7 +1531,9 @@ endif()
 
 add_feature_info(INSTALL_UTILS INSTALL_UTILS "Copy minigzip and minideflate during install")
 
+IF(0) # rom-properties
 FEATURE_SUMMARY(WHAT ALL INCLUDE_QUIET_PACKAGES)
+ENDIF(0) # rom-properties
 
 # rom-properties: Disable CPack.
 IF(0) # rom-properties

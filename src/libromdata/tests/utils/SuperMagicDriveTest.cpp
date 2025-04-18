@@ -204,7 +204,7 @@ int SuperMagicDriveTest::decompress(uint8_t *pOut, unsigned int out_len, const u
 int SuperMagicDriveTest::decompress(void)
 {
 	m_bin_data = static_cast<uint8_t*>(aligned_malloc(16, OUT_BLOCK_UNZ_SIZE));
-	int ret = decompress(m_bin_data, OUT_BLOCK_UNZ_SIZE, bin_data_gz.data(), bin_data_gz.size());
+	int ret = decompress(m_bin_data, OUT_BLOCK_UNZ_SIZE, bin_data_gz.data(), static_cast<unsigned int>(bin_data_gz.size()));
 	if (ret != 0) {
 		aligned_free(m_bin_data);
 		m_bin_data = nullptr;
@@ -212,7 +212,7 @@ int SuperMagicDriveTest::decompress(void)
 	}
 
 	m_smd_data = static_cast<uint8_t*>(aligned_malloc(16, OUT_BLOCK_UNZ_SIZE));
-	ret = decompress(m_smd_data, OUT_BLOCK_UNZ_SIZE, smd_data_gz.data(), smd_data_gz.size());
+	ret = decompress(m_smd_data, OUT_BLOCK_UNZ_SIZE, smd_data_gz.data(), static_cast<unsigned int>(smd_data_gz.size()));
 	if (ret != 0) {
 		aligned_free(m_smd_data);
 		m_smd_data = nullptr;
@@ -245,8 +245,8 @@ TEST_F(SuperMagicDriveTest, decodeBlock_cpp_benchmark)
  */
 TEST_F(SuperMagicDriveTest, decodeBlock_mmx_test)
 {
-	if (!RP_CPU_HasMMX()) {
-		fputs("*** MMX is not supported on this CPU. Skipping test.\n", stderr);
+	if (!RP_CPU_x86_HasMMX()) {
+		GTEST_SKIP() << "*** MMX is not supported on this CPU. Skipping test.";
 		return;
 	}
 
@@ -259,8 +259,8 @@ TEST_F(SuperMagicDriveTest, decodeBlock_mmx_test)
  */
 TEST_F(SuperMagicDriveTest, decodeBlock_mmx_benchmark)
 {
-	if (!RP_CPU_HasMMX()) {
-		fputs("*** MMX is not supported on this CPU. Skipping test.\n", stderr);
+	if (!RP_CPU_x86_HasMMX()) {
+		GTEST_SKIP() << "*** MMX is not supported on this CPU. Skipping test.";
 		return;
 	}
 
@@ -276,9 +276,8 @@ TEST_F(SuperMagicDriveTest, decodeBlock_mmx_benchmark)
  */
 TEST_F(SuperMagicDriveTest, decodeBlock_sse2_test)
 {
-	if (!RP_CPU_HasSSE2()) {
-		fputs("*** SSE2 is not supported on this CPU. Skipping test.\n", stderr);
-		return;
+	if (!RP_CPU_x86_HasSSE2()) {
+		GTEST_SKIP() << "*** SSE2 is not supported on this CPU. Skipping test.";
 	}
 
 	SuperMagicDrive::decodeBlock_sse2(align_buf.get(), m_smd_data);
@@ -290,9 +289,8 @@ TEST_F(SuperMagicDriveTest, decodeBlock_sse2_test)
  */
 TEST_F(SuperMagicDriveTest, decodeBlock_sse2_benchmark)
 {
-	if (!RP_CPU_HasSSE2()) {
-		fputs("*** SSE2 is not supported on this CPU. Skipping test.\n", stderr);
-		return;
+	if (!RP_CPU_x86_HasSSE2()) {
+		GTEST_SKIP() << "*** SSE2 is not supported on this CPU. Skipping test.";
 	}
 
 	for (unsigned int i = BENCHMARK_ITERATIONS; i > 0; i--) {
