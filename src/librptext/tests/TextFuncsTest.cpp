@@ -12,6 +12,7 @@
 
 // TextFuncs
 #include "../conversion.hpp"
+#include "../formatting.hpp"
 #include "../utf8_strlen.hpp"
 #include "librpbyteswap/byteorder.h"
 using namespace LibRpText;
@@ -19,6 +20,11 @@ using namespace LibRpText;
 // C includes (C++ namespace)
 #include <cstdio>
 #include <cstring>
+
+// glibc
+#ifdef __GLIBC__
+#  include <gnu/libc-version.h>
+#endif /* __GLIBC__ */
 
 // C++ includes
 #include <array>
@@ -504,7 +510,11 @@ TEST_F(TextFuncsTest, utf16_bswap_BEtoLE)
 	str = utf16_bswap(C16(utf16be_data), C16_ARRAY_SIZE_I(utf16be_data));
 	EXPECT_EQ(C16_ARRAY_SIZE(utf16le_data), str.size());
 	// Remove the extra NULL before comparing.
-	str.resize(str.size()-1);
+	// NOTE: The str.empty() check is required to fix an aggressive loop
+	// optimization warning when compiling with LTO on gcc-14.2.0.
+	if (!str.empty()) {
+		str.resize(str.size()-1);
+	}
 	EXPECT_EQ(C16(utf16le_data), str);
 }
 
@@ -533,7 +543,11 @@ TEST_F(TextFuncsTest, utf16_bswap_LEtoBE)
 	str = utf16_bswap(C16(utf16le_data), C16_ARRAY_SIZE_I(utf16le_data));
 	EXPECT_EQ(C16_ARRAY_SIZE(utf16be_data), str.size());
 	// Remove the extra NULL before comparing.
-	str.resize(str.size()-1);
+	// NOTE: The str.empty() check is required to fix an aggressive loop
+	// optimization warning when compiling with LTO on gcc-14.2.0.
+	if (!str.empty()) {
+		str.resize(str.size()-1);
+	}
 	EXPECT_EQ(C16(utf16be_data), str);
 }
 
@@ -754,6 +768,34 @@ TEST_F(TextFuncsTest, utf8_disp_strlen)
 	static constexpr char utf8_3byte_text[] = "╔╗╚╝┼";
 	EXPECT_EQ(15U, strlen(utf8_3byte_text));
 	EXPECT_EQ(5U, utf8_disp_strlen(utf8_3byte_text));
+
+	// Test string with Japanese katakana.
+	static constexpr char utf8_katakana_text[] = "ソニック";
+	EXPECT_EQ(12U, strlen(utf8_katakana_text));
+	EXPECT_EQ(8U, utf8_disp_strlen(utf8_katakana_text));
+}
+
+/**
+ * Test utf8_disp_strlen() with emojis.
+ */
+TEST_F(TextFuncsTest, utf8_disp_strlen_emojis)
+{
+	// NOTE: If using glibc, this test will fail if not using
+	// glibc-2.26 or newer, since older glibc doesn't properly
+	// have emojis listed as "wide" characters.
+
+#ifdef __GLIBC__
+	// Check if this is glibc-2.26 or newer.
+	const char *const glibc_version = gnu_get_libc_version();
+	unsigned int major, minor;
+	int n = sscanf(glibc_version, "%u.%u", &major, &minor);
+	if (n == 2 && (major > 2 || (major == 2 && minor >= 26))) {
+		// This is glibc-2.26 or newer.
+	} else {
+		// Not glibc-2.26 or newer. Skip the test.
+		GTEST_SKIP() << "glibc-" << glibc_version << " does not have proper wcwidth() values for emojis. Skipping test.";
+	}
+#endif /* __GLIBC__ */
 
 	// Test string with 4-byte UTF-8 code points. (U+10000 - U+10FFFF)
 	// U+1F5AC (SOFT SHELL FLOPPY DISK) is w=1 for some reason.

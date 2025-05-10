@@ -12,7 +12,11 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QObject>
 #include <QtCore/QString>
+#include <QtGui/QFontDatabase>
 #include <QtGui/QImage>
+
+#include <QApplication>
+#include <QWidget>
 
 // NOTE: Using QT_VERSION_CHECK causes errors on moc-qt4 due to CMAKE_AUTOMOC.
 // Reference: https://bugzilla.redhat.com/show_bug.cgi?id=1396755
@@ -33,6 +37,7 @@
 // NOTE: Using QT_VERSION_CHECK causes errors on moc-qt4 due to CMAKE_AUTOMOC.
 // Reference: https://bugzilla.redhat.com/show_bug.cgi?id=1396755
 // QT_VERSION_CHECK(6, 0, 0) -> 0x60000
+// QT_VERSION_CHECK(5, 2, 0) -> 0x50200
 // QT_VERSION_CHECK(5, 0, 0) -> 0x50000
 
 /** Text conversion **/
@@ -164,6 +169,8 @@ static inline QImage rpToQImage(const LibRpTexture::rp_image_const_ptr &image)
 	return rpToQImage(image.get());
 }
 
+/** Other functions **/
+
 /**
  * Convert an RP file dialog filter to Qt.
  *
@@ -211,4 +218,49 @@ static inline QDateTime unixTimeToQDateTime(time_t timestamp, bool utc)
 #endif
 
 	return dateTime;
+}
+
+/**
+ * Install a QWidget's event filter into its top-level widget.
+ * @param widget QWidget
+ * @return True on success; false on error.
+ */
+static inline bool installEventFilterInTopLevelWidget(QWidget *widget)
+{
+	// NOTE: This function must be inline. Otherwise, we can't use it
+	// in the XAttrView plugin because RpQt.cpp has more dependencies.
+	QWidget *p = widget->parentWidget();
+	while (p) {
+		QWidget *const p2 = p->parentWidget();
+		if (!p2) {
+			break;
+		}
+		p = p2;
+	}
+	if (p) {
+		p->installEventFilter(widget);
+		return true;
+	} else {
+		return false;
+	}
+}
+
+/**
+ * Get the system monospace font.
+ *
+ * NOTE: Only retrieves the configured font if compiled using Qt 5.2 or later.
+ * For older versions, the default "Monospace" font is used.
+ *
+ * @return System monospace font
+ */
+static inline QFont getSystemMonospaceFont(void)
+{
+#if QT_VERSION >= 0x50200
+	return QFontDatabase::systemFont(QFontDatabase::FixedFont);
+#else /* QT_VERSION < 0x50200 */
+	QFont fntMonospace(QApplication::font());
+	fntMonospace.setFamily(QLatin1String("Monospace"));
+	fntMonospace.setStyleHint(QFont::TypeWriter);
+	return fntMonospace;
+#endif /* QT_VERSION >= 0x50200 */
 }

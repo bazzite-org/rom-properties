@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (rp-stub)                          *
  * rp-stub_secure.c: Security options for rp-stub.                         *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -39,7 +39,7 @@ int rp_stub_do_security_options(bool config)
 #if defined(_WIN32)
 	param.bHighSec = FALSE;
 #elif defined(HAVE_SECCOMP)
-	static const int syscall_wl[] = {
+	static const int16_t syscall_wl[] = {
 		// Syscalls used by rp-download.
 		// TODO: Add more syscalls.
 		// FIXME: glibc-2.31 uses 64-bit time syscalls that may not be
@@ -78,6 +78,9 @@ int rp_stub_do_security_options(bool config)
 		// ConfReader checks timestamps between rpcli runs.
 		// NOTE: Only seems to get triggered on PowerPC...
 		SCMP_SYS(clock_gettime), SCMP_SYS(clock_gettime64),
+
+		// RomDataFormat needs this, at least on 32-bit (i386) KF5 builds.
+		SCMP_SYS(clock_getres),
 
 		// glibc ncsd
 		// TODO: Restrict connect() to AF_UNIX.

@@ -1,7 +1,6 @@
-
 /* pngpriv.h - private declarations for use inside libpng
  *
- * Copyright (c) 2018-2024 Cosmin Truta
+ * Copyright (c) 2018-2025 Cosmin Truta
  * Copyright (c) 1998-2002,2004,2006-2018 Glenn Randers-Pehrson
  * Copyright (c) 1996-1997 Andreas Dilger
  * Copyright (c) 1995-1996 Guy Eric Schalnat, Group 42, Inc.
@@ -20,8 +19,20 @@
  * they should be well aware of the issues that may arise from doing so.
  */
 
+
+/* pngpriv.h must be included first in each translation unit inside libpng.
+ * On the other hand, it must not be included at all, directly or indirectly,
+ * by any application code that uses the libpng API.
+ */
 #ifndef PNGPRIV_H
-#define PNGPRIV_H
+#  define PNGPRIV_H
+#else
+#  error Duplicate inclusion of pngpriv.h; please check the libpng source files
+#endif
+
+#if defined(PNG_H) || defined(PNGCONF_H) || defined(PNGLCONF_H)
+#  error This file must not be included by applications; please include <png.h>
+#endif
 
 /* Feature Test Macros.  The following are defined here to ensure that correctly
  * implemented libraries reveal the APIs libpng needs to build and hide those
@@ -58,7 +69,6 @@
  */
 #if defined(HAVE_CONFIG_H) && !defined(PNG_NO_CONFIG_H)
 #  include <config.h>
-
    /* Pick up the definition of 'restrict' from config.h if it was read: */
 #  define PNG_RESTRICT restrict
 #endif
@@ -68,9 +78,7 @@
  * are not internal definitions may be required.  This is handled below just
  * before png.h is included, but load the configuration now if it is available.
  */
-#ifndef PNGLCONF_H
-#  include "pnglibconf.h"
-#endif
+#include "pnglibconf.h"
 
 /* Local renames may change non-exported API functions from png.h */
 #if defined(PNG_PREFIX) && !defined(PNGPREFIX_H)
@@ -862,6 +870,7 @@
 #define png_zTXt PNG_U32(122,  84,  88, 116)
 
 #ifdef PNG_APNG_SUPPORTED
+
 /* For png_struct.apng_flags: */
 #define PNG_FIRST_FRAME_HIDDEN       0x0001U
 #define PNG_APNG_APP                 0x0002U
@@ -974,17 +983,15 @@
  * must match that used in the build, or we must be using pnglibconf.h.prebuilt:
  */
 #if PNG_ZLIB_VERNUM != 0 && PNG_ZLIB_VERNUM != ZLIB_VERNUM
-#  error ZLIB_VERNUM != PNG_ZLIB_VERNUM \
-      "-I (include path) error: see the notes in pngpriv.h"
-   /* This means that when pnglibconf.h was built the copy of zlib.h that it
-    * used is not the same as the one being used here.  Because the build of
-    * libpng makes decisions to use inflateInit2 and inflateReset2 based on the
-    * zlib version number and because this affects handling of certain broken
-    * PNG files the -I directives must match.
+#  error The include path of <zlib.h> is incorrect
+   /* When pnglibconf.h was built, the copy of zlib.h that it used was not the
+    * same as the one being used here.  Considering how libpng makes decisions
+    * to use the zlib API based on the zlib version number, the -I options must
+    * match.
     *
-    * The most likely explanation is that you passed a -I in CFLAGS. This will
-    * not work; all the preprocessor directives and in particular all the -I
-    * directives must be in CPPFLAGS.
+    * A possible cause of this mismatch is that you passed an -I option in
+    * CFLAGS, which is unlikely to work.  All the preprocessor options, and all
+    * the -I options in particular, should be in CPPFLAGS.
     */
 #endif
 
@@ -1662,14 +1669,14 @@ PNG_INTERNAL_FUNCTION(void,png_ensure_fcTL_is_valid,(png_structp png_ptr,
    png_byte dispose_op, png_byte blend_op), PNG_EMPTY);
 
 #ifdef PNG_READ_APNG_SUPPORTED
-PNG_INTERNAL_FUNCTION(png_handle_result_code,png_handle_acTL,(png_structp png_ptr, png_infop info_ptr,
+PNG_INTERNAL_FUNCTION(void,png_handle_acTL,(png_structp png_ptr, png_infop info_ptr,
    png_uint_32 length),PNG_EMPTY);
-PNG_INTERNAL_FUNCTION(png_handle_result_code,png_handle_fcTL,(png_structp png_ptr, png_infop info_ptr,
+PNG_INTERNAL_FUNCTION(void,png_handle_fcTL,(png_structp png_ptr, png_infop info_ptr,
    png_uint_32 length),PNG_EMPTY);
-PNG_INTERNAL_FUNCTION(png_handle_result_code,png_handle_fdAT,(png_structp png_ptr, png_infop info_ptr,
+PNG_INTERNAL_FUNCTION(void,png_handle_fdAT,(png_structp png_ptr, png_infop info_ptr,
    png_uint_32 length),PNG_EMPTY);
 PNG_INTERNAL_FUNCTION(void,png_have_info,(png_structp png_ptr, png_infop info_ptr),PNG_EMPTY);
-PNG_INTERNAL_FUNCTION(png_handle_result_code,png_ensure_sequence_number,(png_structp png_ptr,
+PNG_INTERNAL_FUNCTION(void,png_ensure_sequence_number,(png_structp png_ptr,
    png_uint_32 length),PNG_EMPTY);
 PNG_INTERNAL_FUNCTION(void,png_read_reset,(png_structp png_ptr),PNG_EMPTY);
 PNG_INTERNAL_FUNCTION(void,png_read_reinit,(png_structp png_ptr,
@@ -2186,4 +2193,3 @@ PNG_INTERNAL_FUNCTION(int,
 #endif
 
 #endif /* PNG_VERSION_INFO_ONLY */
-#endif /* PNGPRIV_H */

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (Win32)                            *
  * DllMain.cpp: DLL entry point and COM registration handler.              *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -52,7 +52,7 @@ static ULONG_PTR gdipToken = 0;
 #  include "libwin32common/DelayLoadHelper.h"
 // DelayLoad test implementation.
 #  include "libi18n/i18n.h"
-DELAYLOAD_TEST_FUNCTION_IMPL1(textdomain, nullptr);
+DELAYLOAD_TEST_FUNCTION_IMPL1(libintl_textdomain, nullptr);
 #endif /* defined(_MSC_VER) && defined(ENABLE_NLS) */
 
 /**
@@ -144,8 +144,7 @@ _Check_return_ STDAPI DllGetClassObject(_In_ REFCLSID rclsid, _In_ REFIID riid, 
 
 #if defined(_MSC_VER) && defined(ENABLE_NLS)
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
-	if (DelayLoad_test_textdomain() != 0) {
+	if (DelayLoad_test_libintl_textdomain() != 0) {
 		// Delay load failed.
 		return E_UNEXPECTED;
 	}

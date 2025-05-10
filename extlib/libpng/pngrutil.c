@@ -1,6 +1,6 @@
 /* pngrutil.c - utilities to read a PNG file
  *
- * Copyright (c) 2018-2024 Cosmin Truta
+ * Copyright (c) 2018-2025 Cosmin Truta
  * Copyright (c) 1998-2002,2004,2006-2018 Glenn Randers-Pehrson
  * Copyright (c) 1996-1997 Andreas Dilger
  * Copyright (c) 1995-1996 Guy Eric Schalnat, Group 42, Inc.
@@ -2735,6 +2735,179 @@ png_handle_iTXt(png_structrp png_ptr, png_inforp info_ptr, png_uint_32 length)
 #  define png_handle_iTXt NULL
 #endif
 
+#ifdef PNG_READ_APNG_SUPPORTED
+void /* PRIVATE */
+png_handle_acTL(png_structp png_ptr, png_infop info_ptr, png_uint_32 length)
+{
+    png_byte data[8];
+    png_uint_32 num_frames;
+    png_uint_32 num_plays;
+    png_uint_32 didSet;
+
+    png_debug(1, "in png_handle_acTL");
+
+    if (!(png_ptr->mode & PNG_HAVE_IHDR))
+    {
+        png_error(png_ptr, "Missing IHDR before acTL");
+    }
+    else if (png_ptr->mode & PNG_HAVE_IDAT)
+    {
+        png_warning(png_ptr, "Invalid acTL after IDAT skipped");
+        png_crc_finish(png_ptr, length);
+        return;
+    }
+    else if (png_ptr->mode & PNG_HAVE_acTL)
+    {
+        png_warning(png_ptr, "Duplicate acTL skipped");
+        png_crc_finish(png_ptr, length);
+        return;
+    }
+    else if (length != 8)
+    {
+        png_warning(png_ptr, "acTL with invalid length skipped");
+        png_crc_finish(png_ptr, length);
+        return;
+    }
+
+    png_crc_read(png_ptr, data, 8);
+    png_crc_finish(png_ptr, 0);
+
+    num_frames = png_get_uint_31(png_ptr, data);
+    num_plays = png_get_uint_31(png_ptr, data + 4);
+
+    /* the set function will do error checking on num_frames */
+    didSet = png_set_acTL(png_ptr, info_ptr, num_frames, num_plays);
+    if(didSet)
+        png_ptr->mode |= PNG_HAVE_acTL;
+}
+
+void /* PRIVATE */
+png_handle_fcTL(png_structp png_ptr, png_infop info_ptr, png_uint_32 length)
+{
+    png_byte data[22];
+    png_uint_32 width;
+    png_uint_32 height;
+    png_uint_32 x_offset;
+    png_uint_32 y_offset;
+    png_uint_16 delay_num;
+    png_uint_16 delay_den;
+    png_byte dispose_op;
+    png_byte blend_op;
+
+    png_debug(1, "in png_handle_fcTL");
+
+    png_ensure_sequence_number(png_ptr, length);
+
+    if (!(png_ptr->mode & PNG_HAVE_IHDR))
+    {
+        png_error(png_ptr, "Missing IHDR before fcTL");
+    }
+    else if (png_ptr->mode & PNG_HAVE_IDAT)
+    {
+        /* for any frames other then the first this message may be misleading,
+        * but correct. PNG_HAVE_IDAT is unset before the frame head is read
+        * i can't think of a better message */
+        png_warning(png_ptr, "Invalid fcTL after IDAT skipped");
+        png_crc_finish(png_ptr, length-4);
+        return;
+    }
+    else if (png_ptr->mode & PNG_HAVE_fcTL)
+    {
+        png_warning(png_ptr, "Duplicate fcTL within one frame skipped");
+        png_crc_finish(png_ptr, length-4);
+        return;
+    }
+    else if (length != 26)
+    {
+        png_warning(png_ptr, "fcTL with invalid length skipped");
+        png_crc_finish(png_ptr, length-4);
+        return;
+    }
+
+    png_crc_read(png_ptr, data, 22);
+    png_crc_finish(png_ptr, 0);
+
+    width = png_get_uint_31(png_ptr, data);
+    height = png_get_uint_31(png_ptr, data + 4);
+    x_offset = png_get_uint_31(png_ptr, data + 8);
+    y_offset = png_get_uint_31(png_ptr, data + 12);
+    delay_num = png_get_uint_16(data + 16);
+    delay_den = png_get_uint_16(data + 18);
+    dispose_op = data[20];
+    blend_op = data[21];
+
+    if (png_ptr->num_frames_read == 0 && (x_offset != 0 || y_offset != 0))
+    {
+        png_warning(png_ptr, "fcTL for the first frame must have zero offset");
+        return;
+    }
+
+    if (info_ptr != NULL)
+    {
+        if (png_ptr->num_frames_read == 0 &&
+            (width != info_ptr->width || height != info_ptr->height))
+        {
+            png_warning(png_ptr, "size in first frame's fcTL must match "
+                               "the size in IHDR");
+            return;
+        }
+
+        /* The set function will do more error checking */
+        png_set_next_frame_fcTL(png_ptr, info_ptr, width, height,
+                                x_offset, y_offset, delay_num, delay_den,
+                                dispose_op, blend_op);
+
+        png_read_reinit(png_ptr, info_ptr);
+
+        png_ptr->mode |= PNG_HAVE_fcTL;
+    }
+}
+
+void /* PRIVATE */
+png_have_info(png_structp png_ptr, png_infop info_ptr)
+{
+    if((info_ptr->valid & PNG_INFO_acTL) && !(info_ptr->valid & PNG_INFO_fcTL))
+    {
+        png_ptr->apng_flags |= PNG_FIRST_FRAME_HIDDEN;
+        info_ptr->num_frames++;
+    }
+}
+
+void /* PRIVATE */
+png_handle_fdAT(png_structp png_ptr, png_infop info_ptr, png_uint_32 length)
+{
+    png_ensure_sequence_number(png_ptr, length);
+
+    /* This function is only called from png_read_end(), png_read_info(),
+    * and png_push_read_chunk() which means that:
+    * - the user doesn't want to read this frame
+    * - or this is an out-of-place fdAT
+    * in either case it is safe to ignore the chunk with a warning */
+    png_warning(png_ptr, "ignoring fdAT chunk");
+    png_crc_finish(png_ptr, length - 4);
+    PNG_UNUSED(info_ptr)
+}
+
+void /* PRIVATE */
+png_ensure_sequence_number(png_structp png_ptr, png_uint_32 length)
+{
+    png_byte data[4];
+    png_uint_32 sequence_number;
+
+    if (length < 4)
+        png_error(png_ptr, "invalid fcTL or fdAT chunk found");
+
+    png_crc_read(png_ptr, data, 4);
+    sequence_number = png_get_uint_31(png_ptr, data);
+
+    if (sequence_number != png_ptr->next_seq_num)
+        png_error(png_ptr, "fcTL or fdAT chunk with out-of-order sequence "
+                           "number found");
+
+    png_ptr->next_seq_num++;
+}
+#endif /* PNG_READ_APNG_SUPPORTED */
+
 #ifdef PNG_READ_UNKNOWN_CHUNKS_SUPPORTED
 /* Utility function for png_handle_unknown; set up png_ptr::unknown_chunk */
 static int
@@ -2997,195 +3170,9 @@ png_handle_unknown(png_structrp png_ptr, png_inforp info_ptr,
  *
  * ATM just cause unknown handling for all three chunks:
  */
-#ifdef PNG_READ_APNG_SUPPORTED
-// FIXME: Not static due to use in pngread.c, png_read_frame_head().
-png_handle_result_code /* PRIVATE */
-png_handle_acTL(png_structp png_ptr, png_infop info_ptr, png_uint_32 length)
-{
-    png_byte data[8];
-    png_uint_32 num_frames;
-    png_uint_32 num_plays;
-    png_uint_32 didSet;
-
-    png_debug(1, "in png_handle_acTL");
-
-    if (!(png_ptr->mode & PNG_HAVE_IHDR))
-    {
-        png_chunk_benign_error(png_ptr, "Missing IHDR before acTL");
-        return handled_error;
-    }
-    else if (png_ptr->mode & PNG_HAVE_IDAT)
-    {
-        png_crc_finish(png_ptr, length);
-        png_chunk_benign_error(png_ptr, "Invalid acTL after IDAT skipped");
-        return handled_error;
-    }
-    else if (png_ptr->mode & PNG_HAVE_acTL)
-    {
-        png_crc_finish(png_ptr, length);
-        png_chunk_benign_error(png_ptr, "Duplicate acTL skipped");
-        return handled_error;
-    }
-    else if (length != 8)
-    {
-        png_crc_finish(png_ptr, length);
-        png_chunk_benign_error(png_ptr, "acTL with invalid length skipped");
-        return handled_error;
-    }
-
-    png_crc_read(png_ptr, data, 8);
-    png_crc_finish(png_ptr, 0);
-
-    num_frames = png_get_uint_31(png_ptr, data);
-    num_plays = png_get_uint_31(png_ptr, data + 4);
-
-    /* the set function will do error checking on num_frames */
-    didSet = png_set_acTL(png_ptr, info_ptr, num_frames, num_plays);
-    if(didSet)
-        png_ptr->mode |= PNG_HAVE_acTL;
-
-    return handled_ok;
-}
-
-png_handle_result_code /* PRIVATE */
-png_handle_fcTL(png_structp png_ptr, png_infop info_ptr, png_uint_32 length)
-{
-    png_byte data[22];
-    png_uint_32 width;
-    png_uint_32 height;
-    png_uint_32 x_offset;
-    png_uint_32 y_offset;
-    png_uint_16 delay_num;
-    png_uint_16 delay_den;
-    png_byte dispose_op;
-    png_byte blend_op;
-
-    png_debug(1, "in png_handle_fcTL");
-
-    png_ensure_sequence_number(png_ptr, length);
-
-    if (!(png_ptr->mode & PNG_HAVE_IHDR))
-    {
-        png_chunk_benign_error(png_ptr, "Missing IHDR before fcTL");
-        return handled_error;
-    }
-    else if (png_ptr->mode & PNG_HAVE_IDAT)
-    {
-        /* for any frames other then the first this message may be misleading,
-        * but correct. PNG_HAVE_IDAT is unset before the frame head is read
-        * i can't think of a better message */
-        png_crc_finish(png_ptr, length-4);
-        png_chunk_benign_error(png_ptr, "Invalid fcTL after IDAT skipped");
-        return handled_error;
-    }
-    else if (png_ptr->mode & PNG_HAVE_fcTL)
-    {
-        png_crc_finish(png_ptr, length-4);
-        png_chunk_benign_error(png_ptr, "Duplicate fcTL within one frame skipped");
-        return handled_error;
-    }
-    else if (length != 26)
-    {
-        png_crc_finish(png_ptr, length-4);
-        png_chunk_benign_error(png_ptr, "fcTL with invalid length skipped");
-        return handled_error;
-    }
-
-    png_crc_read(png_ptr, data, 22);
-    png_crc_finish(png_ptr, 0);
-
-    width = png_get_uint_31(png_ptr, data);
-    height = png_get_uint_31(png_ptr, data + 4);
-    x_offset = png_get_uint_31(png_ptr, data + 8);
-    y_offset = png_get_uint_31(png_ptr, data + 12);
-    delay_num = png_get_uint_16(data + 16);
-    delay_den = png_get_uint_16(data + 18);
-    dispose_op = data[20];
-    blend_op = data[21];
-
-    if (png_ptr->num_frames_read == 0 && (x_offset != 0 || y_offset != 0))
-    {
-        png_chunk_benign_error(png_ptr, "fcTL for the first frame must have zero offset");
-        return handled_error;
-    }
-
-    if (info_ptr != NULL)
-    {
-        if (png_ptr->num_frames_read == 0 &&
-            (width != info_ptr->width || height != info_ptr->height))
-        {
-            png_chunk_benign_error(png_ptr, "size in first frame's fcTL must match the size in IHDR");
-            return handled_error;
-        }
-
-        /* The set function will do more error checking */
-        png_set_next_frame_fcTL(png_ptr, info_ptr, width, height,
-                                x_offset, y_offset, delay_num, delay_den,
-                                dispose_op, blend_op);
-
-        png_read_reinit(png_ptr, info_ptr);
-
-        png_ptr->mode |= PNG_HAVE_fcTL;
-    }
-
-    return handled_ok;
-}
-
-void /* PRIVATE */
-png_have_info(png_structp png_ptr, png_infop info_ptr)
-{
-    if((info_ptr->valid & PNG_INFO_acTL) && !(info_ptr->valid & PNG_INFO_fcTL))
-    {
-        png_ptr->apng_flags |= PNG_FIRST_FRAME_HIDDEN;
-        info_ptr->num_frames++;
-    }
-}
-
-png_handle_result_code /* PRIVATE */
-png_handle_fdAT(png_structp png_ptr, png_infop info_ptr, png_uint_32 length)
-{
-    png_ensure_sequence_number(png_ptr, length);
-
-    /* This function is only called from png_read_end(), png_read_info(),
-    * and png_push_read_chunk() which means that:
-    * - the user doesn't want to read this frame
-    * - or this is an out-of-place fdAT
-    * in either case it is safe to ignore the chunk with a warning */
-    png_crc_finish(png_ptr, length - 4);
-    png_chunk_benign_error(png_ptr, "ignoring fdAT chunk");
-    PNG_UNUSED(info_ptr)
-    return handled_error;
-}
-
-png_handle_result_code /* PRIVATE */
-png_ensure_sequence_number(png_structp png_ptr, png_uint_32 length)
-{
-    png_byte data[4];
-    png_uint_32 sequence_number;
-
-    if (length < 4)
-    {
-        png_chunk_benign_error(png_ptr, "invalid fcTL or fdAT chunk found");
-        return handled_error;
-    }
-
-    png_crc_read(png_ptr, data, 4);
-    sequence_number = png_get_uint_31(png_ptr, data);
-
-    if (sequence_number != png_ptr->next_seq_num)
-    {
-        png_chunk_benign_error(png_ptr, "fcTL or fdAT chunk with out-of-order sequence number found");
-        return handled_error;
-    }
-
-    png_ptr->next_seq_num++;
-    return handled_ok;
-}
-#else
 #define png_handle_acTL NULL
 #define png_handle_fcTL NULL
 #define png_handle_fdAT NULL
-#endif /* PNG_READ_APNG_SUPPORTED */
 
 /*
  * 1.6.47: This is the new table driven interface to all the chunk handling.

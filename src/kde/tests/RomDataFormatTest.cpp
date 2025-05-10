@@ -2,9 +2,11 @@
  * ROM Properties Page shell extension. (kde/tests)                        *
  * RomDataFormatTest.cpp: RomDataFormat tests                              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
+
+#include "config.librpbase.h"	// for TIME64_FOUND
 
 // Google Test
 #include "gtest/gtest.h"
@@ -63,13 +65,15 @@ TEST_F(RomDataFormatDeathTest, formatDateTime_0_invalid)
 	// UTC is used to prevent issues caused by differing timezones on build and test systems.
 	static const unsigned int flags = RomFields::RFT_DATETIME_IS_UTC;
 
-	static const array<DateTimeTestData, 5> dateTimeTestData = {{
+	static const DateTimeTestData dateTimeTestData[] = {
 		{0, ""},
 		{-2, ""},
 		{1, ""},
 		{0x7FFFFFFF, ""},
+#ifdef TIME64_FOUND
 		{0x80000000, ""},
-	}};
+#endif /* TIME64_FOUND */
+	};
 
 	for (const auto &test : dateTimeTestData) {
 		QString str;
@@ -92,13 +96,15 @@ TEST_F(RomDataFormatTest, formatDateTime_1_dateOnly)
 	static const unsigned int flags = RomFields::RFT_DATETIME_IS_UTC |
 	                                  RomFields::RFT_DATETIME_HAS_DATE;
 
-	static const array<DateTimeTestData, 5> dateTimeTestData = {{
+	static const DateTimeTestData dateTimeTestData[] = {
 		{0, "1 Jan 1970"},
 		{-2, "31 Dec 1969"},
 		{1, "1 Jan 1970"},
 		{0x7FFFFFFF, "19 Jan 2038"},
+#ifdef TIME64_FOUND
 		{0x80000000, "19 Jan 2038"},
-	}};
+#endif /* TIME64_FOUND */
+	};
 
 	for (const auto &test : dateTimeTestData) {
 		QString str = formatDateTime(test.timestamp, flags);
@@ -116,13 +122,15 @@ TEST_F(RomDataFormatTest, formatDateTime_2_timeOnly)
 	static const unsigned int flags = RomFields::RFT_DATETIME_IS_UTC |
 	                                  RomFields::RFT_DATETIME_HAS_TIME;
 
-	static const array<DateTimeTestData, 5> dateTimeTestData = {{
+	static const DateTimeTestData dateTimeTestData[] = {
 		{0, "00:00:00"},
 		{-2, "23:59:58"},
 		{1, "00:00:01"},
 		{0x7FFFFFFF, "03:14:07"},
+#ifdef TIME64_FOUND
 		{0x80000000, "03:14:08"},
-	}};
+#endif /* TIME64_FOUND */
+	};
 
 	for (const auto &test : dateTimeTestData) {
 		QString str = formatDateTime(test.timestamp, flags);
@@ -141,13 +149,15 @@ TEST_F(RomDataFormatTest, formatDateTime_3_dateAndTime)
 	                                  RomFields::RFT_DATETIME_HAS_DATE |
 	                                  RomFields::RFT_DATETIME_HAS_TIME;
 
-	static const array<DateTimeTestData, 5> dateTimeTestData = {{
+	static const DateTimeTestData dateTimeTestData[] = {
 		{0, "1 Jan 1970 00:00:00"},
 		{-2, "31 Dec 1969 23:59:58"},
 		{1, "1 Jan 1970 00:00:01"},
 		{0x7FFFFFFF, "19 Jan 2038 03:14:07"},
+#ifdef TIME64_FOUND
 		{0x80000000, "19 Jan 2038 03:14:08"},
-	}};
+#endif /* TIME64_FOUND */
+	};
 
 	for (const auto &test : dateTimeTestData) {
 		QString str = formatDateTime(test.timestamp, flags);
@@ -168,13 +178,15 @@ TEST_F(RomDataFormatDeathTest, formatDateTime_4_invalid)
 	static const unsigned int flags = RomFields::RFT_DATETIME_IS_UTC |
 	                                  RomFields::RFT_DATETIME_NO_YEAR;
 
-	static const array<DateTimeTestData, 5> dateTimeTestData = {{
+	static const DateTimeTestData dateTimeTestData[] = {
 		{0, ""},
 		{-2, ""},
 		{1, ""},
 		{0x7FFFFFFF, ""},
+#ifdef TIME64_FOUND
 		{0x80000000, ""},
-	}};
+#endif /* TIME64_FOUND */
+	};
 
 	for (const auto &test : dateTimeTestData) {
 		QString str;
@@ -198,13 +210,15 @@ TEST_F(RomDataFormatTest, formatDateTime_5_dateOnly)
 	                                  RomFields::RFT_DATETIME_NO_YEAR |
 	                                  RomFields::RFT_DATETIME_HAS_DATE;
 
-	static const array<DateTimeTestData, 5> dateTimeTestData = {{
+	static const DateTimeTestData dateTimeTestData[] = {
 		{0, "Jan 1"},
 		{-2, "Dec 31"},
 		{1, "Jan 1"},
 		{0x7FFFFFFF, "Jan 19"},
+#ifdef TIME64_FOUND
 		{0x80000000, "Jan 19"},
-	}};
+#endif /* TIME64_FOUND */
+	};
 
 	for (const auto &test : dateTimeTestData) {
 		QString str = formatDateTime(test.timestamp, flags);
@@ -223,13 +237,15 @@ TEST_F(RomDataFormatTest, formatDateTime_6_timeOnly_noYear)
 	                                  RomFields::RFT_DATETIME_NO_YEAR |
 	                                  RomFields::RFT_DATETIME_HAS_TIME;
 
-	static const array<DateTimeTestData, 5> dateTimeTestData = {{
+	static const DateTimeTestData dateTimeTestData[] = {
 		{0, "00:00:00"},
 		{-2, "23:59:58"},
 		{1, "00:00:01"},
 		{0x7FFFFFFF, "03:14:07"},
+#ifdef TIME64_FOUND
 		{0x80000000, "03:14:08"},
-	}};
+#endif /* TIME64_FOUND */
+	};
 
 	for (const auto &test : dateTimeTestData) {
 		QString str = formatDateTime(test.timestamp, flags);
@@ -249,13 +265,15 @@ TEST_F(RomDataFormatTest, formatDateTime_7_dateAndTime_noYear)
 	                                  RomFields::RFT_DATETIME_HAS_DATE |
 	                                  RomFields::RFT_DATETIME_HAS_TIME;
 
-	static const array<DateTimeTestData, 5> dateTimeTestData = {{
+	static const DateTimeTestData dateTimeTestData[] = {
 		{0, "Jan 1 00:00:00"},
 		{-2, "Dec 31 23:59:58"},
 		{1, "Jan 1 00:00:01"},
 		{0x7FFFFFFF, "Jan 19 03:14:07"},
+#ifdef TIME64_FOUND
 		{0x80000000, "Jan 19 03:14:08"},
-	}};
+#endif /* TIME64_FOUND */
+	};
 
 	for (const auto &test : dateTimeTestData) {
 		QString str = formatDateTime(test.timestamp, flags);

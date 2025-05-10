@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * GdiReader.hpp: GD-ROM reader for Dreamcast GDI images.                  *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -10,7 +10,7 @@
 #include "GdiReader.hpp"
 #include "librpbase/disc/SparseDiscReader_p.hpp"
 
-#include "../cdrom_structs.h"
+#include "cdrom_structs.h"
 #include "IsoPartition.hpp"
 
 // Other rom-properties libraries
@@ -219,8 +219,8 @@ int GdiReaderPrivate::parseGdiFile(char *gdibuf)
 
 		// Save the track information.
 		const size_t idx = blockRanges.size();
-		assert(idx < std::numeric_limits<int8_t>::max());
-		if (idx >= std::numeric_limits<int8_t>::max()) {
+		assert(idx < static_cast<size_t>(std::numeric_limits<int8_t>::max()));
+		if (idx >= static_cast<size_t>(std::numeric_limits<int8_t>::max())) {
 			// Too many tracks. (More than 127???)
 			return -ENOMEM;
 		}
@@ -242,6 +242,26 @@ int GdiReaderPrivate::parseGdiFile(char *gdibuf)
 
 	// Done parsing the GDI.
 	// TODO: Sort by LBA?
+
+	// Set the SparseDiscReader CD-ROM sector size values.
+	// NOTE: Could be multiple sector size values, but we'll use the
+	// one from Track 03 if available; otherwise, Track 02 or Track 01.
+	// TODO: Move this to the PartitionFile in OpenIsoRomData()?
+	BlockRange *sdrBlockRange = nullptr;
+	for (unsigned int i = 3; i > 0; i--) {
+		if (trackMappings.size() >= i && trackMappings[i-1] >= 0) {
+			sdrBlockRange = &blockRanges[trackMappings[i-1]];
+			break;
+		}
+	}
+	if (sdrBlockRange) {
+		// TODO: Do any DC games use Mode 2 or subchannels?
+		this->hasCdromInfo = true;
+		cdromSectorInfo.mode = 1;
+		cdromSectorInfo.sector_size = sdrBlockRange->sectorSize;
+		cdromSectorInfo.subchannel_size = 0;
+	}
+
 	return 0;
 }
 
@@ -480,7 +500,7 @@ int GdiReader::isDiscSupported_static(const uint8_t *pHeader, size_t szHeader)
 		if (pHeader[i] == '\r' || pHeader[i] == '\n') {
 			// End of line.
 			break;
-		} else if (ISDIGIT(pHeader[i])) {
+		} else if (isdigit_ascii(pHeader[i])) {
 			// Digit.
 			trackCount *= 10;
 			trackCount += (pHeader[i] & 0xF);

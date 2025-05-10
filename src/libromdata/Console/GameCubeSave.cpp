@@ -71,7 +71,12 @@ public:
 	 * @param x Original DWORD
 	 * @return PDP-swapped DWORD
 	 */
+	// FIXME: be32_to_cpu() and __swab16() are not constexpr on MSVC 2022.
+#ifndef _MSC_VER
+	static inline constexpr uint32_t PDP_SWAP(uint32_t x)
+#else /* !_MSC_VER */
 	static inline uint32_t PDP_SWAP(uint32_t x)
+#endif /* _MSC_VER */
 	{
 		union { uint16_t w[2]; uint32_t d; } tmp;
 		tmp.d = be32_to_cpu(x);
@@ -209,7 +214,7 @@ bool GameCubeSavePrivate::isCardDirEntry(const uint8_t *buffer, uint32_t data_si
 	// TODO: NDDEMO has a NULL in the game ID, but I don't think
 	// it has save files.
 	for (int i = 6-1; i >= 0; i--) {
-		if (!ISALNUM(direntry->id6[i])) {
+		if (!isalnum_ascii(direntry->id6[i])) {
 			// Non-alphanumeric character.
 			return false;
 		}

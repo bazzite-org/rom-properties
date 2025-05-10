@@ -210,25 +210,38 @@ int WiiTicketPrivate::getEncKey(void)
 	}
 
 	// Check CA and XS.
-	WiiTicket::EncryptionKeys encKey;
-	if (ca == 1 && xs == 3) {
+	struct ca_xs_tbl_t {
+		uint8_t ca;
+		uint8_t xs;
+		WiiTicket::EncryptionKeys encKey;
+	};
+	static const array<ca_xs_tbl_t, 5> ca_xs_tbl = {{
 		// RVL retail
-		encKey = static_cast<WiiTicket::EncryptionKeys>(
-			static_cast<int>(WiiTicket::EncryptionKeys::Key_RVL_Common) + common_key_index);
-	} else if (ca == 2 && xs == 6) {
+		{1, 3, WiiTicket::EncryptionKeys::Key_RVL_Common},
+
 		// RVT debug (TODO: There's also XS00000004)
-		encKey = static_cast<WiiTicket::EncryptionKeys>(
-			static_cast<int>(WiiTicket::EncryptionKeys::Key_RVT_Debug) + common_key_index);
-	} else if (ca == 3 && xs == 0xc) {
+		{2, 6, WiiTicket::EncryptionKeys::Key_RVT_Debug},
+
 		// CTR/WUP retail
-		encKey = WiiTicket::EncryptionKeys::Key_WUP_Starbuck_WiiU_Common;
-	} else if (ca == 4 && xs == 0xf) {
+		{3, 0xC, WiiTicket::EncryptionKeys::Key_WUP_Starbuck_WiiU_Common},
+
 		// CAT debug
-		encKey = WiiTicket::EncryptionKeys::Key_CAT_Starbuck_WiiU_Common;
-	} else if (ca == 4 && xs == 0x9) {
-		// CAT debug (early titles; same as CTR debug)
-		encKey = WiiTicket::EncryptionKeys::Key_CAT_Starbuck_WiiU_Common;
-	} else {
+		{4, 0xF, WiiTicket::EncryptionKeys::Key_CAT_Starbuck_WiiU_Common},
+
+		// CTR debug (also used for some early/system CAT debug titles for some reason)
+		{4, 0x9, WiiTicket::EncryptionKeys::Key_CAT_Starbuck_WiiU_Common},
+	}};
+
+	WiiTicket::EncryptionKeys encKey = WiiTicket::EncryptionKeys::Unknown;
+	for (ca_xs_tbl_t p : ca_xs_tbl) {
+		if (ca == p.ca && xs == p.xs) {
+			// Found a match.
+			encKey = p.encKey;
+			break;
+		}
+	}
+
+	if (static_cast<int>(encKey) < 0) {
 		// Unsupported CA/XS combination.
 		return -EINVAL;
 	}
@@ -328,12 +341,15 @@ int WiiTicket::isRomSupported_static(const DetectInfo *info)
 		default:
 			// Unsupported ticket version.
 			return -1;
+
 		case 0:
-			if (info->szFile != sizeof(RVL_Ticket)) {
+			// NOTE: vWii titles may have a certificate chain appended to the ticket.
+			if (info->szFile < static_cast<off64_t>(sizeof(RVL_Ticket))) {
 				// Incorrect file size.
 				return -1;
 			}
 			break;
+
 		case 1:
 			if (info->szFile < static_cast<off64_t>(sizeof(RVL_Ticket_V1))) {
 				// Incorrect file size.
