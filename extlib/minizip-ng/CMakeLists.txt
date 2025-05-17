@@ -8,7 +8,7 @@
 #cmake_minimum_required(VERSION 3.13)
 
 # Library version
-set(VERSION "4.0.7")
+set(VERSION "4.0.10")
 # API version
 set(SOVERSION "4")
 
@@ -191,12 +191,16 @@ if(MZ_LIBCOMP)
 endif()
 
 if(MZ_ZLIB)
+    # rom-properties: Don't check for ZLIB/ZLIBNG here.
+    # We've already checked for it.
+    IF(0)
     # Check if zlib is present
     if(NOT MZ_FORCE_FETCH_LIBS)
         find_package(ZLIBNG QUIET)
         find_package(ZLIB QUIET)
         set(ZLIB_VERSION ${ZLIB_VERSION_STRING})
     endif()
+    ENDIF(0) # rom-properties
 
     if(ZLIBNG_FOUND AND NOT MZ_FORCE_FETCH_LIBS)
         message(STATUS "Using ZLIBNG")
@@ -645,27 +649,18 @@ endif()
 if(MZ_COMPAT)
     set(SOVERSION "1")
 
-    set(FILE_H "ioapi.h")
-    set(MZ_COMPAT_FILE "MZ_COMPAT_IOAPI")
-    configure_file(mz_compat_shim.h.in ioapi.h)
-
-    set(FILE_H "zip.h")
-    set(MZ_COMPAT_FILE "MZ_COMPAT_ZIP")
-    configure_file(mz_compat_shim.h.in zip.h)
-
-    set(FILE_H "unzip.h")
-    set(MZ_COMPAT_FILE "MZ_COMPAT_UNZIP")
-    configure_file(mz_compat_shim.h.in unzip.h)
+    list(APPEND MINIZIP_SRC 
+        compat/ioapi.c
+        compat/unzip.c
+        compat/zip.c)
+    list(APPEND MINIZIP_HDR 
+        compat/ioapi.h
+        compat/unzip.h
+        compat/zip.h)
 
     if(MZ_COMPAT_VERSION)
         list(APPEND MINIZIP_DEF -DMZ_COMPAT_VERSION=${MZ_COMPAT_VERSION})
     endif()
-
-    list(APPEND MINIZIP_SRC mz_compat.c)
-    list(APPEND MINIZIP_HDR mz_compat.h
-        ${CMAKE_CURRENT_BINARY_DIR}/ioapi.h
-        ${CMAKE_CURRENT_BINARY_DIR}/zip.h
-        ${CMAKE_CURRENT_BINARY_DIR}/unzip.h)
 endif()
 
 # Detect available sanitizers
@@ -730,6 +725,7 @@ set_target_properties(${MINIZIP_TARGET} PROPERTIES
 # rom-properties: Only export symbols if building shared libraries.
 IF(BUILD_SHARED_LIBS)
     set_target_properties(${MINIZIP_TARGET} PROPERTIES
+                          LINKER_LANGUAGE C
                           DEFINE_SYMBOL "MZ_EXPORTS")
 ENDIF(BUILD_SHARED_LIBS)
 
@@ -756,6 +752,7 @@ target_include_directories(${MINIZIP_TARGET} PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
 if(MZ_COMPAT)
     target_include_directories(${MINIZIP_TARGET} PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/compat/>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 endif()
 
@@ -809,6 +806,8 @@ if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
         UNSET(DEBUG_FILENAME)
     ENDIF(INSTALL_DEBUG)
 
+    # rom-properties: Don't install CMake or pkgconfig files.
+    IF(0)
     # Create and install CMake package config version file to allow find_package()
     include(CMakePackageConfigHelpers)
     write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/${MINIZIP_TARGET}-config-version.cmake
@@ -817,7 +816,7 @@ if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
     if(MINIZIP_DEP_PKG)
         string(APPEND MINIZIP_CONFIG_CONTENT "include(CMakeFindDependencyMacro)\n")
         foreach(pkg_name ${MINIZIP_DEP_PKG})
-            string(APPEND MINIZIP_CONFIG_CONTENT "find_dependency(${pkg_name} REQUIRED)\n")
+            string(APPEND MINIZIP_CONFIG_CONTENT "find_dependency(${pkg_name})\n")
         endforeach()
     endif()
     string(APPEND MINIZIP_CONFIG_CONTENT "include(\"\${CMAKE_CURRENT_LIST_DIR}/${MINIZIP_TARGET}.cmake\")")
@@ -832,6 +831,7 @@ if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${MINIZIP_TARGET}-config-version.cmake
                   ${CMAKE_CURRENT_BINARY_DIR}/${MINIZIP_TARGET}-config.cmake
             DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${MINIZIP_TARGET}")
+    ENDIF(0) # rom-properties
 endif()
 if(NOT SKIP_INSTALL_HDR AND NOT SKIP_INSTALL_ALL)
     install(FILES ${MINIZIP_HDR} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/${MINIZIP_TARGET}")

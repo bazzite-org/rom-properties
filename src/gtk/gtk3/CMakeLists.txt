@@ -99,7 +99,6 @@ SET(${PROJECT_NAME}_SRCS
 	${${PROJECT_NAME}_GTK3MAX_SRCS}
 	${${PROJECT_NAME}_GTK3MIN_SRCS}
 	${${PROJECT_NAME}-notify_SRCS}
-	${${PROJECT_NAME}_IFUNC_SRCS}
 	NautilusPlugin.cpp
 	NautilusPropertyPageProvider.cpp
 	NautilusMenuProvider.c
@@ -174,6 +173,9 @@ IF(BUILD_GTK3)
 	ENDIF(CMAKE_DL_LIBS)
 
 	TARGET_COMPILE_DEFINITIONS(${PROJECT_NAME} PRIVATE RP_UI_GTK3)
+
+	# PugiXML headers are needed for AboutTab.
+	TARGET_INCLUDE_DIRECTORIES(${PROJECT_NAME} PRIVATE ${pugixml_INCLUDE_DIR})
 
 	# libfmt
 	IF(Fmt_FOUND)

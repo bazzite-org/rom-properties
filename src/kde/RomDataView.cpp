@@ -325,10 +325,9 @@ QLabel *RomDataViewPrivate::initString(QLabel *lblDesc,
 	if (field.type == RomFields::RFT_STRING) {
 		// Monospace font?
 		if (field.flags & RomFields::STRF_MONOSPACE) {
-			QFont font(QLatin1String("Monospace"));
-			font.setStyleHint(QFont::TypeWriter);
-			lblString->setFont(font);
+			lblString->setFont(getSystemMonospaceFont());
 			lblString->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+			vecMonoWidgets.push_back(lblString);
 		}
 
 		// "Warning" font?
@@ -552,6 +551,10 @@ QTreeView *RomDataViewPrivate::initListData(QLabel *lblDesc,
 
 	// Add the field data to the ListDataModel.
 	listModel->setField(&field);
+
+	// FIXME: Qt6 is defaulting to sorting by column 0, descending.
+	// Qt5 didn't have this issue...
+	treeView->header()->setSortIndicator(-1, Qt::AscendingOrder);
 
 	// Set up column and header visibility.
 	if (listDataDesc.names) {
@@ -1104,6 +1107,10 @@ RomDataView::RomDataView(QWidget *parent)
 	Q_D(RomDataView);
 	d->ui.setupUi(this);
 
+	// Add an event filter for the top-level window so we can
+	// handle QEvent::StyleChange.
+	installEventFilterInTopLevelWidget(this);
+
 	// Create the "Options" button in the parent window.
 	d->createOptionsButton();
 }
@@ -1114,6 +1121,10 @@ RomDataView::RomDataView(const RomDataPtr &romData, QWidget *parent)
 {
 	Q_D(RomDataView);
 	d->ui.setupUi(this);
+
+	// Add an event filter for the top-level window so we can
+	// handle QEvent::StyleChange.
+	installEventFilterInTopLevelWidget(this);
 
 	// Create the "Options" button in the parent window.
 	d->createOptionsButton();
@@ -1192,6 +1203,12 @@ void RomDataView::paintEvent(QPaintEvent *event)
 	super::paintEvent(event);
 }
 
+/**
+ * Event filter for QTreeView and top-level windows.
+ * @param object QObject
+ * @param event Event
+ * @return True to filter the event; false to pass it through.
+ */
 bool RomDataView::eventFilter(QObject *object, QEvent *event)
 {
 	// Check the event type.
@@ -1212,6 +1229,14 @@ bool RomDataView::eventFilter(QObject *object, QEvent *event)
 	QTreeView *const treeView = qobject_cast<QTreeView*>(object);
 	if (!treeView) {
 		// Not a QTreeView.
+		// Assuming this is a top-level window.
+		if (event->type() == QEvent::StyleChange) {
+			// Update monospace fonts.
+			Q_D(RomDataView);
+			for (QWidget *widget : d->vecMonoWidgets) {
+				widget->setFont(getSystemMonospaceFont());
+			}
+		}
 		return false;
 	}
 

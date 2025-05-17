@@ -1,5 +1,7 @@
 # Build options.
 
+OPTION(ENABLE_WERROR "Treat all compile warnings as errors. (Enable for development!)" OFF)
+
 # Platform options.
 # NOTE: If a platform is specified but it isn't found,
 # that plugin will not be built. There doesn't seem to
@@ -56,7 +58,7 @@ IF(WIN32)
 ELSE(WIN32)
 	OPTION(USE_INTERNAL_ZLIB "Use the internal copy of zlib." OFF)
 	OPTION(USE_INTERNAL_PNG "Use the internal copy of libpng." OFF)
-	OPTION(USE_INTERNAL_XML "Use the internal copy of TinyXML2." OFF)
+	OPTION(USE_INTERNAL_XML "Use the internal copy of PugiXML." OFF)
 	OPTION(USE_INTERNAL_ZSTD "Use the internal copy of zstd." OFF)
 	OPTION(USE_INTERNAL_LZ4 "Use the internal copy of LZ4." OFF)
 	OPTION(USE_INTERNAL_LZO "Use the internal copy of LZO." OFF)

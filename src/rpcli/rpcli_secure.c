@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (rpcli)                            *
  * rpcli_secure.c: Security options for rpcli.                             *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -28,7 +28,7 @@ int rpcli_do_security_options(void)
 #if defined(_WIN32)
 	param.bHighSec = 0;
 #elif defined(HAVE_SECCOMP)
-	static const int syscall_wl[] = {
+	static const int16_t syscall_wl[] = {
 		// Syscalls used by rp-download.
 		// TODO: Add more syscalls.
 		// FIXME: glibc-2.31 uses 64-bit time syscalls that may not be
@@ -66,6 +66,9 @@ int rpcli_do_security_options(void)
 #elif defined(__NR_clock_gettime64)
 		__NR_clock_gettime64,
 #endif /* __SNR_clock_gettime64 || __NR_clock_gettime64 */
+
+		// RomDataFormat needs this, at least on 32-bit (i386) KF5 builds.
+		SCMP_SYS(clock_getres),
 
 		// glibc ncsd
 		// TODO: Restrict connect() to AF_UNIX.

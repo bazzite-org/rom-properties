@@ -18,7 +18,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // IsoPartition
-#include "../cdrom_structs.h"
+#include "cdrom_structs.h"
 #include "../iso_structs.h"
 #include "../disc/Cdrom2352Reader.hpp"
 #include "../disc/IsoPartition.hpp"
@@ -457,7 +457,7 @@ PlayStationDisc::PlayStationDisc(const IRpFilePtr &file)
 	// Remove the ISO version number.
 	const size_t len = d->boot_filename.size();
 	if (len > 2) {
-		if (ISDIGIT(d->boot_filename[len-1]) && d->boot_filename[len-2] == ';') {
+		if (isdigit_ascii(d->boot_filename[len-1]) && d->boot_filename[len-2] == ';') {
 			d->boot_filename.resize(len-2);
 		}
 	}

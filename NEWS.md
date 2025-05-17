@@ -1,6 +1,67 @@
 # Changes
 
-## v2.5 (released 2025/??/??)
+## v2.6 (released 2025/??/??)
+
+* Other changes:
+  * rpcli: Added more colorization for warning messages.
+  * rpcli: Refactored console handling into a separate library, libgsvt.
+
+## v2.5.1 (released 2025/05/10)
+
+* New parser features:
+  * ISO: Show the sector mode in addition to sector sizes.
+    * Fixes #322: Underlying CD image type for ISO
+      * Requested by @DankRank.
+  * SNES: List the Nintendo Power directory for full NP cartridge dumps.
+    * Fixes #154: SNES: Nintendo Power directory
+  * MegaDrive: Add external image URL support for the Teradrive TMSS ROM.
+
+* Bug fixes:
+  * NintendoDS_BNR: Animated icons were missing the animated icon flag.
+    * Affects: v2.4 - v2.5
+  * EXE: Don't show the "XML parsing failed" warning if the EXE doesn't
+    actually have a manifest.
+    * Affects: v2.5
+  * rpcli: SCSI inquiry was accidentally broken during a code cleanup.
+    * Affects: v2.3 - v2.5
+  * ISO: Get the sector size from the underlying disc reader classes if
+    not reading directly from a file.
+    * The SparseDiscReader changes in v2.3 broke this, so anything that
+      uses an ISO-9660 format showed 2048-byte sectors, even if this
+      wasn't the case.
+  * KDE: On KF6, ListData widgets that didn't specify a default sorting
+    method ended up being sorted in reverse-order by default. Not sure
+    why this changed in Qt6. A workaround has been applied to fix it.
+  * ISO: Fix a typo that broke "Volume Size" on CD-i volumes.
+    * Affects: v1.8 - v2.5
+  * Build system: DT_RELR detection was broken and didn't work properly
+    since it was implemented in v2.0. It now works properly.
+  * GTK4: Fix a potential crash in DragImage when using `rp-stub -R`.
+  * WiiUPackage: vWii packages are now handled properly.
+
+* Other changes:
+  * Added support for localsearch-3.8, the new name of Tracker.
+    This is internally handled as API "3L".
+    * Fixes #446: Use `localsearch` paths instead of `tracker3-miners`
+      * Reported by @lufog.
+  * rpcli: Improved Unicode output such that it works properly on older versions
+    of Windows, including Windows XP and Windows 7, by using WriteConsoleW().
+    This requires converting from UTF-8 to UTF-16, but it turns out doing this
+    is actually faster than printf/cout, even on versions of Windows that support
+    UTF-8 properly, so now it's used on Windows 10 as well.
+  * rpcli: Some more status and error messages are now colorized if printing to
+    a console. (Cyan for status messages; red for error messages.)
+    * Colorization is now disabled on non-Windows systems if TERM is not set to
+      a terminal that supports color.
+    * URLs are now colorized and marked up using "OSC 8", which makes them
+      clickable on terminals that support it.
+  * The xattr tab now supports displaying file compression algorithms in some
+    cases. On Windows, it will indicate LZNT1 ("standard" NTFS compression) on
+    all versions, and if using Windows 10 or later, it will indicate newer
+    algorithms in use, e.g. the XPRESS and LZX algorithms. On Linux, btrfs's
+    zlib, lzo, and zstd algorithms will be displayed.
+
+## v2.5 (released 2025/04/19)
 
 * New parsers:
   * J2ME: Parser for Java 2 Micro Edition .jar packages. This supports
@@ -8,8 +69,6 @@
     will be ignored. Android packages (.apk) are also not currently
     supported.
   * Qoi: Quite OK Image Format parser. Uses qoi.h from upstream.
-  * rpcli: Text output for "warning" messages is now colorized if
-    printing to a terminal.
 
 * New parser features:
   * WiiUPackage: Add support for extracted Wii U packages.
@@ -19,6 +78,9 @@
     * Handled similarly to WiiUPackage.
     * Fixes #436: Add folder icon support for OG Xbox games
       * Requested by @Masamune3210.
+  * Wim: Add special handling for unstaged images.
+    * Fixes #445: [libromdata - WIM] Unstaged Windows OS installation images not properly supported
+      * Requested by @pivotman319-owo.
 
 * Bug fixes:
   * Amiibo: Fix an error that can cause the wrong Character Variant to be
@@ -64,6 +126,15 @@
     * Affects: V2.4 - v2.4.1
   * GTK UI frontends: Ensure the description label is also bold+red if the
     field is a "warning" field.
+  * DpfReader: Fixed a regression that broke reading RPF files.
+    * Affects: v2.4 - v2.4.1
+  * Wim: Fix image timestamp parsing. Previously, the "HIGHPART" was used
+    for both the high and low 32 bits. The date would usually be correct,
+    but the timestamp would be off by minutes. Both "HIGHPART" and "LOWPART"
+    are now correctly used to build the 64-bit FILETIME timestamp.
+  * Fix build issues on Mac OS X.
+    * Pull request: #444
+      * Submitted by @ccawley2011.
 
 * Other changes:
   * CMake: Added an ENABLE_NETWORKING option to control whether or not
@@ -74,6 +145,21 @@
     libfmt has faster string parsing than printf() and stringstream, and has
     guaranteed type-safe format handling using C++ templates, whereas printf
     can get tripped up because it uses C-style varargs.
+  * rpcli: Text output for "warning" messages is now colorized if
+    printing to a terminal.
+  * rpcli: On Windows, enable UTF-8 console output if using Windows 7 or later.
+  * Removed IFUNC support. It's only supported by glibc on Linux (and possibly
+    some of the BSDs), and it adds a lot of complexity. The regular C dispatch
+    functions only have a few instructions of overhead in most cases.
+  * Added NEON-optimized functions:
+    * Array byteswap (16-bit and 32-bit)
+    * Linear image decoding (32-bit color)
+    * Image swizzling (for e.g. KTX2)
+    * Tested on Android. (arm64)
+    * Compile-tested on MSVC. (arm32, arm64)
+  * Switched XML parsers from TinyXML2 to PugiXML.
+  * KDE UI frontend: Monospace text now uses the system-wide monospace font
+    instead of the Qt default monospace font. (requires Qt 5.2 or later)
 
 ## v2.4.1 (released 2024/11/12)
 

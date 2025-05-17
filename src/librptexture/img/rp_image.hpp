@@ -2,11 +2,13 @@
  * ROM Properties Page shell extension. (librptexture)                     *
  * rp_image.hpp: Image class.                                              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
 #pragma once
+
+#include "librptexture/config.librptexture.h"
 
 #include "common.h"
 #include "dll-macros.h"
@@ -25,9 +27,19 @@
 #  define RP_IMAGE_HAS_SSE2 1
 #  define RP_IMAGE_HAS_SSSE3 1
 #  define RP_IMAGE_HAS_SSE41 1
+#elif defined(HAVE_ARM_NEON_H)
+#  if defined(RP_CPU_ARM) || defined(RP_CPU_ARM64)
+#    include "librpcpuid/cpuflags_arm.h"
+#    define RP_IMAGE_HAS_NEON 1
+#  endif
 #endif
 #ifdef RP_CPU_AMD64
 #  define RP_IMAGE_ALWAYS_HAS_SSE2 1
+#endif
+#ifdef HAVE_ARM_NEON_H
+#  ifdef RP_CPU_ARM64
+#    define RP_IMAGE_ALWAYS_HAS_NEON 1
+#  endif
 #endif
 
 #include "../argb32_t.hpp"
@@ -512,6 +524,17 @@ class rp_image
 		int swizzle_ssse3(const char *swz_spec);
 #endif /* RP_IMAGE_HAS_SSSE3 */
 
+#ifdef RP_IMAGE_HAS_NEON
+		/**
+		 * Swizzle the image channels.
+		 * NEON-optimized version.
+		 *
+		 * @param swz_spec Swizzle specification: [rgba01]{4} [matches KTX2]
+		 * @return 0 on success; negative POSIX error code on error.
+		 */
+		int swizzle_neon(const char *swz_spec);
+#endif /* RP_IMAGE_HAS_NEON */
+
 		/**
 		 * Swizzle the image channels.
 		 *
@@ -551,9 +574,8 @@ typedef std::shared_ptr<const rp_image> rp_image_const_ptr;
  */
 inline int rp_image::un_premultiply(void)
 {
-	// FIXME: Figure out how to get IFUNC working with C++ member functions.
 #ifdef RP_IMAGE_HAS_SSE41
-	if (RP_CPU_HasSSE41()) {
+	if (RP_CPU_x86_HasSSE41()) {
 		return un_premultiply_sse41();
 	} else
 #endif /* RP_IMAGE_HAS_SSE2 */
@@ -575,13 +597,12 @@ inline int rp_image::un_premultiply(void)
  */
 inline int rp_image::apply_chroma_key(uint32_t key)
 {
-	// FIXME: Figure out how to get IFUNC working with C++ member functions.
 #if defined(RP_IMAGE_ALWAYS_HAS_SSE2)
 	// amd64 always has SSE2.
 	return apply_chroma_key_sse2(key);
 #else
 #  if defined(RP_IMAGE_HAS_SSE2)
-	if (RP_CPU_HasSSE2()) {
+	if (RP_CPU_x86_HasSSE2()) {
 		return apply_chroma_key_sse2(key);
 	} else
 #  endif /* RP_IMAGE_HAS_SSE2 */
@@ -599,15 +620,23 @@ inline int rp_image::apply_chroma_key(uint32_t key)
  */
 inline int rp_image::swizzle(const char *swz_spec)
 {
-	// FIXME: Figure out how to get IFUNC working with C++ member functions.
-#if defined(RP_IMAGE_HAS_SSSE3)
-	if (RP_CPU_HasSSSE3()) {
+#ifdef RP_IMAGE_ALWAYS_HAS_NEON
+	return swizzle_neon(swz_spec);
+#else
+#  if defined(RP_IMAGE_HAS_SSSE3)
+	if (RP_CPU_x86_HasSSSE3()) {
 		return swizzle_ssse3(swz_spec);
 	} else
-#endif /* RP_IMAGE_HAS_SSSE3 */
+#  endif /* RP_IMAGE_HAS_SSSE3 */
+#  ifdef RP_IMAGE_HAS_NEON
+	if (RP_CPU_arm_HasNEON()) {
+		return swizzle_neon(swz_spec);
+	} else
+#  endif /* IMAGEDECODER_HAS_NEON */
 	{
 		return swizzle_cpp(swz_spec);
 	}
+#endif
 }
 
 }

@@ -28,6 +28,12 @@ SparseDiscReaderPrivate::SparseDiscReaderPrivate(SparseDiscReader *q)
 
 	// disc_size, pos, and block_size must be
 	// set by the subclass.
+
+	// Clear CdromSectorInfo.
+	hasCdromInfo = false;
+	cdromSectorInfo.mode = 0;
+	cdromSectorInfo.sector_size = 0;
+	cdromSectorInfo.subchannel_size = 0;
 }
 
 /** SparseDiscReader **/
@@ -207,6 +213,20 @@ off64_t SparseDiscReader::size(void)
 	}
 
 	return d->disc_size;
+}
+
+/** SparseDiscReader-specific properties **/
+
+// CD-ROM specific information
+
+/**
+ * Get the CD-ROM sector information.
+ * @return CD-ROM sector information, or nullptr if not set.
+ */
+const CdromSectorInfo *SparseDiscReader::cdromSectorInfo(void) const
+{
+	RP_D(const SparseDiscReader);
+	return (d->hasCdromInfo) ? &d->cdromSectorInfo : nullptr;
 }
 
 /** SparseDiscReader **/

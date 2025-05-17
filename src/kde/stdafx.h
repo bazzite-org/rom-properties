@@ -32,7 +32,9 @@
 #include <vector>
 
 // libfmt
-#include "rp-libfmt.h"
+#ifndef RP_NO_INCLUDE_LIBFMT_IN_STDAFX_H
+#  include "rp-libfmt.h"
+#endif
 
 #else /* !__cplusplus */
 /** C **/
@@ -70,6 +72,7 @@
 
 #include <QtGui/QDrag>
 #include <QtGui/QFont>
+#include <QtGui/QFontDatabase>
 #include <QtGui/QFontMetrics>
 #include <QtGui/QIcon>
 #include <QtGui/QImage>

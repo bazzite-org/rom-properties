@@ -148,7 +148,6 @@ SET(${PROJECT_NAME}_SRCS
 SET(${PROJECT_NAME}_H
 	RomDataFactory.hpp
 	CopierFormats.h
-	cdrom_structs.h
 	iso_structs.h
 	nintendo_system_id.h
 
@@ -277,6 +276,7 @@ SET(${PROJECT_NAME}_H
 	Media/CBMDOS.hpp
 	Media/ISO.hpp
 	Media/Wim.hpp
+	Media/Wim_p.hpp
 
 	Media/cbmdos_structs.h
 	Media/hsfs_structs.h
@@ -377,6 +377,7 @@ SET(${PROJECT_NAME}_H
 IF(ENABLE_XML)
 	SET(${PROJECT_NAME}_SRCS ${${PROJECT_NAME}_SRCS}
 		Console/WiiUPackage_xml.cpp
+		Media/Wim_xml.cpp
 		Other/EXE_manifest.cpp
 		)
 	IF(MSVC AND (NOT USE_INTERNAL_XML OR USE_INTERNAL_XML_DLL))
@@ -422,15 +423,6 @@ ENDIF(WIN32 AND RP_LIBROMDATA_IS_DLL)
 # Optimized sources.
 INCLUDE(CPUInstructionSetFlags)
 IF(CPU_i386 OR CPU_amd64)
-	# IFUNC requires glibc.
-	# We're not checking for glibc here, but we do have preprocessor
-	# checks, so even if this does get compiled on a non-glibc system,
-	# it won't do anything.
-	# TODO: Might be supported on other Unix-like operating systems...
-	IF(UNIX AND NOT APPLE)
-		SET(${PROJECT_NAME}_IFUNC_SRCS utils/SuperMagicDrive_ifunc.cpp)
-	ENDIF(UNIX AND NOT APPLE)
-
 	# MSVC does not support MMX intrinsics in 64-bit builds.
 	# Reference: https://docs.microsoft.com/en-us/cpp/cpp/m64?view=msvc-160
 	#
@@ -460,7 +452,7 @@ IF(RP_LIBROMDATA_IS_DLL)
 	ADD_DEFINITIONS(-DRP_BUILDING_FOR_DLL=1)
 	# NOTE: Not using the project version here.
 	# This represents the ABI version.
-	SET(${PROJECT_NAME}_VERSION 6.0)
+	SET(${PROJECT_NAME}_VERSION 6.1)
 	SET(${PROJECT_NAME}_SOVERSION 6)
 	IF(MSVC)
 		# Delay-load sources.
@@ -470,38 +462,6 @@ IF(RP_LIBROMDATA_IS_DLL)
 ELSE()
 	SET(${PROJECT_NAME}_LINKAGE STATIC)
 ENDIF()
-
-IF(ENABLE_XML)
-	IF(USE_INTERNAL_XML)
-		# Using the internal TinyXML2.
-		# It definitely has XMLElement::IntText(int defaultValue).
-		SET(HAVE_TINYXML2_XMLELEMENT_INTTEXT 1 CACHE INTERNAL "Test HAVE_TINYXML2_XMLELEMENT_INTTEXT" FORCE)
-	ELSE(USE_INTERNAL_XML)
-		# Check if TinyXML2 has XMLElement::IntText(int defaultValue).
-		# Was added sometime between TinyXML2 4.0.1 and 5.0.0.
-		# NOTE: Can't just do an #if on the version macro because
-		# TinyXML2 didn't have version macros until 6.2.0.
-		SET(CMAKE_REQUIRED_INCLUDES ${TinyXML2_INCLUDE_DIR})
-		SET(CMAKE_REQUIRED_LIBRARIES ${TinyXML2_LIBRARY})
-		INCLUDE(CheckCXXSourceCompiles)
-		CHECK_CXX_SOURCE_COMPILES("#include <stdio.h>
-#include \"tinyxml2.h\"
-using namespace tinyxml2;
-
-int main(void) {
-        XMLDocument document;
-        XMLElement *element = document.NewElement(\"test\");
-        element->SetText(\"12345\"); \
-        int value = element->IntText(0); \
-        printf(\"value == %d, should be 12345\", value);
-        puts(\"\");
-
-        return !(value == 12345);
-}" HAVE_TINYXML2_XMLELEMENT_INTTEXT)
-		UNSET(CMAKE_REQUIRED_INCLUDES)
-		UNSET(CMAKE_REQUIRED_LIBRARIES)
-	ENDIF(USE_INTERNAL_XML)
-ENDIF(ENABLE_XML)
 
 # Write the config.h file.
 INCLUDE(DirInstallPaths)
@@ -529,7 +489,6 @@ ADD_LIBRARY(${PROJECT_NAME} ${${PROJECT_NAME}_LINKAGE}
 	${${PROJECT_NAME}_SRCS} ${${PROJECT_NAME}_H}
 	${${PROJECT_NAME}_NETWORKING_SRCS}
 	${${PROJECT_NAME}_CRYPTO_SRCS} ${${PROJECT_NAME}_CRYPTO_H}
-	${${PROJECT_NAME}_IFUNC_SRCS}
 	${${PROJECT_NAME}_MMX_SRCS}
 	${${PROJECT_NAME}_SSE2_SRCS}
 	${${PROJECT_NAME}_RC}
@@ -759,10 +718,9 @@ IF(ENABLE_DECRYPTION AND NOT WIN32)
 	ENDIF(NETTLE_FOUND)
 ENDIF(ENABLE_DECRYPTION AND NOT WIN32)
 
-IF(ENABLE_XML AND TinyXML2_FOUND)
-	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE ${TinyXML2_LIBRARY})
-	TARGET_INCLUDE_DIRECTORIES(${PROJECT_NAME} PRIVATE ${TinyXML2_INCLUDE_DIR})
-ENDIF(ENABLE_XML AND TinyXML2_FOUND)
+IF(ENABLE_XML AND pugixml_FOUND)
+	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE ${pugixml_LIBRARY})
+ENDIF(ENABLE_XML AND pugixml_FOUND)
 
 IF(ENABLE_UNICE68)
 	TARGET_LINK_LIBRARIES(${PROJECT_NAME} PRIVATE unice68_lib)

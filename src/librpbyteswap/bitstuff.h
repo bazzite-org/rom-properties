@@ -42,7 +42,11 @@
  * @return uilog2(n)
  */
 ATTR_CONST
+#ifndef _MSC_VER
+static inline CONSTEXPR unsigned int uilog2(unsigned int n)
+#else /* _MSC_VER */
 static inline unsigned int uilog2(unsigned int n)
+#endif /*! MSC_VER */
 {
 #if defined(__GNUC__)
 	// NOTE: XOR is needed to return the bit index
@@ -124,6 +128,7 @@ static inline CONSTEXPR T nextPow2(T x)
 static inline T nextPow2(T x)
 #  endif /* !_MSC_VER */
 #else /* !__cplusplus */
+ATTR_CONST
 static inline unsigned int nextPow2(unsigned int x)
 #endif /* __cplusplus */
 {
@@ -134,3 +139,23 @@ static inline unsigned int nextPow2(unsigned int x)
 	return (1U << (uilog2(x) + 1));
 #endif /* __cplusplus */
 }
+
+#ifdef __cplusplus
+/**
+ * Round a value to the next highest multiple of 64.
+ * @param value Value.
+ * @return Next highest multiple of 64.
+ */
+template<typename T>
+static inline constexpr T toNext64(T val)
+{
+	return (val + static_cast<T>(63)) & ~(static_cast<T>(63));
+}
+#else /* !__cplusplus */
+// FIXME: No __typeof__ in MSVC's C mode...
+#  ifdef _MSC_VER
+#    define toNext64(val) ((val + 63) & ~(63))
+#  else /* !_MSC_VER */
+#    define toNext64(val) ((val + (__typeof__(val))(63)) & ~((__typeof__(val))(63)))
+#  endif /* _MSC_VER */
+#endif /* __cplusplus */
