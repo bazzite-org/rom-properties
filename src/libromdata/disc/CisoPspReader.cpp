@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * CisoPspReader.cpp: PlayStation Portable CISO disc image reader.         *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -330,7 +330,6 @@ CisoPspReader::CisoPspReader(const IRpFilePtr &file)
 
 #ifdef _MSC_VER
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 #  ifdef ZLIB_IS_DLL
 	if (isZlib) {
 		if (DelayLoad_test_get_crc_table() != 0) {
@@ -483,6 +482,12 @@ CisoPspReader::CisoPspReader(const IRpFilePtr &file)
 	d->z_buffer.resize(cache_size);
 	d->blockCacheIdx = ~0U;
 
+	// PSP disc images are always ISO-9660 Mode 1.
+	d->hasCdromInfo = true;
+	d->cdromSectorInfo.mode = 1;
+	d->cdromSectorInfo.sector_size = 2048;
+	d->cdromSectorInfo.subchannel_size = 0;
+
 	// Reset the disc position.
 	d->pos = 0;
 }
@@ -502,7 +507,6 @@ int CisoPspReader::isDiscSupported_static(const uint8_t *pHeader, size_t szHeade
 
 #if defined(_MSC_VER) && defined(ZLIB_IS_DLL)
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 	if (DelayLoad_test_get_crc_table() != 0) {
 		// Delay load failed.
 		// GCZ is not supported without zlib.

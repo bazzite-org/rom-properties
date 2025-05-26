@@ -83,6 +83,9 @@ struct _RpDragImageClass {
 struct _RpDragImageCxx {
 	_RpDragImageCxx()
 		: anim(nullptr)
+#if GTK_CHECK_VERSION(4, 0, 0)
+		, pngBytes(nullptr)
+#endif /* GTK_CHECK_VERSION(4, 0, 0) */
 	{}
 
 	~_RpDragImageCxx()
@@ -386,7 +389,6 @@ rp_drag_image_update_pixmaps(RpDragImage *image)
 		bRet = true;
 	}
 
-	// FIXME: GTK4 has a new Drag & Drop API.
 #if !GTK_CHECK_VERSION(4, 0, 0)
 	if (bRet) {
 		// Image or animated icon data was set.

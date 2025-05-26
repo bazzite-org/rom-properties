@@ -774,6 +774,7 @@
     <generic-icon name="image-x-generic"/>
     <alias type="application/x-ctr-smdh"/>
     <glob pattern="*.smdh"/>
+    <glob pattern="*.icn"/>
     <magic priority="50">
       <match value="SMDH" type="string" offset="0"/>
     </magic>
@@ -1373,6 +1374,15 @@
         <match type="little16" value="0x4D" offset="4"/>
       </match>
     </magic>
+  </mime-type>
+
+  <!-- GameCube/Wii executables -->
+  <!-- These are showing up as "image/vnd.microsoft.icon" for some reason... -->
+  <mime-type type="application/x-gamecube-executable">
+    <comment>Nintendo GameCube/Wii executable</comment>
+    <sub-class-of type="application/x-executable"/>
+    <generic-icon name="application-x-executable"/>
+    <glob pattern="*.dol"/>
   </mime-type>
 
 </mime-info>

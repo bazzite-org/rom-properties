@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
-// for HAVE_ZLIB for mz_compat.h
+// for HAVE_ZLIB for MiniZip
 #include "config.librpbase.h"
 
 // Google Test
@@ -16,7 +16,8 @@
 // MiniZip
 #include <zlib.h>
 #include "mz_zip.h"
-#include "mz_compat.h"
+#include "compat/ioapi.h"
+#include "compat/unzip.h"
 
 // Other rom-properties libraries
 #include "librpfile/FileSystem.hpp"
@@ -543,13 +544,13 @@ std::vector<GcnFstTest_mode> GcnFstTest::ReadTestCasesFromDisk(uint8_t offsetShi
 			break;
 
 		// Make sure the filename isn't empty.
-		EXPECT_GT(file_info.size_filename, 0) << "A filename in the ZIP file has no name. Skipping...";
+		EXPECT_GT(file_info.size_filename, 0UL) << "A filename in the ZIP file has no name. Skipping...";
 
 		// Make sure the file isn't too big.
 		EXPECT_LE(file_info.uncompressed_size, MAX_GCN_FST_BIN_FILESIZE) <<
 			"GCN FST file '" << filename << "' is too big. (maximum size is 1 MB)";
 
-		if (file_info.size_filename > 0 &&
+		if (file_info.size_filename > 0UL &&
 		    file_info.uncompressed_size <= MAX_GCN_FST_BIN_FILESIZE)
 		{
 			// Add this filename to the list.
@@ -585,7 +586,7 @@ string GcnFstTest::test_case_suffix_generator(const ::testing::TestParamInfo<Gcn
 	// Replace all non-alphanumeric characters with '_'.
 	// See gtest-param-util.h::IsValidParamName().
 	std::replace_if(suffix.begin(), suffix.end(),
-		[](char c) noexcept -> bool { return !ISALNUM(c); }, '_');
+		[](char c) noexcept -> bool { return !isalnum_ascii(c); }, '_');
 
 	return suffix;
 }
@@ -617,7 +618,6 @@ extern "C" int gtest_main(int argc, TCHAR *argv[])
 
 #ifdef _MSC_VER
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 #  ifdef ZLIB_IS_DLL
 	// Only if zlib is a DLL.
 	if (DelayLoad_test_get_crc_table() != 0) {

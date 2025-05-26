@@ -343,7 +343,6 @@ RpPngWriterPrivate::RpPngWriterPrivate(const IRpFilePtr &theFile, int width, int
 
 #if defined(_MSC_VER) && (defined(ZLIB_IS_DLL) || defined(PNG_IS_DLL))
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 	if (DelayLoad_test_zlib_and_png() != 0) {
 		// Delay load failed.
 		lastError = ENOTSUP;
@@ -411,7 +410,6 @@ RpPngWriterPrivate::RpPngWriterPrivate(const IRpFilePtr &theFile, const rp_image
 
 #if defined(_MSC_VER) && (defined(ZLIB_IS_DLL) || defined(PNG_IS_DLL))
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 	if (DelayLoad_test_zlib_and_png() != 0) {
 		// Delay load failed.
 		lastError = ENOTSUP;
@@ -473,7 +471,6 @@ RpPngWriterPrivate::RpPngWriterPrivate(const IRpFilePtr &theFile, const IconAnim
 
 #if defined(_MSC_VER) && (defined(ZLIB_IS_DLL) || defined(PNG_IS_DLL))
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 	if (DelayLoad_test_zlib_and_png() != 0) {
 		// Delay load failed.
 		lastError = ENOTSUP;
@@ -1322,7 +1319,7 @@ int RpPngWriter::write_IHDR(const rp_image::sBIT_t *sBIT, const uint32_t *palett
  * @param str UTF-8 string.
  * @return 0 if it's ASCII; 1 if it's Latin-1; 2 if it's not Latin-1.
  */
-static inline int u8strIsPngLatin1(const char *str)
+static int u8strIsPngLatin1(const char *str)
 {
 	int ret = 0;
 	for (; *str != 0; str++) {
