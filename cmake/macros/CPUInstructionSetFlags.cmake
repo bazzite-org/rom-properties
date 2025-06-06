@@ -110,3 +110,16 @@ IF(CPU_i386 OR CPU_amd64)
 		SET(SSE41_FLAG "-msse4.1")
 	ENDIF()
 ENDIF(CPU_i386 OR CPU_amd64)
+
+# FIXME: NEON on Ubuntu armhf is complaining when using LTO.
+# Disable NEON on armhf for now, except for MSVC.
+IF((CPU_arm AND MSVC) OR CPU_arm64 OR CPU_arm64ec)
+	# Check for arm_neon.h.
+	# NOTE: Should always be present for arm64, but check anyway.
+	INCLUDE(CheckIncludeFile)
+	CHECK_INCLUDE_FILE("arm_neon.h" HAVE_ARM_NEON_H)
+
+	IF(CPU_arm AND NOT MSVC)
+		SET(NEON_FLAG "-marm -mfpu=neon")
+	ENDIF(CPU_arm AND NOT MSVC)
+ENDIF((CPU_arm AND MSVC) OR CPU_arm64 OR CPU_arm64ec)

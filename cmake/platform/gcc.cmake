@@ -219,12 +219,12 @@ IF(UNIX AND NOT APPLE)
 				SET(TMP_HAVE_DT_RELR FALSE)
 				MESSAGE(STATUS "Checking if the system supports DT_RELR - no, needs glibc-2.36 or later")
 			ENDIF()
-			UNSET(TMP_HAVE_DT_RELR)
 		ELSE(_ld_out MATCHES "-z pack-relative-relocs")
 			SET(TMP_HAVE_DT_RELR FALSE)
 			MESSAGE(STATUS "Checking if the system supports DT_RELR - no, needs binutils-2.38 or later")
 		ENDIF(_ld_out MATCHES "-z pack-relative-relocs")
 		SET(HAVE_DT_RELR ${TMP_HAVE_DT_RELR} CACHE INTERNAL "System supports DT_RELR")
+		UNSET(TMP_HAVE_DT_RELR)
 	ENDIF(NOT DEFINED HAVE_DT_RELR)
 
 	IF(HAVE_DT_RELR)
@@ -273,6 +273,25 @@ IF(CFLAG_OPTIMIZE_FTREE_VECTORIZE)
 	ENDIF()
 ENDIF(CFLAG_OPTIMIZE_FTREE_VECTORIZE)
 
+# Add "-Werror" *after* checking for everything else.
+IF(ENABLE_WERROR)
+	SET(RP_C_FLAGS_COMMON   "${RP_C_FLAGS_COMMON} -Werror")
+	SET(RP_CXX_FLAGS_COMMON "${RP_CXX_FLAGS_COMMON} -Werror")
+
+	SET(CFLAGS_WNO_ERROR -Wno-error=unknown-pragmas -Wno-error=address -Wno-error=attributes -Wno-error=unused-parameter -Wno-error=unused-but-set-variable -Wno-error=ignored-qualifiers -Wno-error=missing-field-initializers -Wno-error=unused-variable -Wno-error=unused-function -Wno-error=type-limits -Wno-error=empty-body -Wno-error=address-of-packed-member -Wno-error=shift-negative-value -Wno-error=clobbered -Wno-error=overloaded-virtual -Wno-error=header-hygiene -Wno-error=cast-align -Wno-error=stringop-overread)
+	FOREACH(FLAG_TEST ${CFLAGS_WNO_ERROR})
+		# CMake doesn't like certain characters in variable names.
+		STRING(REGEX REPLACE "/|:|=" "_" FLAG_TEST_VARNAME "${FLAG_TEST}")
+
+		CHECK_C_COMPILER_FLAG("${FLAG_TEST}" CFLAG_${FLAG_TEST_VARNAME})
+		IF(CFLAG_${FLAG_TEST_VARNAME})
+			SET(RP_C_FLAGS_COMMON   "${RP_C_FLAGS_COMMON} ${FLAG_TEST}")
+			SET(RP_CXX_FLAGS_COMMON "${RP_CXX_FLAGS_COMMON} ${FLAG_TEST}")
+		ENDIF(CFLAG_${FLAG_TEST_VARNAME})
+		UNSET(CFLAG_${FLAG_TEST_VARNAME})
+	ENDFOREACH(FLAG_TEST)
+ENDIF(ENABLE_WERROR)
+
 ### Debug/Release flags ###
 
 SET(RP_C_FLAGS_DEBUG		"${CFLAG_OPTIMIZE_DEBUG} -ggdb -DDEBUG -D_DEBUG")
@@ -284,10 +303,24 @@ SET(RP_CXX_FLAGS_RELEASE	"-O2 -DNDEBUG ${CFLAGS_VECTORIZE}")
 SET(RP_C_FLAGS_RELWITHDEBINFO	"-O2 -ggdb -DNDEBUG ${CFLAGS_VECTORIZE}")
 SET(RP_CXX_FLAGS_RELWITHDEBINFO	"-O2 -ggdb -DNDEBUG ${CFLAGS_VECTORIZE}")
 
-# Enable C++ assertions. (libstdc++ / libc++)
-# Also enable C++ debug mode. (libstdc++ only)
-# TODO: Only enable GLIBCXX for libstdc++, and LIBCPP for libc++.
-SET(RP_CXX_FLAGS_DEBUG "${RP_CXX_FLAGS_DEBUG} -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_DEBUG -D_GLIBCXX_DEBUG_PEDANTIC -D_LIBCPP_ENABLE_ASSERTIONS -D_LIBCPP_ENABLE_HARDENED_MODE")
+# Enable C++ assertions and other hardening options. (libstdc++ / libc++)
+# TODO: Check for the actual C++ runtime being used instead of
+# assuming libc++ is only used with Clang.
+SET(RP_CXX_FLAGS_DEBUG "${RP_CXX_FLAGS_DEBUG} -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_DEBUG -D_GLIBCXX_DEBUG_PEDANTIC")
+
+# libc++ (clang only)
+IF(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+	SET(RP_CXX_FLAGS_DEBUG "${RP_CXX_FLAGS_DEBUG} -D_LIBCPP_ASSERT=1 -D_LIBCPP_DEBUG=1 -D_LIBCPP_ENABLE_HARDENED_MODE=1")
+
+	IF(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 16.50)
+		# clang-17: Use _LIBCPP_HARDENING_MODE.
+		SET(RP_CXX_FLAGS_DEBUG "${RP_CXX_FLAGS_DEBUG} -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG")
+	ELSE(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 16.50)
+		# clang-16 or earlier: Use _LIBCPP_ENABLE_ASSERTIONS.
+		# NOTE: _LIBCPP_ENABLE_ASSERTIONS causes an error if using clang-17 or later.
+		SET(RP_CXX_FLAGS_DEBUG "${RP_CXX_FLAGS_DEBUG} -D_LIBCPP_ENABLE_ASSERTIONS=1")
+	ENDIF(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 16.50)
+ENDIF(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
 # Unset temporary variables.
 UNSET(CFLAG_OPTIMIZE_DEBUG)

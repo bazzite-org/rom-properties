@@ -40,6 +40,7 @@ ADD_EXECUTABLE(GcnFstPrint
 	disc/FstPrint.hpp
 	)
 TARGET_LINK_LIBRARIES(GcnFstPrint PRIVATE rpsecure romdata)
+TARGET_LINK_LIBRARIES(GcnFstPrint PRIVATE gsvt)
 IF(ENABLE_NLS)
 	TARGET_LINK_LIBRARIES(GcnFstPrint PRIVATE i18n)
 ENDIF(ENABLE_NLS)
@@ -87,6 +88,7 @@ ADD_EXECUTABLE(WiiUFstPrint
 	disc/FstPrint.hpp
 	)
 TARGET_LINK_LIBRARIES(WiiUFstPrint PRIVATE rpsecure romdata)
+TARGET_LINK_LIBRARIES(WiiUFstPrint PRIVATE gsvt)
 IF(ENABLE_NLS)
 	TARGET_LINK_LIBRARIES(WiiUFstPrint PRIVATE i18n)
 ENDIF(ENABLE_NLS)
@@ -151,6 +153,7 @@ ADD_TEST(NAME SuperMagicDriveTest COMMAND SuperMagicDriveTest --gtest_brief --gt
 IF(ENABLE_ZSTD)
 	# MicroTAR zstd wrapper
 	ADD_LIBRARY(microtar_zstd STATIC microtar_zstd.c microtar_zstd.h)
+	TARGET_INCLUDE_DIRECTORIES(microtar_zstd PUBLIC ${ZSTD_INCLUDE_DIR})
 	TARGET_LINK_LIBRARIES(microtar_zstd PUBLIC microtar ${ZSTD_LIBRARY})
 	DO_SPLIT_DEBUG(microtar_zstd)
 

@@ -109,7 +109,7 @@ SET(${PROJECT_NAME}_SRCS
 	config/AchievementsTab.cpp
 	config/AboutTab.cpp
 
-	xattr/Ext2AttrView.c
+	xattr/Ext2AttrView.cpp
 	xattr/XfsAttrView.c
 	xattr/DosAttrView.c
 	xattr/XAttrView.cpp
@@ -142,7 +142,7 @@ SET(${PROJECT_NAME}_H
 	config/AchievementsTab.hpp
 	config/AboutTab.hpp
 
-	xattr/Ext2AttrView.h
+	xattr/Ext2AttrView.hpp
 	xattr/XfsAttrView.h
 	xattr/DosAttrView.h
 	xattr/XAttrView.hpp
@@ -285,7 +285,7 @@ IF(BUILD_XFCE OR BUILD_GTK3 OR BUILD_GTK4)
 		)
 	TARGET_LINK_LIBRARIES(rom-properties-glib PUBLIC glibresources)
 	TARGET_LINK_LIBRARIES(rom-properties-glib PUBLIC GLib2::gio-unix GLib2::gio GLib2::gobject GLib2::glib)
-	TARGET_LINK_LIBRARIES(rom-properties-glib PRIVATE romdata)		# for config.librptext.h
+	TARGET_LINK_LIBRARIES(rom-properties-glib PRIVATE romdata)		# for config.librpbase.h
 
 	# libfmt
 	IF(Fmt_FOUND)

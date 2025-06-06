@@ -37,7 +37,9 @@
 #include <vector>
 
 // libfmt
-#include "rp-libfmt.h"
+#ifndef RP_NO_INCLUDE_LIBFMT_IN_STDAFX_H
+#  include "rp-libfmt.h"
+#endif
 
 #else /* !__cplusplus */
 /** C **/
@@ -96,4 +98,5 @@
 
 // librptext C++ headers
 #include "librptext/conversion.hpp"
+#include "librptext/formatting.hpp"
 #endif /* !__cplusplus */

@@ -1,7 +1,7 @@
 /***************************************************************************
  * compiler-compat.h: Compiler compatibility header.                       *
  *                                                                         *
- * Copyright (c) 2011-2023 by David Korth.                                 *
+ * Copyright (c) 2011-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -54,10 +54,49 @@ typedef int64_t off64_t;
 #  define __typeof__(x) decltype(x)
 #endif
 
+/** alignas() **/
+// FIXME: Older MSVC (2015, 2017?) doesn't have stdalign.h.
+#if defined(_MSC_VER)
+#  define ALIGNAS(x) __declspec(align(x))
+#elif defined(__GNUC__) /*|| (defined(_MSC_VER) && _MSC_VER >= 1900)*/
+#  ifndef __cplusplus
+#    include <stdalign.h>
+#  endif
+#  define ALIGNAS(x) alignas(x)
+#else
+// TODO: alignas() compatibility macros.
+#  define ALIGNAS(x)
+#endif
+
 /**
  * MSVCRT prior to MSVC 2015 has a non-compliant _snprintf().
  * Note that MinGW-w64 uses MSVCRT.
  */
 #ifdef _WIN32
 #  include "c99-compat.msvcrt.h"
+#endif
+
+// Some MSVC intrinsics aren't constexpr.
+#ifdef _MSC_VER
+#  define CONSTEXPR_NO_MSVC
+#else /* !_MSC_VER */
+#  define CONSTEXPR_NO_MSVC constexpr
+#endif
+
+// MSVC prior to MSVC 2022 does not support constexpr on multi-line functions.
+// gcc doesn't support constexpr on multi-line functions before gcc-5. (requires C++14)
+#if !defined(__cplusplus)
+#  define CONSTEXPR_MULTILINE
+#elif defined(_MSC_VER) && _MSC_VER < 1930
+#  define CONSTEXPR_MULTILINE
+#elif defined(__GNUC__) && !defined(__clang__) && (__GNUC__ < 5 || __cplusplus < 201402L)
+#  define CONSTEXPR_MULTILINE
+#else
+#  define CONSTEXPR_MULTILINE constexpr
+#endif
+
+#ifdef _MSC_VER
+#  define CONSTEXPR_MULTILINE_NO_MSVC
+#else /* !_MSC_VER */
+#  define CONSTEXPR_MULTILINE_NO_MSVC CONSTEXPR_MULTILINE
 #endif

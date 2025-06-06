@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (libromdata)                       *
  * CisoPspReader.cpp: PlayStation Portable CISO disc image reader.         *
  *                                                                         *
- * Copyright (c) 2016-2023 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -24,20 +24,8 @@
 #  include "libwin32common/DelayLoadHelper.h"
 #endif /* _MSC_VER */
 
-// LZ4
-#ifdef HAVE_LZ4
-#  include <lz4.h>
-#endif /* HAVE_LZ4 */
-
-// LZO (JISO)
-// NOTE: The bundled version is MiniLZO.
-#ifdef HAVE_LZO
-#  ifdef USE_INTERNAL_LZO
-#    include "minilzo.h"
-#  else
-#    include <lzo/lzo1x.h>
-#  endif
-#endif /* HAVE_LZO */
+// dlopen() handler
+#include "CisoPspDlopen.hpp"
 
 // Other rom-properties libraries
 using namespace LibRpBase;
@@ -48,12 +36,6 @@ namespace LibRomData {
 #ifdef _MSC_VER
 // DelayLoad test implementation.
 DELAYLOAD_TEST_FUNCTION_IMPL0(get_crc_table);
-#  ifdef HAVE_LZ4
-DELAYLOAD_TEST_FUNCTION_IMPL0(LZ4_versionNumber);
-#  endif /* HAVE_LZ4 */
-#  ifdef HAVE_LZO
-DELAYLOAD_TEST_FUNCTION_IMPL0(lzo_version);
-#  endif /* HAVE_LZO */
 #endif /* _MSC_VER */
 
 class CisoPspReaderPrivate : public SparseDiscReaderPrivate
@@ -70,11 +52,8 @@ public:
 		Unknown	= -1,
 
 		CISO	= 0,
-#ifdef HAVE_LZ4
 		ZISO	= 1,
-#endif /* HAVE_LZ4 */
 		JISO	= 2,
-
 		DAX	= 3,
 
 		Max
@@ -115,9 +94,16 @@ public:
 	 * @return Block's compressed size, or 0 on error.
 	 */
 	uint32_t getBlockCompressedSize(uint32_t blockNum) const;
+
+public:
+	// dlopen() handler
+	static CisoPspDlopen dlopenHandler;
 };
 
 /** CisoPspReaderPrivate **/
+
+// dlopen() handler
+CisoPspDlopen CisoPspReaderPrivate::dlopenHandler;
 
 CisoPspReaderPrivate::CisoPspReaderPrivate(CisoPspReader *q)
 	: super(q)
@@ -129,6 +115,7 @@ CisoPspReaderPrivate::CisoPspReaderPrivate(CisoPspReader *q)
 	// Clear the header structs.
 	memset(&header, 0, sizeof(header));
 }
+
 
 /**
  * Get the compressed size of a block.
@@ -152,9 +139,7 @@ uint32_t CisoPspReaderPrivate::getBlockCompressedSize(uint32_t blockNum) const
 			return 0;
 
 		case CisoPspReaderPrivate::CisoType::CISO:
-#ifdef HAVE_LZ4
 		case CisoPspReaderPrivate::CisoType::ZISO:
-#endif /* HAVE_LZ4 */
 			// Index entry table has an extra entry for the final block.
 			// Hence, we don't need the same workaround as GCZ.
 			assert(blockNum != indexEntries.size()-1);
@@ -221,14 +206,10 @@ CisoPspReader::CisoPspReader(const IRpFilePtr &file)
 
 	unsigned int indexEntryTblPos;
 	bool isZlib = false;	// If zlib, we have to call get_crc_table().
-#ifdef _MSC_VER
-#  if defined(HAVE_LZ4) && defined(LZ4_IS_DLL)
+#ifdef LZ4_SHARED_LINKAGE
 	bool isLZ4 = false;
-#  endif /* HAVE_LZ4 && LZ4_IS_DLL */
-#  if defined(HAVE_LZO) && defined(LZO_IS_DLL)
+#endif /* LZ4_SHARED_LINKAGE */
 	bool isLZO = false;
-#  endif /* HAVE_LZO && LZO_IS_DLL */
-#endif /* MSC_VER */
 	switch (d->cisoType) {
 		default:
 		case CisoPspReaderPrivate::CisoType::Unknown:
@@ -239,10 +220,8 @@ CisoPspReader::CisoPspReader(const IRpFilePtr &file)
 
 		case CisoPspReaderPrivate::CisoType::CISO:
 			isZlib = true;
-#ifdef HAVE_LZ4
 			// fall-through
 		case CisoPspReaderPrivate::CisoType::ZISO:
-#endif /* HAVE_LZ4 */
 #if SYS_BYTEORDER != SYS_LIL_ENDIAN
 			// Byteswap the header.
 			d->header.cisoPsp.magic			= le32_to_cpu(d->header.cisoPsp.magic);
@@ -256,7 +235,7 @@ CisoPspReader::CisoPspReader(const IRpFilePtr &file)
 			d->index_shift = d->header.cisoPsp.index_shift;
 			indexEntryTblPos = static_cast<off64_t>(sizeof(d->header.cisoPsp));
 
-#if defined(_MSC_VER) && defined(HAVE_LZ4)
+#ifdef LZ4_SHARED_LINKAGE
 			// If CISOv2, we might also have LZ4.
 			// If ZISO, we *definitely* have LZ4.
 			if (d->header.cisoPsp.version >= 2 ||
@@ -264,19 +243,10 @@ CisoPspReader::CisoPspReader(const IRpFilePtr &file)
 			{
 				isLZ4 = true;
 			}
-#endif /* _MSC_VER && HAVE_LZ4 */
+#endif /* !LZ4_SHARED_LINKAGE */
 			break;
 
 		case CisoPspReaderPrivate::CisoType::JISO:
-#ifndef HAVE_LZO
-			if (d->header.jiso.method == JISO_METHOD_LZO) {
-				// LZO is not available.
-				m_file.reset();
-				m_lastError = ENOTSUP;
-				return;
-			}
-#endif /* HAVE_LZO */
-
 #if SYS_BYTEORDER != SYS_LIL_ENDIAN
 			// Byteswap the header.
 			d->header.jiso.magic			= le32_to_cpu(d->header.jiso.magic);
@@ -285,23 +255,22 @@ CisoPspReader::CisoPspReader(const IRpFilePtr &file)
 			d->header.jiso.header_size		= le32_to_cpu(d->header.jiso.block_size);
 #endif /* SYS_BYTEORDER != SYS_LIL_ENDIAN */
 
-#ifdef _MSC_VER
 			// Determine which library should be checked
 			// by the Delay Load helper.
 			switch (d->header.jiso.method) {
 				default:
 					break;
 
-#  if defined(HAVE_LZO) && defined(LZO_IS_DLL)
+#ifdef LZO_SHARED_LINKAGE
 				case JISO_METHOD_LZO:
 					isLZO = true;
 					break;
-#  endif /* HAVE_LZO && LZO_IS_DLL */
+#endif /* LZO_SHARED_LINKAGE */
+
 				case JISO_METHOD_ZLIB:
 					isZlib = true;
 					break;
 			}
-#endif /* _MSC_VER */
 
 			d->block_size = d->header.jiso.block_size;
 			d->disc_size = d->header.jiso.uncompressed_size;
@@ -330,7 +299,6 @@ CisoPspReader::CisoPspReader(const IRpFilePtr &file)
 
 #ifdef _MSC_VER
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 #  ifdef ZLIB_IS_DLL
 	if (isZlib) {
 		if (DelayLoad_test_get_crc_table() != 0) {
@@ -340,25 +308,30 @@ CisoPspReader::CisoPspReader(const IRpFilePtr &file)
 		}
 	}
 #  endif /* ZLIB_IS_DLL */
-#  if defined(HAVE_LZ4) && defined(LZ4_IS_DLL)
+#endif
+
+#ifdef LZ4_SHARED_LINKAGE
 	if (isLZ4) {
-		if (DelayLoad_test_LZ4_versionNumber() != 0) {
-			// Delay load for LZ4 failed.
+		// Attempt to load the LZ4 function pointers.
+		if (d->dlopenHandler.init_pfn_LZ4() != 0) {
+			// Failed to load the LZ4 function pointers.
 			m_file.reset();
 			return;
 		}
 	}
-#  endif /* HAVE_LZ4 && LZ4_IS_DLL */
-#  if defined(HAVE_LZO) && defined(LZO_IS_DLL)
+#endif /* LZ4_SHARED_LINKAGE */
+
 	if (isLZO) {
-		if (DelayLoad_test_lzo_version() != 0) {
-			// Delay load for LZO failed.
+		// Attempt to load the LZO function pointers.
+		// NOTE: This is done in static library builds too,
+		// since init_lzo() must be called.
+		if (d->dlopenHandler.init_pfn_LZO() != LZO_E_OK) {
+			// Failed to load the LZO function pointers.
 			m_file.reset();
 			return;
 		}
 	}
-#  endif /* HAVE_LZ4 && LZ4_IS_DLL */
-#endif /* _MSC_VER */
+
 
 #if !defined(_MSC_VER) || !defined(ZLIB_IS_DLL)
 	if (isZlib) {
@@ -382,9 +355,7 @@ CisoPspReader::CisoPspReader(const IRpFilePtr &file)
 	uint32_t num_blocks_alloc = num_blocks;
 	switch (d->cisoType) {
 		case CisoPspReaderPrivate::CisoType::CISO:
-#ifdef HAVE_LZ4
 		case CisoPspReaderPrivate::CisoType::ZISO:
-#endif /* HAVE_LZ4 */
 		case CisoPspReaderPrivate::CisoType::JISO:
 			num_blocks_alloc++;
 			break;
@@ -404,15 +375,6 @@ CisoPspReader::CisoPspReader(const IRpFilePtr &file)
 		m_file.reset();
 		return;
 	}
-
-#ifdef HAVE_LZO
-	if (d->cisoType == CisoPspReaderPrivate::CisoType::JISO &&
-	    d->header.jiso.method == JISO_METHOD_LZO)
-	{
-		// Initialize LZO.
-		lzo_init();
-	}
-#endif /* HAVE_LZO */
 
 	// TODO: NC areas for JISO.
 	if (d->cisoType == CisoPspReaderPrivate::CisoType::DAX) {
@@ -483,6 +445,12 @@ CisoPspReader::CisoPspReader(const IRpFilePtr &file)
 	d->z_buffer.resize(cache_size);
 	d->blockCacheIdx = ~0U;
 
+	// PSP disc images are always ISO-9660 Mode 1.
+	d->hasCdromInfo = true;
+	d->cdromSectorInfo.mode = 1;
+	d->cdromSectorInfo.sector_size = 2048;
+	d->cdromSectorInfo.subchannel_size = 0;
+
 	// Reset the disc position.
 	d->pos = 0;
 }
@@ -502,7 +470,6 @@ int CisoPspReader::isDiscSupported_static(const uint8_t *pHeader, size_t szHeade
 
 #if defined(_MSC_VER) && defined(ZLIB_IS_DLL)
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 	if (DelayLoad_test_get_crc_table() != 0) {
 		// Delay load failed.
 		// GCZ is not supported without zlib.
@@ -512,11 +479,9 @@ int CisoPspReader::isDiscSupported_static(const uint8_t *pHeader, size_t szHeade
 
 	// Check the magic number.
 	const uint32_t *const pu32 = reinterpret_cast<const uint32_t*>(pHeader);
-	if ((*pu32 == be32_to_cpu(CISO_MAGIC)
-#ifdef HAVE_LZ4
-	     || *pu32 == be32_to_cpu(ZISO_MAGIC)
-#endif /* HAVE_LZ4 */
-	     ) && szHeader >= sizeof(CisoPspHeader))
+	if ((*pu32 == be32_to_cpu(CISO_MAGIC) ||
+	     *pu32 == be32_to_cpu(ZISO_MAGIC)) &&
+	    szHeader >= sizeof(CisoPspHeader))
 	{
 		// CISO/ZISO magic.
 		const CisoPspHeader *const cisoPspHeader = reinterpret_cast<const CisoPspHeader*>(pHeader);
@@ -536,13 +501,10 @@ int CisoPspReader::isDiscSupported_static(const uint8_t *pHeader, size_t szHeade
 		}
 
 		// Version checks.
-#ifdef HAVE_LZ4
 		if (pHeader[0] == 'Z' && cisoPspHeader->version != 1) {
 			// ZISO: Only v1 is known to exist.
 			return -1;
-		} else
-#endif /* HAVE_LZ4 */
-		if (cisoPspHeader->version > 2) {
+		} else if (cisoPspHeader->version > 2) {
 			// CISO: v2 is max.
 			return -1;
 		}
@@ -574,12 +536,9 @@ int CisoPspReader::isDiscSupported_static(const uint8_t *pHeader, size_t szHeade
 		}
 
 		// This is a valid CISO PSP image.
-#ifdef HAVE_LZ4
-		if (pHeader[0] == 'Z') {
-			return (int)CisoPspReaderPrivate::CisoType::ZISO;
-		}
-#endif /* HAVE_LZ4 */
-		return (int)CisoPspReaderPrivate::CisoType::CISO;
+		return (pHeader[0] == 'Z')
+			? (int)CisoPspReaderPrivate::CisoType::ZISO
+			: (int)CisoPspReaderPrivate::CisoType::CISO;
 	} else if (*pu32 == be32_to_cpu(JISO_MAGIC) && szHeader >= sizeof(JisoHeader)) {
 		// JISO magic.
 		const JisoHeader *const jisoHeader = reinterpret_cast<const JisoHeader*>(pHeader);
@@ -693,19 +652,15 @@ off64_t CisoPspReader::getPhysBlockAddr(uint32_t blockIdx) const
 			return 0;
 
 		case CisoPspReaderPrivate::CisoType::CISO:
-#ifdef HAVE_LZ4
 		case CisoPspReaderPrivate::CisoType::ZISO:
-#endif /* HAVE_LZ4 */
 			addr = static_cast<off64_t>(d->indexEntries[blockIdx] & ~CISO_PSP_V0_NOT_COMPRESSED);
 			addr <<= d->index_shift;
 			break;
 
-#ifdef HAVE_LZO
 		case CisoPspReaderPrivate::CisoType::JISO:
 			// TODO: Does JISO have an index_shift field? Assuming it doesn't for now...
 			addr = static_cast<off64_t>(d->indexEntries[blockIdx]);
 			break;
-#endif /* HAVE_LZO */
 
 		case CisoPspReaderPrivate::CisoType::DAX:
 			// TODO: Does DAX have an index_shift field? Assuming it doesn't for now...
@@ -816,7 +771,6 @@ int CisoPspReader::readBlock(uint32_t blockIdx, int pos, void *ptr, size_t size)
 			}
 			break;
 
-#ifdef HAVE_LZ4
 		case CisoPspReaderPrivate::CisoType::ZISO:
 			// ZISO uses LZ4.
 
@@ -829,9 +783,7 @@ int CisoPspReader::readBlock(uint32_t blockIdx, int pos, void *ptr, size_t size)
 				? CompressionMode::None
 				: CompressionMode::LZ4;
 			break;
-#endif /* HAVE_LZ4 */
 
-#ifdef HAVE_LZO
 		case CisoPspReaderPrivate::CisoType::JISO:
 			// JISO uses LZO or zlib.
 			// TODO: Verify the rest of this.
@@ -874,7 +826,6 @@ int CisoPspReader::readBlock(uint32_t blockIdx, int pos, void *ptr, size_t size)
 				}
 			}
 			break;
-#endif /* HAVE_LZO */
 
 		case CisoPspReaderPrivate::CisoType::DAX:
 			// TODO: Does DAX have an index_shift field? Assuming it doesn't for now...
@@ -976,7 +927,6 @@ int CisoPspReader::readBlock(uint32_t blockIdx, int pos, void *ptr, size_t size)
 		}
 
 		case CompressionMode::LZ4: {
-#ifdef HAVE_LZ4
 			// Read compressed data into a temporary buffer,
 			// then decompress it.
 			uint32_t z_max_size = d->block_size;
@@ -1003,7 +953,7 @@ int CisoPspReader::readBlock(uint32_t blockIdx, int pos, void *ptr, size_t size)
 			}
 
 			// Decompress the data.
-			int sz_rd = LZ4_decompress_safe(
+			int sz_rd = d->dlopenHandler.LZ4_decompress_safe(
 				reinterpret_cast<const char*>(d->z_buffer.data()),
 				reinterpret_cast<char*>(d->blockCache.data()),
 				z_block_size, d->block_size);
@@ -1015,16 +965,9 @@ int CisoPspReader::readBlock(uint32_t blockIdx, int pos, void *ptr, size_t size)
 				return 0;
 			}
 			break;
-#else /* !HAVE_LZ4 */
-			// TODO: If it's CISOv2, check for LZ4-compressed blocks and fail early?
-			assert(!"LZ4 is not enabled in this build.");
-			m_lastError = EIO;
-			return 0;
-#endif /* HAVE_LZ4 */
 		}
 
 		case CompressionMode::LZO: {
-#ifdef HAVE_LZO
 			// Read compressed data into a temporary buffer,
 			// then decompress it.
 			uint32_t z_max_size = d->block_size;
@@ -1053,7 +996,7 @@ int CisoPspReader::readBlock(uint32_t blockIdx, int pos, void *ptr, size_t size)
 			// Decompress the data.
 			// TODO: LZO in-place decompression?
 			lzo_uint dst_len = d->block_size;
-			int ret = lzo1x_decompress_safe(
+			int ret = d->dlopenHandler.lzo1x_decompress_safe(
 				d->z_buffer.data(), z_block_size,
 				d->blockCache.data(), &dst_len,
 				nullptr);
@@ -1065,11 +1008,6 @@ int CisoPspReader::readBlock(uint32_t blockIdx, int pos, void *ptr, size_t size)
 				return 0;
 			}
 			break;
-#else /* !HAVE_LZO */
-			assert(!"LZO is not enabled in this build.");
-			m_lastError = EIO;
-			return 0;
-#endif /* HAVE_LZO */
 		}
 	}
 

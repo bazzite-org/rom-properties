@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (librpbase)                        *
  * HashCAPI.cpp: Hash class. (Win32 CryptoAPI implementation)              *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -107,9 +107,7 @@ HashPrivate::HashPrivate(Hash::Algorithm algorithm)
 		    CRYPT_VERIFYCONTEXT | CRYPT_SILENT))
 		{
 			// Failed to get a handle to the crypto provider.
-			// FIXME: MSVC is complaining if we use nullptr here:
-			// error C2440: '=': cannot convert from 'nullptr' to 'HCRYPTPROV' (also 'HCRYPTHASH')
-			ctx.hProvider = NULL;	// TODO: Is this necessary? (Verify nullptr)
+			ctx.hProvider = 0;	// TODO: Is this necessary? (Verify nullptr)
 		}
 	}
 #endif /* ENABLE_DECRYPTION */
@@ -135,7 +133,6 @@ HashPrivate::~HashPrivate()
 void HashPrivate::delayload_check_once(void)
 {
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 	has_zlib = (DelayLoad_test_get_crc_table() == 0);
 }
 #endif /* CHECK_DELAYLOAD */
@@ -179,7 +176,7 @@ void Hash::reset(void)
 #ifdef ENABLE_DECRYPTION
 	if (d->ctx.hHash) {
 		CryptDestroyHash(d->ctx.hHash);
-		d->ctx.hHash = NULL;
+		d->ctx.hHash = 0;
 	}
 
 	// Lookup table
@@ -203,7 +200,7 @@ void Hash::reset(void)
 	if (!CryptCreateHash(d->ctx.hProvider, id, 0, 0, &d->ctx.hHash)) {
 		// Error creating the hash object.
 		// TODO: Verify that d->hHash is nullptr here.
-		d->ctx.hHash = NULL;
+		d->ctx.hHash = 0;
 	}
 #endif /* ENABLE_DECRYPTION */
 }
@@ -235,7 +232,7 @@ bool Hash::isUsable(void) const
 	}
 
 #ifdef ENABLE_DECRYPTION
-	return (d->ctx.hHash != NULL);
+	return (d->ctx.hHash != 0);
 #else /* !ENABLE_DECRYPTION */
 	return false;
 #endif /* ENABLE_DECRYPTION */
@@ -265,12 +262,13 @@ int Hash::process(const void *pData, size_t len)
 			return -EIO;	// TODO: Better error code?
 		}
 #endif /* CHECK_DELAYLOAD */
-		d->ctx.crc32 = crc32(d->ctx.crc32, static_cast<const uint8_t*>(pData), len);
+		d->ctx.crc32 = static_cast<uint32_t>(crc32(
+			d->ctx.crc32, static_cast<const uint8_t*>(pData), static_cast<unsigned int>(len)));
 		return 0;
 	}
 
 #ifdef ENABLE_DECRYPTION
-	assert(d->ctx.hHash != NULL);
+	assert(d->ctx.hHash != 0);
 	if (!d->ctx.hHash)
 		return -EINVAL;
 

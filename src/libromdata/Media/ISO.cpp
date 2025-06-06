@@ -10,18 +10,21 @@
 #include "stdafx.h"
 #include "ISO.hpp"
 
-#include "../cdrom_structs.h"
+#include "cdrom_structs.h"
 #include "../iso_structs.h"
 #include "hsfs_structs.h"
 
 // Other rom-properties libraries
 #include "librpbase/Achievements.hpp"
+#include "librpbase/disc/PartitionFile.hpp"
+#include "librpbase/disc/SparseDiscReader.hpp"
 #include "libi18n/i18n.h"
 using namespace LibRpBase;
 using namespace LibRpFile;
 using namespace LibRpText;
 
 // C++ STL classes
+#include <typeinfo>
 using std::array;
 using std::string;
 using std::vector;
@@ -63,12 +66,17 @@ public:
 		uint8_t data[ISO_SECTOR_SIZE_MODE1_COOKED];
 	} pvd;
 
-	// Sector size
-	// Usually 2048 or 2352. (2448 if subchannels are present)
-	unsigned int sector_size;
+	// CD-ROM sector info
+	// NOTE: If SparseDiscReader is used, this will almost
+	// always be equivalent to MODE1/2048. Query SparseDiscReader
+	// to get the actual sector size.
+	CdromSectorInfo cdromSectorInfo;
 
 	// Sector offset
 	// Usually 0 (for 2048) or 16 (for 2352 or 2448).
+	// NOTE: If SparseDiscReader is used, this will almost
+	// always be 0. Query SparseDiscReader to get the
+	// actual sector information.
 	unsigned int sector_offset;
 
 	// UDF version
@@ -179,7 +187,7 @@ public:
 	 */
 	inline uint32_t host32(uint32_lsb_msb_t lm32) const
 	{
-		return (likely(discType != DiscType::CDi) ? lm32.he : be16_to_cpu(lm32.be));
+		return (likely(discType != DiscType::CDi) ? lm32.he : be32_to_cpu(lm32.be));
 	}
 };
 
@@ -218,7 +226,6 @@ const RomDataInfo ISOPrivate::romDataInfo = {
 ISOPrivate::ISOPrivate(const IRpFilePtr &file)
 	: super(file, &romDataInfo)
 	, discType(DiscType::Unknown)
-	, sector_size(0)
 	, sector_offset(0)
 	, s_udf_version(nullptr)
 	, boot_catalog_LBA(0)
@@ -226,6 +233,11 @@ ISOPrivate::ISOPrivate(const IRpFilePtr &file)
 {
 	// Clear the disc header structs.
 	memset(&pvd, 0, sizeof(pvd));
+
+	// Clear the CD-ROM sector info struct.
+	cdromSectorInfo.mode = 0;
+	cdromSectorInfo.sector_size = 0;
+	cdromSectorInfo.subchannel_size = 0;
 }
 
 /**
@@ -238,14 +250,14 @@ void ISOPrivate::checkVolumeDescriptors(void)
 	// TODO: Boot record?
 
 	// Starting address.
-	off64_t addr = (ISO_PVD_LBA * static_cast<off64_t>(sector_size)) + sector_offset;
-	const off64_t maxaddr = 0x100 * static_cast<off64_t>(sector_size);
+	off64_t addr = (ISO_PVD_LBA * static_cast<off64_t>(cdromSectorInfo.sector_size)) + sector_offset;
+	const off64_t maxaddr = 0x100 * static_cast<off64_t>(cdromSectorInfo.sector_size);
 
 	ISO_Volume_Descriptor vd;
 	uint32_t boot_LBA = 0;
 	bool foundTerminator = false;
 	do {
-		addr += sector_size;
+		addr += cdromSectorInfo.sector_size;
 		size_t size = file->seekAndRead(addr, &vd, sizeof(vd));
 		if (size != sizeof(vd)) {
 			// Seek and/or read error.
@@ -286,7 +298,7 @@ void ISOPrivate::checkVolumeDescriptors(void)
 	}
 
 	// Check for a UDF extended descriptor section.
-	addr += sector_size;
+	addr += cdromSectorInfo.sector_size;
 	size_t size = file->seekAndRead(addr, &vd, sizeof(vd));
 	if (size != sizeof(vd)) {
 		// Seek and/or read error.
@@ -299,7 +311,7 @@ void ISOPrivate::checkVolumeDescriptors(void)
 
 	// Look for NSR02/NSR03.
 	while (addr < maxaddr) {
-		addr += sector_size;
+		addr += cdromSectorInfo.sector_size;
 		size_t size = file->seekAndRead(addr, &vd, sizeof(vd));
 		if (size != sizeof(vd)) {
 			// Seek and/or read error.
@@ -346,7 +358,7 @@ void ISOPrivate::readBootCatalog(uint32_t lba)
 
 	// Read the entire sector.
 	uint8_t sector_buf[ISO_SECTOR_SIZE_MODE1_COOKED];
-	const off64_t addr = (lba * static_cast<off64_t>(sector_size)) + sector_offset;
+	const off64_t addr = (lba * static_cast<off64_t>(cdromSectorInfo.sector_size)) + sector_offset;
 	size_t size = file->seekAndRead(addr, sector_buf, sizeof(sector_buf));
 	if (size != sizeof(sector_buf)) {
 		// Seek and/or read error.
@@ -604,7 +616,9 @@ ISO::ISO(const IRpFilePtr &file)
 	d->discType = d->checkPVD();
 	if (d->discType > ISOPrivate::DiscType::Unknown) {
 		// Found the PVD using 2048-byte sectors.
-		d->sector_size = ISO_SECTOR_SIZE_MODE1_COOKED;
+		d->cdromSectorInfo.mode = 1;
+		d->cdromSectorInfo.sector_size = ISO_SECTOR_SIZE_MODE1_COOKED;
+		d->cdromSectorInfo.subchannel_size = 0;
 		d->sector_offset = ISO_DATA_OFFSET_MODE1_COOKED;
 	} else {
 		// Try again using raw sectors: 2352, 2448
@@ -624,13 +638,15 @@ ISO::ISO(const IRpFilePtr &file)
 			if (d->discType > ISOPrivate::DiscType::Unknown) {
 				// Found the correct sector size.
 				memcpy(&d->pvd, pData, sizeof(d->pvd));
-				d->sector_size = p;
+				d->cdromSectorInfo.mode = sector.mode;
+				d->cdromSectorInfo.sector_size = p;
+				d->cdromSectorInfo.subchannel_size = (p > 2352) ? (p - 2352) : 0;
 				d->sector_offset = (sector.mode == 2 ? ISO_DATA_OFFSET_MODE2_XA : ISO_DATA_OFFSET_MODE1_RAW);
 				break;
 			}
 		}
 
-		if (d->sector_size == 0) {
+		if (d->cdromSectorInfo.sector_size == 0) {
 			// Could not find a valid PVD.
 			d->file.reset();
 			return;
@@ -783,7 +799,44 @@ int ISO::loadFieldData(void)
 	// TODO: ascii_to_utf8()?
 
 	// Sector size
-	d->fields.addField_string_numeric(C_("ISO", "Sector Size"), d->sector_size);
+	// NOTE: Need to check for a SparseDiscReader first, since if one's
+	// in use, ISO will always think the disc has 2048-byte sectors.
+	const CdromSectorInfo *cdsi = nullptr;
+	const SparseDiscReader *sdr = dynamic_cast<const SparseDiscReader*>(d->file.get());
+	if (!sdr) {
+		// Not a SparseDiscReader.
+		// If this is a PartitionFile, check the underlying IDiscReader.
+		PartitionFile *const pf = dynamic_cast<PartitionFile*>(d->file.get());
+		if (pf) {
+			IDiscReaderPtr dr = pf->getIDiscReader();
+			sdr = dynamic_cast<const SparseDiscReader*>(dr.get());
+		}
+	}
+	if (sdr) {
+		// Get the CD-ROM sector info from the SparseDiscReader.
+		cdsi = sdr->cdromSectorInfo();
+	}
+	if (!cdsi) {
+		// No CD-ROM sector info from the SparseDiscReader.
+		// Use our own.
+		cdsi = &d->cdromSectorInfo;
+	}
+
+	// Sector mode and size
+	// TODO: Verify subchannels and other modes later.
+	// Reference: https://www.gnu.org/software/ccd2cue/manual/html_node/MODE-_0028Compact-Disc-fields_0029.html
+	string sector_format;
+	if (unlikely(d->discType == ISOPrivate::DiscType::CDi)) {
+		// CD-i uses its own sector format.
+		sector_format = fmt::format(FSTR("CDI/{:d}"), cdsi->sector_size);
+	} else {
+		// Regular sector format
+		sector_format = fmt::format(FSTR("MODE{:d}/{:d}"), cdsi->mode, cdsi->sector_size);
+	}
+	if (cdsi->subchannel_size > 0) {
+		sector_format += fmt::format(FSTR("+{:d}"), cdsi->subchannel_size);
+	}
+	d->fields.addField_string(C_("ISO", "Sector Format"), sector_format);
 
 	switch (d->discType) {
 		case ISOPrivate::DiscType::ISO9660:
