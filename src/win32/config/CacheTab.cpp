@@ -49,7 +49,7 @@ using std::string;
 using std::wstring;
 
 // Timer ID for the XP drive update procedure.
-#define TMRID_XP_DRIVE_UPDATE 0xD103
+static constexpr unsigned int TMRID_XP_DRIVE_UPDATE = 0xD103;
 
 class CacheTabPrivate
 {
@@ -301,8 +301,8 @@ void CacheTabPrivate::updateDrivesXP(DWORD unitmask)
 
 	// TODO: Optimize by storing a map of drive letters
 	// to ListView indexes somewhere.
-	unsigned int mask = 1;
-	for (unsigned int i = 0; i < 26; i++, mask <<= 1) {
+	unsigned int mask = 1U;
+	for (int i = 0; i < 26; i++, mask <<= 1) {
 		// Check if this drive is specified.
 		if (!(unitmask & mask))
 			continue;
@@ -713,7 +713,6 @@ int CacheTabPrivate::clearRomPropertiesCache(void)
 	}
 
 	if (dirErrs > 0 || fileErrs > 0) {
-		// FIXME: MinGW-w64 11.0.0 doesn't have _swprintf_p() implemented.
 		const string s_err = fmt::format(FRUN(C_("CacheTab", "ERROR: {:s}")),
 			fmt::format(FRUN(C_("CacheTab", "Unable to delete {0:Ld} file(s) and/or {1:Ld} dir(s).")),
 				fileErrs, dirErrs));
@@ -834,8 +833,9 @@ INT_PTR CALLBACK CacheTabPrivate::dlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, L
 				break;
 			}
 
-			if (wParam != DBT_DEVICEARRIVAL && wParam != DBT_DEVICEREMOVECOMPLETE)
+			if (wParam != DBT_DEVICEARRIVAL && wParam != DBT_DEVICEREMOVECOMPLETE) {
 				break;
+			}
 
 			// Device is being added or removed.
 			// Update the device in the drive list.
@@ -852,8 +852,9 @@ INT_PTR CALLBACK CacheTabPrivate::dlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, L
 		}
 
 		case WM_TIMER: {
-			if (wParam != TMRID_XP_DRIVE_UPDATE)
+			if (wParam != TMRID_XP_DRIVE_UPDATE) {
 				break;
+			}
 			auto *const d = reinterpret_cast<CacheTabPrivate*>(GetWindowLongPtr(hDlg, GWLP_USERDATA));
 			if (!d || d->isVista) {
 				// No CacheTabPrivate, or using Vista+.

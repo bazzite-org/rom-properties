@@ -17,16 +17,19 @@
 #include "exe_le_structs.h"
 
 #include "disc/PEResourceReader.hpp"
+using LibRpBase::IResourceReader;
+using LibRpBase::IResourceReaderPtr;
 
 // Uninitialized vector class
 #include "uvector.h"
 
 #include "span.hh"
 
-// TinyXML2
-namespace tinyxml2 {
-	class XMLDocument;
-}
+// PugiXML
+// NOTE: Cannot forward-declare the PugiXML classes...
+#ifdef ENABLE_XML
+#  include <pugixml.hpp>
+#endif /* ENABLE_XML */
 
 namespace LibRomData {
 
@@ -42,7 +45,7 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const std::array<const char*, (8*2)+1> exts;
+	static const std::array<const char*, (9*2)+1> exts;
 	static const std::array<const char*, 5+1> mimeTypes;
 	static const LibRpBase::RomDataInfo romDataInfo;
 
@@ -100,6 +103,12 @@ public:
 	IResourceReaderPtr rsrcReader;
 
 	/**
+	 * Make sure the resource reader is loaded.
+	 * @return 0 on success; negative POSIX error code on error.
+	 */
+	int loadResourceReader(void);
+
+	/**
 	 * Add VS_VERSION_INFO fields.
 	 *
 	 * NOTE: A subtab is NOT created here; if one is desired,
@@ -109,6 +118,22 @@ public:
 	 * @param pVsSfi	[in,opt] IResourceReader::StringFileInfo
 	 */
 	void addFields_VS_VERSION_INFO(const VS_FIXEDFILEINFO *pVsFfi, const IResourceReader::StringFileInfo *pVsSfi);
+
+	// Icon
+	LibRpTexture::rp_image_const_ptr img_icon;
+
+	/**
+	 * Load a specific icon by index.
+	 * @param iconindex Icon index (positive for zero-based index; negative for resource ID)
+	 * @return Icon, or nullptr if not found.
+	 */
+	LibRpTexture::rp_image_const_ptr loadSpecificIcon(int iconindex);
+
+	/**
+	 * Load the icon.
+	 * @return Icon, or nullptr on error.
+	 */
+	LibRpTexture::rp_image_const_ptr loadIcon(void);
 
 	/** MZ-specific **/
 
@@ -284,18 +309,18 @@ private:
 	 * Load the Win32 manifest resource.
 	 *
 	 * The XML is loaded and parsed using the specified
-	 * TinyXML document.
+	 * PugiXML document.
 	 *
 	 * NOTE: DelayLoad must be checked by the caller, since it's
-	 * passing an XMLDocument reference to this function.
+	 * passing an xml_document reference to this function.
 	 *
-	 * @param doc		[in/out] XML document.
+	 * @param doc		[in/out] XML document
 	 * @param ppResName	[out,opt] Pointer to receive the loaded resource name. (statically-allocated string)
 	 * @return 0 on success; negative POSIX error code on error.
 	 */
 	ATTR_ACCESS(read_write, 2)
 	ATTR_ACCESS(write_only, 3)
-	int loadWin32ManifestResource(tinyxml2::XMLDocument &doc, const char **ppResName = nullptr) const;
+	int loadWin32ManifestResource(pugi::xml_document &doc, const char **ppResName = nullptr) const;
 
 public:
 	/**

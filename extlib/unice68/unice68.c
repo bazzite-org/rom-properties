@@ -286,6 +286,8 @@ static int set_binary_mode(FILE *file, const char * path)
 
 static int set_binary_mode(FILE *file, const char * path)
 {
+  ((void)file);
+  ((void)path);
   return 0;
 }
 
@@ -314,7 +316,8 @@ static void * myalloc(void * buf, int len, char * name)
 
 static int myread(void * buf, int len, FILE * inp, const char * name)
 {
-  int n = fread(buf, 1, len, inp);
+  // rom-properties FIXME: fread() returns size_t, so it can't possibly return a negative value.
+  int n = (int)fread(buf, 1, len, inp);
   if (n == -1) {
     syserror(name);
     return -1;
@@ -326,7 +329,7 @@ static int exactread(void * buf, int len, FILE * inp, const char * name)
 {
   int n = myread(buf, len, inp, name);
   if (n != -1 && n != len) {
-    error("%s -- truncated at %d; expected %d\n", n, len);
+    error("%s -- truncated at %d; expected %d\n", name, n, len);
     n = -1;
   }
   return n;
@@ -678,7 +681,8 @@ int UNICE68_CDECL main(int argc, char *argv[])
       syserror(fout);
       goto error;
     }
-    n = fwrite(obuffer,1,olen,out);
+    // rom-properties FIXME: fread() returns size_t, so it can't possibly return a negative value.
+    n = (int)fwrite(obuffer,1,olen,out);
     message(D,"Have written %d bytes to %s\n", n, fout);
     if (n != olen) {
       syserror(fout);

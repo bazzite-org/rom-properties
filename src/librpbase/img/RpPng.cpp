@@ -21,6 +21,7 @@ using namespace LibRpTexture;
 #include "RpPngWriter.hpp"
 
 // C++ STL classes
+using std::array;
 using std::unique_ptr;
 
 // Image format libraries
@@ -243,8 +244,9 @@ static rp_image_ptr loadPng(png_structp png_ptr, png_infop info_ptr)
 	// WARNING: Do NOT initialize any C++ objects past this point!
 	if (setjmp(png_jmpbuf(png_ptr))) {
 		// PNG read failed.
+		// FIXME: This is crashing in MSVC 2022 (17.6.5) release builds on Windows 10.
 		png_free(png_ptr, row_pointers);
-		return nullptr;
+		return {};
 	}
 #endif
 
@@ -270,7 +272,7 @@ static rp_image_ptr loadPng(png_structp png_ptr, png_infop info_ptr)
 	    width > 32768 || height > 32768)
 	{
 		// Image size is either invalid or too big.
-		return nullptr;
+		return {};
 	}
 
 #ifdef PNG_sBIT_SUPPORTED
@@ -386,7 +388,7 @@ static rp_image_ptr loadPng(png_structp png_ptr, png_infop info_ptr)
 
 		default:
 			// Unsupported color type.
-			return nullptr;
+			return {};
 	}
 
 	if (bit_depth > 8) {
@@ -423,14 +425,14 @@ static rp_image_ptr loadPng(png_structp png_ptr, png_infop info_ptr)
 	img = std::make_shared<rp_image>(width, height, fmt);
 	if (!img->isValid()) {
 		// Could not allocate the image.
-		return nullptr;
+		return {};
 	}
 
 	// Allocate the row pointers.
 	row_pointers = static_cast<const png_byte**>(
 		png_malloc(png_ptr, sizeof(const png_byte*) * height));
 	if (!row_pointers) {
-		return nullptr;
+		return {};
 	}
 
 	// Initialize the row pointers array.
@@ -473,15 +475,15 @@ static rp_image_ptr loadPng(png_structp png_ptr, png_infop info_ptr)
  */
 rp_image_ptr load(IRpFile *file)
 {
-	if (!file)
-		return nullptr;
+	if (!file) {
+		return {};
+	}
 
 #if defined(_MSC_VER) && (defined(ZLIB_IS_DLL) || defined(PNG_IS_DLL))
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 	if (DelayLoad_test_zlib_and_png() != 0) {
 		// Delay load failed.
-		return nullptr;
+		return {};
 	}
 #else /* !defined(_MSC_VER) || (!defined(ZLIB_IS_DLL) && !defined(PNG_IS_DLL)) */
 	// zlib isn't in a DLL, but we need to ensure that the
@@ -489,6 +491,14 @@ rp_image_ptr load(IRpFile *file)
 	get_crc_table();
 #endif /* defined(_MSC_VER) && (defined(ZLIB_IS_DLL) || defined(PNG_IS_DLL)) */
 
+	// Verify the PNG header.
+	static constexpr array<uint8_t, 8> png_magic = {{0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'}};
+	uint8_t file_header[8];
+	size_t size = file->seekAndRead(0, file_header, sizeof(file_header));
+	if (size != sizeof(file_header) || memcmp(file_header, png_magic.data(), sizeof(file_header)) != 0) {
+		// Not a valid PNG file.
+		return {};
+	}
 	// Rewind the file.
 	file->rewind();
 
@@ -498,12 +508,12 @@ rp_image_ptr load(IRpFile *file)
 	// Initialize libpng.
 	png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
 	if (!png_ptr) {
-		return nullptr;
+		return {};
 	}
 	info_ptr = png_create_info_struct(png_ptr);
 	if (!info_ptr) {
 		png_destroy_read_struct(&png_ptr, nullptr, nullptr);
-		return nullptr;
+		return {};
 	}
 
 #ifdef PNG_WARNINGS_SUPPORTED
@@ -537,8 +547,9 @@ int save(const IRpFilePtr &file, const rp_image_const_ptr &img)
 {
 	assert((bool)file);
 	assert(img != nullptr);
-	if (!file || !file->isOpen() || !img)
+	if (!file || !file->isOpen() || !img) {
 		return -EINVAL;
+	}
 
 	// Create a PNG writer.
 	RpPngWriter pngWriter(file, img);
@@ -568,8 +579,9 @@ int save(const char *filename, const rp_image_const_ptr &img)
 	assert(filename != nullptr);
 	assert(filename[0] != '\0');
 	assert(img != nullptr);
-	if (!filename || filename[0] == '\0' || !img)
+	if (!filename || filename[0] == '\0' || !img) {
 		return -EINVAL;
+	}
 
 	// Create a PNG writer.
 	RpPngWriter pngWriter(filename, img);
@@ -600,8 +612,9 @@ int save(const wchar_t *filename, const rp_image_const_ptr &img)
 	assert(filename != nullptr);
 	assert(filename[0] != L'\0');
 	assert(img != nullptr);
-	if (!filename || filename[0] == L'\0' || !img)
+	if (!filename || filename[0] == L'\0' || !img) {
 		return -EINVAL;
+	}
 
 	// Create a PNG writer.
 	RpPngWriter pngWriter(filename, img);
@@ -788,7 +801,6 @@ const char *zlib_version_string(void)
 {
 #if defined(_MSC_VER) && (defined(ZLIB_IS_DLL) || defined(PNG_IS_DLL))
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 	if (DelayLoad_test_zlib_and_png() != 0) {
 		// Delay load failed.
 		return "(DLL failed to load)";
@@ -811,7 +823,6 @@ bool libpng_has_APNG(void)
 {
 #if defined(_MSC_VER) && (defined(ZLIB_IS_DLL) || defined(PNG_IS_DLL))
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 	if (DelayLoad_test_zlib_and_png() != 0) {
 		// Delay load failed.
 		return false;
@@ -837,7 +848,6 @@ uint32_t libpng_version_number(void)
 {
 #if defined(_MSC_VER) && (defined(ZLIB_IS_DLL) || defined(PNG_IS_DLL))
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 	if (DelayLoad_test_zlib_and_png() != 0) {
 		// Delay load failed.
 		return 0;
@@ -855,7 +865,6 @@ const char *libpng_copyright_string(void)
 {
 #if defined(_MSC_VER) && (defined(ZLIB_IS_DLL) || defined(PNG_IS_DLL))
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
 	if (DelayLoad_test_zlib_and_png() != 0) {
 		// Delay load failed.
 		return "(DLL failed to load)";

@@ -47,6 +47,7 @@ SET(${PROJECT_NAME}_SRCS
 	disc/PartitionFile.cpp
 	disc/SparseDiscReader.cpp
 	disc/CBCReader.cpp
+	disc/IResourceReader.cpp
 	crypto/KeyManager.cpp
 	config/ConfReader.cpp
 	config/Config.cpp
@@ -74,10 +75,14 @@ SET(${PROJECT_NAME}_H
 	disc/SparseDiscReader.hpp
 	disc/SparseDiscReader_p.hpp
 	disc/CBCReader.hpp
+	disc/IResourceReader.hpp
+	disc/exe_res_structs.h
 	crypto/KeyManager.hpp
 	config/ConfReader.hpp
 	config/Config.hpp
 	config/AboutTabText.hpp
+
+	cdrom_structs.h
 	)
 
 IF(NOT USE_INTERNAL_PNG OR (USE_INTERNAL_PNG AND USE_INTERNAL_PNG_DLL))

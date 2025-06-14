@@ -10,6 +10,8 @@
 #include "N64.hpp"
 #include "n64_structs.h"
 
+#include "common.h"
+
 // Other rom-properties libraries
 using namespace LibRpBase;
 using namespace LibRpFile;
@@ -37,6 +39,11 @@ public:
 	static const RomDataInfo romDataInfo;
 
 public:
+	// ROM header
+	// NOTE: Fields have been byteswapped in the constructor.
+	N64_RomHeader romHeader;
+
+public:
 	// ROM image type
 	enum class RomType {
 		Unknown	= -1,
@@ -49,11 +56,6 @@ public:
 		Max
 	};
 	RomType romType;
-
-public:
-	// ROM header.
-	// NOTE: Fields have been byteswapped in the constructor.
-	N64_RomHeader romHeader;
 
 	/**
 	 * Un-wordswap a 32-bit DWORD from a SWAP2-format ROM image.
@@ -302,11 +304,11 @@ int N64::loadFieldData(void)
 		romHeader->entrypoint, RomFields::Base::Hex, 8, RomFields::STRF_MONOSPACE);
 
 	// OS version
-	// TODO: ISALPHA(), or ISUPPER()?
+	// TODO: isalpha_ascii(), or isupper_ascii()?
 	const char *const os_version_title = C_("RomData", "OS Version");
 	if (romHeader->os_version[0] == 0x00 &&
 	    romHeader->os_version[1] == 0x00 &&
-	    ISALPHA(romHeader->os_version[3]))
+	    isalpha_ascii(romHeader->os_version[3]))
 	{
 		d->fields.addField_string(os_version_title,
 			fmt::format(FSTR("OS{:d}.{:d}{:c}"),

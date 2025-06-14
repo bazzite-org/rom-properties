@@ -10,6 +10,7 @@
 #pragma once
 
 #include "IDiscReader.hpp"
+#include "cdrom_structs.h"
 
 namespace LibRpBase {
 
@@ -29,7 +30,7 @@ protected:
 	SparseDiscReaderPrivate *const d_ptr;
 
 public:
-	/** IDiscReader functions. **/
+	/** IDiscReader functions **/
 
 	/**
 	 * Read data from the disc image.
@@ -59,8 +60,19 @@ public:
 	 */
 	off64_t size(void) final;
 
+public:
+	/** SparseDiscReader-specific properties **/
+
+	// CD-ROM specific information
+
+	/**
+	 * Get the CD-ROM sector information.
+	 * @return CD-ROM sector information, or nullptr if not set.
+	 */
+	const CdromSectorInfo *cdromSectorInfo(void) const;
+
 protected:
-	/** Virtual functions for SparseDiscReader subclasses. **/
+	/** Virtual functions for SparseDiscReader subclasses **/
 
 	/**
 	 * Get the physical address of the specified logical block index.

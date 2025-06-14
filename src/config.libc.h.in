@@ -25,6 +25,18 @@
 
 /** Time functions **/
 
+/* Define to 1 if you have the `gmtime_r` function. */
+#cmakedefine HAVE_GMTIME_R 1
+
+/* Define to 1 if you have the `gmtime_s` function. */
+#cmakedefine HAVE_GMTIME_S 1
+
+/* Define to 1 if you have the `localtime_r' function. */
+#cmakedefine HAVE_LOCALTIME_R 1
+
+/* Define to 1 if you have the `localtime_s' function. */
+#cmakedefine HAVE_LOCALTIME_S 1
+
 /* Define to 1 if you have the `timegm' function. */
 #cmakedefine HAVE_TIMEGM 1
 
@@ -55,7 +67,13 @@
 #cmakedefine HAVE_FEATURES_H 1
 
 // O_CLOEXEC support in fopen()
-#ifdef HAVE_FEATURES_H
+#if defined(__APPLE__)
+// Mac OS X does not support the "e" mode character in fopen(),
+// but it does have F_SETFD. (FD_CLOEXEC might not be defined, though.)
+#  ifndef FD_CLOEXEC
+#    define FD_CLOEXEC 1
+#  endif /* !FD_CLOEXEC */
+#elif defined(HAVE_FEATURES_H)
 #  include <features.h>
 #  if defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 7))
 #    define HAVE_FOPEN_CLOEXEC 1

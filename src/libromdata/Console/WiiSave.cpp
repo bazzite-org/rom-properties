@@ -63,17 +63,6 @@ public:
 	// Wii_Bk_Header_t magic
 	static const array<uint8_t, 8> bk_header_magic;
 
-	/**
-	 * Round a value to the next highest multiple of 64.
-	 * @param value Value.
-	 * @return Next highest multiple of 64.
-	 */
-	template<typename T>
-	static inline constexpr T toNext64(T val)
-	{
-		return (val + static_cast<T>(63)) & ~(static_cast<T>(63));
-	}
-
 #ifdef ENABLE_DECRYPTION
 	// CBC reader for the main data area.
 	CBCReaderPtr cbcReader;
@@ -454,10 +443,10 @@ int WiiSave::loadFieldData(void)
 	// NOTE: Uses the ID from the Bk header.
 	// TODO: Check if it matches the savegame header?
 	if (isBkValid) {
-		if (ISALNUM(bkHeader->id4[0]) &&
-		    ISALNUM(bkHeader->id4[1]) &&
-		    ISALNUM(bkHeader->id4[2]) &&
-		    ISALNUM(bkHeader->id4[3]))
+		if (isalnum_ascii(bkHeader->id4[0]) &&
+		    isalnum_ascii(bkHeader->id4[1]) &&
+		    isalnum_ascii(bkHeader->id4[2]) &&
+		    isalnum_ascii(bkHeader->id4[3]))
 		{
 			// Print the game ID.
 			// TODO: Is the publisher code available anywhere?
