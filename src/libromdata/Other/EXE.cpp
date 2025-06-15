@@ -16,9 +16,14 @@ using namespace LibRpBase;
 using namespace LibRpFile;
 using namespace LibRpText;
 
+// Windows icon handler
+#include "librptexture/fileformat/ICO.hpp"
+using namespace LibRpTexture;
+
 // C++ STL classes
 using std::array;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 // EXE data
@@ -35,7 +40,7 @@ ROMDATA_IMPL(EXE)
 /** EXEPrivate **/
 
 /* RomDataInfo */
-const array<const char*, (8*2)+1> EXEPrivate::exts = {{
+const array<const char*, (9*2)+1> EXEPrivate::exts = {{
 	// References:
 	// - https://en.wikipedia.org/wiki/Portable_Executable
 
@@ -46,6 +51,9 @@ const array<const char*, (8*2)+1> EXEPrivate::exts = {{
 	".efi", ".mui",
 	".ocx", ".scr",
 	".sys", ".tsp",
+
+	// Windows multi-lingual user interface files (PE)
+	".mui", ".mun",
 
 	// NE extensions
 	".fon", ".icl",
@@ -94,6 +102,37 @@ EXEPrivate::EXEPrivate(const IRpFilePtr &file)
 	// Clear the structs.
 	memset(&mz, 0, sizeof(mz));
 	memset(&hdr, 0, sizeof(hdr));
+}
+
+/**
+ * Make sure the resource reader is loaded.
+ * @return 0 on success; negative POSIX error code on error.
+ */
+int EXEPrivate::loadResourceReader(void)
+{
+	if (rsrcReader) {
+		// Resource reader is already loaded.
+		return 0;
+	}
+
+	int ret = -1;
+	switch (exeType) {
+		default:
+			// Unable to load resources from this type of executable.
+			return -ENOENT;
+
+		case EXEPrivate::ExeType::NE:
+		case EXEPrivate::ExeType::COM_NE:
+			ret = loadNEResourceTable();
+			break;
+
+		case EXEPrivate::ExeType::PE:
+		case EXEPrivate::ExeType::PE32PLUS:
+			ret = loadPEResourceTypes();
+			break;
+	}
+
+	return ret;
 }
 
 /**
@@ -342,6 +381,89 @@ void EXEPrivate::addFields_VS_VERSION_INFO(const VS_FIXEDFILEINFO *pVsFfi, const
 	fields.addField_listData("StringFileInfo", &params);
 }
 
+/**
+ * Load a specific icon by index.
+ * @param iconindex Icon index (positive for zero-based index; negative for resource ID)
+ * @return Icon, or nullptr if not found.
+ */
+rp_image_const_ptr EXEPrivate::loadSpecificIcon(int iconindex)
+{
+	if (!this->isValid || static_cast<int>(this->exeType) < 0) {
+		// Can't load the icon.
+		return {};
+	}
+
+	// Make sure the the resource reader is loaded.
+	int ret = loadResourceReader();
+	if (ret != 0 || !rsrcReader) {
+		// No resources available.
+		return {};
+	}
+
+	uint16_t type = RT_GROUP_ICON;
+	if (exeType == ExeType::NE || exeType == ExeType::COM_NE) {
+		// Windows 1.x/2.x executables don't have RT_GROUP_ICON,
+		// but do have RT_ICON. If this is Win16, check for
+		// RT_GROUP_ICON first, then try RT_ICON.
+		// NOTE: Can't simply check based on if it's a 1.x/2.x
+		// executable because some EXEs converted to 3.x will
+		// still show up as 1.x/2.x.
+		if (rsrcReader->has_resource_type(RT_GROUP_ICON)) {
+			// We have RT_GROUP_ICON.
+		} else if (rsrcReader->has_resource_type(RT_ICON)) {
+			// We have RT_ICON.
+			type = RT_ICON;
+		} else {
+			// No icons...
+			return {};
+		}
+	}
+
+	// Get the resource ID.
+	int resID;
+	if (iconindex == 0) {
+		// Default icon
+		resID = -1;
+	} else if (iconindex > 0) {
+		// Positive icon index
+		// This is a zero-based index into the RT_GROUP_ICON table.
+		resID = rsrcReader->lookup_resource_ID(RT_GROUP_ICON, iconindex);
+		if (resID < 0) {
+			// Not found.
+			return {};
+		}
+	} else {
+		// Negative icon index
+		// This is an actual resource ID.
+		resID = abs(iconindex);
+	}
+
+	// Attempt to load the default icon.
+	unique_ptr<ICO> ico(new ICO(rsrcReader, type, resID, -1));
+	if (!ico->isValid()) {
+		// Unable to load the default icon.
+		return {};
+	}
+
+	// Return the icon's image.
+	return ico->image();
+}
+
+/**
+ * Load the icon.
+ * @return Icon, or nullptr on error.
+ */
+rp_image_const_ptr EXEPrivate::loadIcon(void)
+{
+	if (img_icon) {
+		// Icon has already been loaded.
+		return img_icon;
+	}
+
+	// Load icon 0.
+	return loadSpecificIcon(0);
+}
+
 /** MZ-specific **/
 
 /**
@@ -539,6 +661,7 @@ EXE::EXE(const IRpFilePtr &file)
 			// Seek and/or read error.
 			d->exeType = EXEPrivate::ExeType::Unknown;
 			d->isValid = false;
+			d->file.reset();
 			return;
 		}
 
@@ -552,6 +675,7 @@ EXE::EXE(const IRpFilePtr &file)
 			// but COMs don't have useful headers.
 			d->exeType = EXEPrivate::ExeType::Unknown;
 			d->isValid = false;
+			d->file.reset();
 		}
 		return;
 	}
@@ -937,6 +1061,126 @@ const char *EXE::systemName(unsigned int type) const
 }
 
 /**
+ * Get a bitfield of image types this class can retrieve.
+ * @return Bitfield of supported image types. (ImageTypesBF)
+ */
+uint32_t EXE::supportedImageTypes_static(void)
+{
+	return IMGBF_INT_ICON;
+}
+
+/**
+ * Get a bitfield of image types this object can retrieve.
+ * @return Bitfield of supported image types. (ImageTypesBF)
+ */
+uint32_t EXE::supportedImageTypes(void) const
+{
+	// Only NE and PE executables have an application icon.
+	// TODO: OS/2 application icons? (LE/LX)
+
+	RP_D(const EXE);
+	if (d->fileType != FileType::Executable) {
+		return 0;
+	}
+
+	uint32_t ret = 0;
+	switch (d->exeType) {
+		default:
+			break;
+
+		case EXEPrivate::ExeType::NE:
+		case EXEPrivate::ExeType::COM_NE:
+			// Application icon may be present.
+			// TODO: Verify that it is first.
+			// TODO: Verify Win1.x/2.x.
+			ret = IMGBF_INT_ICON;
+			break;
+
+		case EXEPrivate::ExeType::PE:
+		case EXEPrivate::ExeType::PE32PLUS:
+			// Application icon may be present.
+			// TODO: Verify that it is first.
+			ret = IMGBF_INT_ICON;
+			break;
+	}
+
+	return ret;
+}
+
+/**
+ * Get a list of all available image sizes for the specified image type.
+ * @param imageType Image type.
+ * @return Vector of available image sizes, or empty vector if no images are available.
+ */
+vector<RomData::ImageSizeDef> EXE::supportedImageSizes_static(ImageType imageType)
+{
+	ASSERT_supportedImageSizes(imageType);
+
+	switch (imageType) {
+		case IMG_INT_ICON:
+			// Assuming 32x32.
+			return {{nullptr, 32, 32, 0}};
+		default:
+			break;
+	}
+
+	// Unsupported image type.
+	return {};
+}
+
+/**
+ * Get a list of all available image sizes for the specified image type.
+ * @param imageType Image type.
+ * @return Vector of available image sizes, or empty vector if no images are available.
+ */
+vector<RomData::ImageSizeDef> EXE::supportedImageSizes(ImageType imageType) const
+{
+	ASSERT_supportedImageSizes(imageType);
+
+	switch (imageType) {
+		case IMG_INT_ICON:
+			// Assuming 32x32.
+			// TODO: Load the icon and check?
+			if (!(supportedImageTypes() & IMGBF_INT_ICON)) {
+				// This EXE type doesn't support icons.
+				break;
+			}
+			return {{nullptr, 32, 32, 0}};
+
+		default:
+			break;
+	}
+
+	// Unsupported image type.
+	return {};
+}
+
+/**
+ * Get image processing flags.
+ *
+ * These specify post-processing operations for images,
+ * e.g. applying transparency masks.
+ *
+ * @param imageType Image type.
+ * @return Bitfield of ImageProcessingBF operations to perform.
+ */
+uint32_t EXE::imgpf(ImageType imageType) const
+{
+	ASSERT_imgpf(imageType);
+
+	uint32_t ret = 0;
+	switch (imageType) {
+		case IMG_INT_ICON:
+			// TODO: Use nearest-neighbor for < 64x64.
+			break;
+
+		default:
+			break;
+	}
+	return ret;
+}
+
+/**
  * Load field data.
  * Called by RomData::fields() if the field data hasn't been loaded yet.
  * @return Number of fields read on success; negative POSIX error code on error.
@@ -1047,23 +1291,7 @@ int EXE::loadMetaData(void)
 
 	// We can parse fields for NE (Win16) and PE (Win32) executables,
 	// if they have a resource section.
-	int ret = -1;
-	switch (d->exeType) {
-		default:
-			// Cannot load any metadata...
-			return 0;
-
-		case EXEPrivate::ExeType::NE:
-		case EXEPrivate::ExeType::COM_NE:
-			ret = d->loadNEResourceTable();
-			break;
-
-		case EXEPrivate::ExeType::PE:
-		case EXEPrivate::ExeType::PE32PLUS:
-			ret = d->loadPEResourceTypes();
-			break;
-	}
-
+	int ret = d->loadResourceReader();
 	if (ret != 0 || !d->rsrcReader) {
 		// No resources available.
 		return 0;
@@ -1159,9 +1387,54 @@ bool EXE::hasDangerousPermissions(void) const
 	// Check the Windows manifest for requestedExecutionLevel == requireAdministrator.
 	return d->doesExeRequireAdministrator();
 #else /* !ENABLE_XML */
-	// Nothing to check here, since TinyXML2 is disabled...
+	// Nothing to check here, since PugiXML is disabled...
 	return false;
 #endif /* ENABLE_XML */
+}
+
+/**
+ * Load an internal image.
+ * Called by RomData::image().
+ * @param imageType	[in] Image type to load.
+ * @param pImage	[out] Reference to rp_image_const_ptr to store the image in.
+ * @return 0 on success; negative POSIX error code on error.
+ */
+int EXE::loadInternalImage(ImageType imageType, rp_image_const_ptr &pImage)
+{
+	ASSERT_loadInternalImage(imageType, pImage);
+	RP_D(EXE);
+	ROMDATA_loadInternalImage_single(
+		IMG_INT_ICON,	// ourImageType
+		d->file,	// file
+		d->isValid,	// isValid
+		d->exeType,	// romType
+		d->img_icon,	// imgCache
+		d->loadIcon);	// func
+}
+
+/**
+ * Load a specific icon by index.
+ * @param iconindex Icon index (positive for zero-based index; negative for resource ID)
+ * @return Icon, or nullptr if not found.
+ */
+rp_image_const_ptr EXE::loadSpecificIcon(int iconindex)
+{
+	RP_D(EXE);
+	if (iconindex == 0) {
+		// Main icon. See if it's already loaded.
+		if (d->img_icon) {
+			// Icon has already been loaded.
+			return d->img_icon;
+		}
+	}
+
+	rp_image_const_ptr icon = d->loadSpecificIcon(iconindex);
+	if (iconindex == 0) {
+		// Cache the main icon.
+		d->img_icon = icon;
+	}
+
+	return icon;
 }
 
 /**

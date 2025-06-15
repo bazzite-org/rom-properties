@@ -273,16 +273,14 @@ WiiWAD::WiiWAD(const IRpFilePtr &file)
 		case WiiWADPrivate::WadType::WAD:
 			// Standard WAD.
 			// Sections are 64-byte aligned.
-			ticket_addr = WiiWADPrivate::toNext64(be32_to_cpu(d->wadHeader.wad.header_size)) +
-				      WiiWADPrivate::toNext64(be32_to_cpu(d->wadHeader.wad.cert_chain_size));
-			tmd_addr = ticket_addr +
-				      WiiWADPrivate::toNext64(be32_to_cpu(d->wadHeader.wad.ticket_size));
+			ticket_addr = toNext64(be32_to_cpu(d->wadHeader.wad.header_size)) +
+				      toNext64(be32_to_cpu(d->wadHeader.wad.cert_chain_size));
+			tmd_addr = ticket_addr + toNext64(be32_to_cpu(d->wadHeader.wad.ticket_size));
 
 			// Data offset is after the TMD.
 			// Data size is taken from the header.
 			d->data_size = be32_to_cpu(d->wadHeader.wad.data_size);
-			d->data_offset = tmd_addr +
-				      WiiWADPrivate::toNext64(be32_to_cpu(d->wadHeader.wad.tmd_size));
+			d->data_offset = tmd_addr + toNext64(be32_to_cpu(d->wadHeader.wad.tmd_size));
 			break;
 
 		case WiiWADPrivate::WadType::BWF: {
@@ -554,10 +552,10 @@ int WiiWAD::isRomSupported_static(const DetectInfo *info)
 	
 	// Check the file size to ensure we have at least the IMET section.
 	const unsigned int expected_size =
-		WiiWADPrivate::toNext64(be32_to_cpu(wadHeader->header_size)) +
-		WiiWADPrivate::toNext64(be32_to_cpu(wadHeader->cert_chain_size)) +
-		WiiWADPrivate::toNext64(be32_to_cpu(wadHeader->ticket_size)) +
-		WiiWADPrivate::toNext64(be32_to_cpu(wadHeader->tmd_size));
+		toNext64(be32_to_cpu(wadHeader->header_size)) +
+		toNext64(be32_to_cpu(wadHeader->cert_chain_size)) +
+		toNext64(be32_to_cpu(wadHeader->ticket_size)) +
+		toNext64(be32_to_cpu(wadHeader->tmd_size));
 	if (expected_size > info->szFile) {
 		// File is too small.
 		return static_cast<int>(WiiWADPrivate::WadType::Unknown);
@@ -869,10 +867,10 @@ int WiiWAD::loadFieldData(void)
 	// Game ID
 	// NOTE: Only displayed if TID lo is all alphanumeric characters.
 	// TODO: Only for certain TID hi?
-	if (ISALNUM(tmdHeader->title_id.u8[4]) &&
-	    ISALNUM(tmdHeader->title_id.u8[5]) &&
-	    ISALNUM(tmdHeader->title_id.u8[6]) &&
-	    ISALNUM(tmdHeader->title_id.u8[7]))
+	if (isalnum_ascii(tmdHeader->title_id.u8[4]) &&
+	    isalnum_ascii(tmdHeader->title_id.u8[5]) &&
+	    isalnum_ascii(tmdHeader->title_id.u8[6]) &&
+	    isalnum_ascii(tmdHeader->title_id.u8[7]))
 	{
 		// Print the game ID.
 		// TODO: Is the publisher code available anywhere?
@@ -1233,7 +1231,7 @@ int WiiWAD::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) cons
 			// that means it's a DLC title. GameTDB doesn't
 			// have artwork for DLC titles.
 			const char firstID4 = be32_to_cpu(tmdHeader->title_id.lo) >> 24;
-			if (ISLOWER(firstID4)) {
+			if (islower_ascii(firstID4)) {
 				// It's lowercase.
 				return -ENOENT;
 			}

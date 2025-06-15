@@ -352,7 +352,7 @@ TEST_P(RomHeaderTest, JSON)
 		ASSERT_GT(last_json_data.size(), 0U) << "Binary file is valid RomData, but JSON file is empty.";
 
 		ostringstream oss;
-		oss << JSONROMOutput(romData.get(), 0, LibRpBase::OF_JSON_NoPrettyPrint);
+		oss << JSONROMOutput(romData.get(), LibRpBase::OF_JSON_NoPrettyPrint);
 
 		// The expected JSON files have trailing newlines, but RapidJSON
 		// does not add a trailing newline when not pretty-printing.
@@ -472,7 +472,7 @@ string RomHeaderTest::test_case_suffix_generator(const ::testing::TestParamInfo<
 	for (char &c : suffix) {
 		if (c == '+') {
 			c = 'x';
-		} else if (!ISALNUM(c)) {
+		} else if (!isalnum_ascii(c)) {
 			c = '_';
 		}
 	}
@@ -603,6 +603,13 @@ INSTANTIATE_TEST_SUITE_P(SNES_BSX, RomHeaderTest,
 		"Console/SNES_BSX.bin.tar.zst",
 		"Console/SNES_BSX.txt.tar.zst",
 		"Console/SNES_BSX.json.tar.zst"))
+	, RomHeaderTest::test_case_suffix_generator);
+
+INSTANTIATE_TEST_SUITE_P(SNES_NP, RomHeaderTest,
+	testing::ValuesIn(RomHeaderTest::ReadTestCasesFromDisk(
+		"Console/SNES_NP.bin.tar.zst",
+		"Console/SNES_NP.txt.tar.zst",
+		"Console/SNES_NP.json.tar.zst"))
 	, RomHeaderTest::test_case_suffix_generator);
 
 INSTANTIATE_TEST_SUITE_P(SufamiTurbo, RomHeaderTest,

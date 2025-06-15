@@ -41,8 +41,10 @@ static const char RP_ICONV_UTF16_ENCODING[] = "UTF-16LE";
 #include <cassert>
 
 // C++ STL classes
+#include <vector>
 using std::string;
 using std::u16string;
+using std::vector;
 
 namespace LibRpText {
 
@@ -160,7 +162,7 @@ static char *rp_iconv(const char *src, int len,
 	return nullptr;
 }
 
-/** Generic code page functions. **/
+/** Generic code page functions **/
 
 /**
  * Convert a code page to an encoding name.
@@ -168,24 +170,23 @@ static char *rp_iconv(const char *src, int len,
  * @param len		[in] Length of enc_name.
  * @param cp		[in] Code page number.
  */
-static inline void codePageToEncName(char *enc_name, size_t len, unsigned int cp)
+static string codePageToEncName(unsigned int cp)
 {
 	// Check for "special" code pages.
 	switch (cp) {
 		case CP_ACP:
 			// TODO: Get the system code page.
 			// Assuming cp1252 for now.
-			snprintf(enc_name, len, "CP1252");
-			break;
+			return "CP1252";
 		case CP_LATIN1:
-			snprintf(enc_name, len, "LATIN1");
-			break;
+			return "LATIN1";
 		case CP_UTF8:
-			snprintf(enc_name, len, "UTF-8");
-			break;
-		default:
-			snprintf(enc_name, len, "CP%u", cp);
-			break;
+			return "UTF-8";
+		default: {
+			string str = "CP";
+			str += std::to_string(cp);
+			return str;
+		}
 	}
 }
 
@@ -209,8 +210,7 @@ static std::basic_string<T> T_cpN_to_unicode(const char *out_encoding, unsigned 
 	len = check_NULL_terminator(str, len);
 
 	// Get the encoding name for the primary code page.
-	char cp_name[20];
-	codePageToEncName(cp_name, sizeof(cp_name), cp);
+	const string cp_name = codePageToEncName(cp);
 
 	// If we *want* to fall back to cp1252 on error,
 	// then the first conversion should fail on errors.
@@ -255,7 +255,7 @@ static std::basic_string<T> T_cpN_to_unicode(const char *out_encoding, unsigned 
 
 	if (!out_str) {
 		// Standard string conversion
-		out_str = reinterpret_cast<T*>(rp_iconv((char*)str, len*sizeof(*str), cp_name, out_encoding, ignoreErr));
+		out_str = reinterpret_cast<T*>(rp_iconv((char*)str, len*sizeof(*str), cp_name.c_str(), out_encoding, ignoreErr));
 	}
 
 	if (!out_str /*&& (flags & TEXTCONV_FLAG_CP1252_FALLBACK)*/) {
@@ -361,12 +361,11 @@ string utf8_to_cpN(unsigned int cp, const char *str, int len)
 	len = check_NULL_terminator(str, len);
 
 	// Get the encoding name for the primary code page.
-	char cp_name[20];
-	codePageToEncName(cp_name, sizeof(cp_name), cp);
+	const string cp_name = codePageToEncName(cp);
 
 	// Attempt to convert the text from UTF-8.
 	string ret;
-	char *mbs = reinterpret_cast<char*>(rp_iconv((char*)str, len*sizeof(*str), "UTF-8", cp_name, true));
+	char *mbs = reinterpret_cast<char*>(rp_iconv((char*)str, len*sizeof(*str), "UTF-8", cp_name.c_str(), true));
 	if (mbs) {
 		ret.assign(mbs);
 		free(mbs);
@@ -391,15 +390,14 @@ string utf16_to_cpN(unsigned int cp, const char16_t *wcs, int len)
 	len = check_NULL_terminator(wcs, len);
 
 	// Get the encoding name for the primary code page.
-	char cp_name[20];
-	codePageToEncName(cp_name, sizeof(cp_name), cp);
+	const string cp_name = codePageToEncName(cp);
 
 	// Ignore errors if converting to anything other than UTF-8.
 	const bool ignoreErr = (cp != CP_UTF8);
 
 	// Attempt to convert the text from UTF-8.
 	string ret;
-	char *mbs = reinterpret_cast<char*>(rp_iconv((char*)wcs, len*sizeof(*wcs), RP_ICONV_UTF16_ENCODING, cp_name, ignoreErr));
+	char *mbs = reinterpret_cast<char*>(rp_iconv((char*)wcs, len*sizeof(*wcs), RP_ICONV_UTF16_ENCODING, cp_name.c_str(), ignoreErr));
 	if (mbs) {
 		ret.assign(mbs);
 		free(mbs);
@@ -453,6 +451,76 @@ string utf16le_to_utf8(const char16_t *wcs, int len)
 string utf16be_to_utf8(const char16_t *wcs, int len)
 {
 	return INT_utf16_to_utf8("UTF-16BE", wcs, len);
+}
+
+/**
+ * Convert UTF-16 text to cp1252.
+ * Trailing NULL bytes will be removed.
+ *
+ * NOTE: On non-Windows systems, iconv() does *not* handle "invalid" cp1252 characters.
+ * This function preprocesses the string in order to process those characters.
+ * This is needed in order to handle Xbox 360 "mojibake" encoding.
+ *
+ * @param wcs	[in] UTF-16 text
+ * @param len	[in] Length of str, in bytes (-1 for NULL-terminated string)
+ * @return cp1252 string.
+ */
+std::string utf16_to_cp1252(const char16_t *wcs, int len)
+{
+	len = check_NULL_terminator(wcs, len);
+
+	// Find any "invalid" cp1252 characters.
+	// Character indexes in wcs are stored, which should map directly
+	// to character indexes in the resulting string.
+	// FIXME: This may break if non-BMP characters are present.
+	vector<int> char_idx;
+
+	for (int i = 0; i < len; i++) {
+		switch (wcs[i]) {
+			default:
+				break;
+
+			case 0x0081:
+			case 0x008D:
+			case 0x008F:
+			case 0x0090:
+			case 0x009D:
+				// Invalid cp1252 character.
+				char_idx.push_back(i);
+				break;
+		}
+	}
+
+	if (char_idx.empty()) {
+		// No invalid characters. Convert it directly.
+		char *mbs = reinterpret_cast<char*>(rp_iconv((char*)wcs, len*sizeof(*wcs), RP_ICONV_UTF16_ENCODING, "CP1252", false));
+		if (!mbs) {
+			// Conversion failed...
+			return {};
+		}
+
+		return string(mbs);
+	}
+
+	// Convert using "//TRANSLIT", then manually replace the bad characters.
+	char *mbs = reinterpret_cast<char*>(rp_iconv((char*)wcs, len*sizeof(*wcs), RP_ICONV_UTF16_ENCODING, "CP1252//TRANSLIT", false));
+	if (!mbs) {
+		// Conversion failed...
+		return {};
+	}
+
+	string str(mbs);
+	const int str_size = static_cast<int>(str.size());
+	for (int idx : char_idx) {
+		assert(idx < str_size);
+		if (idx >= str_size) {
+			// Invalid index?
+			return {};
+		}
+		str[idx] = static_cast<char>(static_cast<uint8_t>(wcs[idx]));
+	}
+
+	return str;
 }
 
 }

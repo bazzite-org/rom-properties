@@ -47,10 +47,10 @@ public:
 public:
 	/** Image types **/
 
-	// Image type priority data.
+	// Image type priority data
 	struct ImgTypePrio_t {
-		const uint8_t *imgTypes;	// Image types.
-		uint32_t length;		// Length of imgTypes array.
+		const uint8_t *imgTypes;	// Image types
+		size_t length;			// Length of imgTypes array
 	};
 
 	// TODO: Function to get image type priority for a specified class.
@@ -118,6 +118,13 @@ public:
 	 * @return ImgBandwidth for metered connections
 	 */
 	ImgBandwidth imgBandwidthMetered(void) const;
+
+	/**
+	 * Convert Config::ImgBandwidth to a configuration setting string.
+	 * @param index Config::ImgBandwidth
+	 * @return Configuration setting string (If the index is invalid, defaults to "HighRes".)
+	 */
+	static const char *imgBandwidthToConfSetting(Config::ImgBandwidth imgbw);
 
 	/** DMG title screen mode **/
 

@@ -28,7 +28,7 @@
 #ifdef __cplusplus
 namespace LibRpText {
 
-/** UTF-16 string functions. **/
+/** UTF-16 string functions **/
 
 /**
  * char16_t strlen().
@@ -317,17 +317,51 @@ static inline std::string utf8_to_cp1252(const char *str, int len)
 	return utf8_to_cpN(1252, str, len);
 }
 
+#ifdef _WIN32
 /**
  * Convert UTF-16 text to cp1252.
  * Trailing NULL bytes will be removed.
- * Invalid characters will be ignored.
- * @param wcs	[in] UTF-16 text.
- * @param len	[in] Length of str, in bytes. (-1 for NULL-terminated string)
+ *
+ * NOTE: On Windows, WideCharToMultiByte() handles "invalid" cp1252 characters.
+ * We don't need to handle it ourselves.
+ *
+ * @param wcs	[in] UTF-16 text
+ * @param len	[in] Length of str, in bytes (-1 for NULL-terminated string)
  * @return cp1252 string.
  */
 static inline std::string utf16_to_cp1252(const char16_t *wcs, int len)
 {
 	return utf16_to_cpN(1252, wcs, len);
+}
+#else /* !_WIN32 */
+/**
+ * Convert UTF-16 text to cp1252.
+ * Trailing NULL bytes will be removed.
+ *
+ * NOTE: On non-Windows systems, iconv() does *not* handle "invalid" cp1252 characters.
+ * This function preprocesses the string in order to process those characters.
+ * This is needed in order to handle Xbox 360 "mojibake" encoding.
+ *
+ * @param wcs	[in] UTF-16 text
+ * @param len	[in] Length of str, in bytes (-1 for NULL-terminated string)
+ * @return cp1252 string.
+ */
+std::string utf16_to_cp1252(const char16_t *wcs, int len);
+#endif /* _WIN32 */
+
+/**
+ * Convert UTF-16 text to cp1252.
+ * Trailing NULL bytes will be removed.
+ *
+ * NOTE: Specialized function that does *not* ignore "invalid" cp1252 characters.
+ * This is needed in order to handle Xbox 360 "mojibake" encoding.
+ *
+ * @param wcs	[in] UTF-16 string
+ * @return cp1252 string.
+ */
+static inline std::string utf16_to_cp1252(const std::u16string &wcs)
+{
+	return utf16_to_cp1252(wcs.data(), static_cast<int>(wcs.size()));
 }
 
 /* Shift-JIS (cp932) with cp1252 fallback */
@@ -583,43 +617,6 @@ static inline std::u16string utf16be_to_utf16(const char16_t *wcs, int len)
 #endif
 }
 
-/** Other useful text functions **/
-
-enum class BinaryUnitDialect {
-	DefaultBinaryDialect = -1,
-
-	IECBinaryDialect,
-	JEDECBinaryDialect,
-	MetricBinaryDialect,
-};
-
-/**
- * Format a file size.
- * @param fileSize File size
- * @param dialect
- * @return Formatted file size.
- */
-std::string formatFileSize(off64_t fileSize, BinaryUnitDialect dialect = BinaryUnitDialect::DefaultBinaryDialect);
-
-/**
- * Format a file size, in KiB.
- *
- * This function expects the size to be a multiple of 1024,
- * so it doesn't do any fractional rounding or printing.
- *
- * @param size File size
- * @param dialect
- * @return Formatted file size.
- */
-std::string formatFileSizeKiB(unsigned int size, BinaryUnitDialect dialect = BinaryUnitDialect::DefaultBinaryDialect);
-
-/**
- * Format a frequency.
- * @param frequency Frequency.
- * @return Formatted frequency.
- */
-std::string formatFrequency(uint32_t frequency);
-
 /**
  * Remove trailing spaces from a string.
  * NOTE: This modifies the string *in place*.
@@ -653,24 +650,6 @@ static inline std::string dos2unix(const std::string &str_dos, int *lf_count = n
 {
 	return dos2unix(str_dos.data(), static_cast<int>(str_dos.size()), lf_count);
 }
-
-/** Audio functions. **/
-
-/**
- * Format a sample value as m:ss.cs.
- * @param sample Sample value.
- * @param rate Sample rate.
- * @return m:ss.cs
- */
-std::string formatSampleAsTime(unsigned int sample, unsigned int rate);
-
-/**
- * Convert a sample value to milliseconds.
- * @param sample Sample value.
- * @param rate Sample rate.
- * @return Milliseconds.
- */
-unsigned int convSampleToMs(unsigned int sample, unsigned int rate);
 
 }
 #endif /* __cplusplus */
