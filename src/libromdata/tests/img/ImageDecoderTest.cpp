@@ -134,8 +134,8 @@ struct ImageDecoderTest_mode
 };
 
 // Maximum file size for images.
-static constexpr size_t MAX_DDS_IMAGE_FILESIZE = 12U*1024U*1024U;
-static constexpr size_t MAX_PNG_IMAGE_FILESIZE =  2U*1024U*1024U;
+static constexpr off64_t MAX_DDS_IMAGE_FILESIZE = 12U*1024U*1024U;
+static constexpr off64_t MAX_PNG_IMAGE_FILESIZE =  2U*1024U*1024U;
 
 class ImageDecoderTest : public ::testing::TestWithParam<ImageDecoderTest_mode>
 {
@@ -272,11 +272,9 @@ void ImageDecoderTest::SetUp(void)
 
 	/* FIXME: Per-type minimum sizes.
 	 * This fails on some very small SVR files.
-	ASSERT_GT(ddsSize, 4+sizeof(DDS_HEADER))
-		<< "DDS image is too small.";
+	ASSERT_GT(ddsSize, 4+sizeof(DDS_HEADER)) << "DDS image is too small.";
 	*/
-	ASSERT_LE(ddsSize, MAX_DDS_IMAGE_FILESIZE)
-		<< "DDS image is too big.";
+	ASSERT_LE(static_cast<off64_t>(ddsSize), MAX_DDS_IMAGE_FILESIZE) << "DDS image is too big.";
 
 	// Read the DDS image into memory.
 	m_dds_buf.resize(ddsSize);
@@ -582,7 +580,7 @@ string ImageDecoderTest::test_case_suffix_generator(const ::testing::TestParamIn
 	// Replace all non-alphanumeric characters with '_'.
 	// See gtest-param-util.h::IsValidParamName().
 	std::replace_if(suffix.begin(), suffix.end(),
-		[](char c) noexcept -> bool { return !ISALNUM(c); }, '_');
+		[](char c) noexcept -> bool { return !isalnum_ascii(c); }, '_');
 
 	// Append the image type to allow checking multiple types
 	// of images in the same file.
@@ -2049,6 +2047,16 @@ INSTANTIATE_TEST_SUITE_P(MAME, ImageDecoderTest,
 		MAME_MIPMAP_TEST("texture_compression_etc2.ktx", 5, "COMPRESSED_RGB8_ETC2"),
 		MAME_MIPMAP_TEST("texture_compression_etc2.ktx", 6, "COMPRESSED_RGB8_ETC2"),
 		MAME_MIPMAP_TEST("texture_compression_etc2.ktx", 7, "COMPRESSED_RGB8_ETC2"))
+	, ImageDecoderTest::test_case_suffix_generator);
+
+// Qoi tests
+#define QOI_IMAGE_TEST(file, format) ImageDecoderTest_mode( \
+			"Qoi/" file ".qoi.gz", \
+			file ".png", (format))
+INSTANTIATE_TEST_SUITE_P(Qoi, ImageDecoderTest,
+	::testing::Values(
+		QOI_IMAGE_TEST("argb-reference", "ARGB32"),
+		QOI_IMAGE_TEST("rgb-reference", "RGB888"))
 	, ImageDecoderTest::test_case_suffix_generator);
 
 // TODO: NPOT tests for compressed formats. (partial block sizes)

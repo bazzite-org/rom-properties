@@ -1632,6 +1632,12 @@ int MegaDrive::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) c
 				// Found an exception.
 				break;
 			}
+
+			if ((d->romType & MegaDrivePrivate::ROM_SYSTEM_MASK) == MegaDrivePrivate::ROM_SYSTEM_TERADRIVE) {
+				// Teradrive's TMSS ROM doesn't have a separator in the serial number.
+				break;
+			}
+
 			// Missing separator.
 			return -ENOENT;
 	}
@@ -1646,6 +1652,15 @@ int MegaDrive::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) c
 		case 'SF': case 'JN': case 'LG':
 		case 'HP': case 'MP': case '61': case '83':
 			break;
+
+		case 'SY':
+			// This may be the Teradrive TMSS ROM.
+			if ((d->romType & MegaDrivePrivate::ROM_SYSTEM_MASK) == MegaDrivePrivate::ROM_SYSTEM_TERADRIVE) {
+				break;
+			}
+			// Not valid for anything else.
+			return -ENOENT;
+
 		default:
 			// Not a valid ROM type.
 			return -ENOENT;
@@ -1805,7 +1820,7 @@ int MegaDrive::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) c
 				// Different discs have a different number in the
 				// MCD System ID, but the serial number is identical
 				// on all MCD discs, and all MCD32X discs.
-				if (ISDIGIT(d->mcd_systemID.volume_name[10])) {
+				if (isdigit_ascii(d->mcd_systemID.volume_name[10])) {
 					// Append the disc number.
 					gameID += ".disc";
 					gameID += d->mcd_systemID.volume_name[10];

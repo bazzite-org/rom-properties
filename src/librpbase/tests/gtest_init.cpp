@@ -20,6 +20,7 @@ using std::locale;
 // GDI+ initialization.
 // NOTE: Not linking to librptexture (libromdata).
 #  include "libwin32common/RpWin32_sdk.h"
+#  include "libwin32common/rp_versionhelpers.h"
 // NOTE: Gdiplus requires min/max.
 #  include <algorithm>
 namespace Gdiplus {
@@ -33,6 +34,16 @@ namespace Gdiplus {
 // libfmt
 #include "rp-libfmt.h"
 
+#ifdef _WIN32
+static UINT old_console_output_cp = 0;
+static void RestoreConsoleOutputCP(void)
+{
+	if (old_console_output_cp != 0) {
+		SetConsoleOutputCP(old_console_output_cp);
+	}
+}
+#endif /* _WIN32 */
+
 extern "C" int gtest_main(int argc, TCHAR *argv[]);
 
 int RP_C_API _tmain(int argc, TCHAR *argv[])
@@ -42,7 +53,7 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 #if defined(_WIN32)
 	param.bHighSec = FALSE;
 #elif defined(HAVE_SECCOMP)
-	static constexpr int syscall_wl[] = {
+	static constexpr int16_t syscall_wl[] = {
 		// Syscalls used by rom-properties unit tests.
 		// TODO: Add more syscalls.
 		// FIXME: glibc-2.31 uses 64-bit time syscalls that may not be
@@ -70,6 +81,9 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 #elif defined(__NR_openat2)
 		__NR_openat2,		// Linux 5.6
 #endif /* __SNR_openat2 || __NR_openat2 */
+
+		// RomDataFormat needs this, at least on 32-bit (i386) KF5 builds.
+		SCMP_SYS(clock_getres),
 
 		// for ImageDecoderTest so we don't have to copy the test files to the binary directory
 		SCMP_SYS(chdir),
@@ -151,18 +165,41 @@ int RP_C_API _tmain(int argc, TCHAR *argv[])
 	// NOTE: The variable needs to be static char[] because
 	// POSIX putenv() takes `char*` and the buffer becomes
 	// part of the environment.
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
 #  define T_C_LOCALE _T("C")
 #  define C_LOCALE "C"
-#else /* !_WIN32 */
+#else /* !_WIN32 && !__APPLE__ */
 #  define T_C_LOCALE _T("C.UTF-8")
 #  define C_LOCALE "C.UTF-8"
-#endif /* _WIN32 */
+#endif /* _WIN32 || __APPLE__ */
 	static TCHAR lc_all_env[] = _T("LC_ALL=") T_C_LOCALE;
 	static TCHAR lc_messages_env[] = _T("LC_MESSAGES=") T_C_LOCALE;
 	_tputenv(lc_all_env);
 	_tputenv(lc_messages_env);
+
+#ifdef __APPLE__
+	// Mac OS X also requires setting LC_CTYPE="UTF-8".
+	putenv("LC_CTYPE=UTF-8");
+#endif /* __APPLE__ */
+
+	// NOTE: MinGW-w64 12.0.0 doesn't like setting the C++ locale to "".
+	// Setting it to "C" works fine, though.
 	locale::global(locale(C_LOCALE));
+
+#ifdef _WIN32
+	// Enable UTF-8 console output.
+	// Tested on Windows XP (fails) and Windows 7 (works).
+	// TODO: Does it work on Windows Vista?
+	// FIXME: On Windows 7, if locale is set to Spanish (es_ES), running
+	// `rpcli rpcli.exe` causes a random crash halfway through printing,
+	// if we set the console output CP to UTF-8.
+	// TODO: Verify if that happens on Windows 8 or 8.1.
+	if (IsWindows10OrGreater()) {
+		old_console_output_cp = GetConsoleOutputCP();
+		atexit(RestoreConsoleOutputCP);
+		SetConsoleOutputCP(CP_UTF8);
+	}
+#endif /* _WIN32 */
 
 	// Call the actual main function.
 	int ret = gtest_main(argc, argv);

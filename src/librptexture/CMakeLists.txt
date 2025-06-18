@@ -44,6 +44,7 @@ SET(${PROJECT_NAME}_SRCS
 	fileformat/DidjTex.cpp
 	fileformat/DirectDrawSurface.cpp
 	fileformat/GodotSTEX.cpp
+	fileformat/ICO.cpp
 	fileformat/KhronosKTX.cpp
 	fileformat/KhronosKTX2.cpp
 	fileformat/PalmOS_Tbmp.cpp
@@ -91,6 +92,7 @@ SET(${PROJECT_NAME}_H
 	fileformat/DidjTex.hpp
 	fileformat/DirectDrawSurface.hpp
 	fileformat/GodotSTEX.hpp
+	fileformat/ICO.hpp
 	fileformat/KhronosKTX.hpp
 	fileformat/KhronosKTX2.hpp
 	fileformat/PalmOS_Tbmp.hpp
@@ -106,6 +108,7 @@ SET(${PROJECT_NAME}_H
 	fileformat/dds_structs.h
 	fileformat/didj_tex_structs.h
 	fileformat/godot_stex_structs.h
+	fileformat/ico_structs.h
 	fileformat/ktx_structs.h
 	fileformat/ktx_structs.h
 	fileformat/palmos_tbmp_structs.h
@@ -172,13 +175,6 @@ IF(CPU_i386 OR CPU_amd64)
 		img/un-premultiply_sse41.cpp
 		)
 
-	# IFUNC functionality
-	INCLUDE(CheckIfuncSupport)
-	CHECK_IFUNC_SUPPORT()
-	IF(HAVE_IFUNC)
-		SET(${PROJECT_NAME}_IFUNC_SRCS decoder/ImageDecoder_ifunc.cpp)
-	ENDIF(HAVE_IFUNC)
-
 	IF(MMX_FLAG)
 		SET_SOURCE_FILES_PROPERTIES(${${PROJECT_NAME}_MMX_SRCS}
 			APPEND_STRING PROPERTIES COMPILE_FLAGS " ${MMX_FLAG} ")
@@ -198,6 +194,27 @@ IF(CPU_i386 OR CPU_amd64)
 		SET_SOURCE_FILES_PROPERTIES(${${PROJECT_NAME}_SSE41_SRCS}
 			APPEND_STRING PROPERTIES COMPILE_FLAGS " ${SSE41_FLAG} ")
 	ENDIF(SSE41_FLAG)
+
+	SET(${PROJECT_NAME}_CPU_SRCS
+		${${PROJECT_NAME}_MMX_SRCS}
+		${${PROJECT_NAME}_SSE2_SRCS}
+		${${PROJECT_NAME}_SSSE3_SRCS}
+		${${PROJECT_NAME}_SSE41_SRCS}
+		)
+ELSEIF(CPU_arm OR CPU_arm64)
+	IF(HAVE_ARM_NEON_H)
+		SET(${PROJECT_NAME}_NEON_SRCS
+			img/rp_image_ops_neon.cpp
+			decoder/ImageDecoder_Linear_neon.cpp
+			)
+
+		IF(NEON_FLAG)
+			SET_SOURCE_FILES_PROPERTIES(${${PROJECT_NAME}_NEON_SRCS}
+				APPEND_STRING PROPERTIES COMPILE_FLAGS " ${NEON_FLAG} ")
+		ENDIF(NEON_FLAG)
+
+		SET(${PROJECT_NAME}_CPU_SRCS ${${PROJECT_NAME}_NEON_SRCS})
+	ENDIF(HAVE_ARM_NEON_H)
 ENDIF()
 UNSET(arch)
 
@@ -223,11 +240,7 @@ FOREACH(_target ${TARGETS})
 	ADD_LIBRARY(${_target} STATIC
 		${${PROJECT_NAME}_SRCS} ${${PROJECT_NAME}_H}
 		${${PROJECT_NAME}_OS_SRCS} ${${PROJECT_NAME}_OS_H}
-		${${PROJECT_NAME}_IFUNC_SRCS}
-		${${PROJECT_NAME}_MMX_SRCS}
-		${${PROJECT_NAME}_SSE2_SRCS}
-		${${PROJECT_NAME}_SSSE3_SRCS}
-		${${PROJECT_NAME}_SSE41_SRCS}
+		${${PROJECT_NAME}_CPU_SRCS}
 		)
 	IF(ENABLE_PCH)
 		TARGET_PRECOMPILE_HEADERS(${_target} PRIVATE

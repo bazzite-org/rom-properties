@@ -329,7 +329,6 @@ int GameCubePrivate::loadWiiPartitionTables(void)
 	}
 
 	// Check the crypto and hash method.
-	// TODO: Lookup table instead of branches?
 	unsigned int cryptoMethod = 0;
 	if (discHeader.disc_noCrypto != 0 || isNASOSFormatDiscImage()) {
 		// No encryption.
@@ -434,8 +433,8 @@ string GameCubePrivate::getPublisher(void) const
 	}
 
 	// Unknown publisher.
-	if (ISALNUM(discHeader.company[0]) &&
-	    ISALNUM(discHeader.company[1]))
+	if (isalnum_ascii(discHeader.company[0]) &&
+	    isalnum_ascii(discHeader.company[1]))
 	{
 		// Disc ID is alphanumeric.
 		const array<char, 3> s_company = {{
@@ -1551,10 +1550,11 @@ int GameCube::loadFieldData(void)
 			//   - 21.29: IOS version. (21.29 == v5405)
 			IFst::Dir *const dirp = d->updatePartition->opendir("/_sys/");
 			if (dirp) {
-				IFst::DirEnt *dirent;
+				const IFst::DirEnt *dirent;
 				while ((dirent = d->updatePartition->readdir(dirp)) != nullptr) {
-					if (!dirent->name || dirent->type != DT_REG)
+					if (!dirent->name || dirent->type != DT_REG) {
 						continue;
+					}
 
 					// Check for a retail System Menu.
 					if (dirent->name[0] == 'R') {
@@ -1700,8 +1700,8 @@ int GameCube::loadFieldData(void)
 					char chr[4];
 				} part_type;
 				part_type.be32_type = cpu_to_be32(entry.type);
-				if (ISALNUM(part_type.chr[0]) && ISALNUM(part_type.chr[1]) &&
-				    ISALNUM(part_type.chr[2]) && ISALNUM(part_type.chr[3]))
+				if (isalnum_ascii(part_type.chr[0]) && isalnum_ascii(part_type.chr[1]) &&
+				    isalnum_ascii(part_type.chr[2]) && isalnum_ascii(part_type.chr[3]))
 				{
 					// All four bytes are ASCII letters and/or numbers.
 					s_ptype = latin1_to_utf8(part_type.chr, sizeof(part_type.chr));

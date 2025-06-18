@@ -3,6 +3,10 @@
 Copyright (c) 2021, Dominic Szablewski - https://phoboslab.org
 SPDX-License-Identifier: MIT
 
+NOTE: MODIFIED VERSION:
+- Some optimizations have been applied.
+- Decodes to rom-properties ARGB32 format, which has R/B swapped compared to Qoi's usual ABGR32.
+
 
 QOI - The "Quite OK Image" format for fast, lossless image compression
 
@@ -214,6 +218,8 @@ Header - Public functions */
 #ifndef QOI_H
 #define QOI_H
 
+#include <string.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -339,18 +345,25 @@ typedef union {
 static const unsigned char qoi_padding[8] = {0,0,0,0,0,0,0,1};
 
 static void qoi_write_32(unsigned char *bytes, int *p, unsigned int v) {
-	bytes[(*p)++] = (0xff000000 & v) >> 24;
-	bytes[(*p)++] = (0x00ff0000 & v) >> 16;
-	bytes[(*p)++] = (0x0000ff00 & v) >> 8;
-	bytes[(*p)++] = (0x000000ff & v);
+	unsigned char u8[4];
+	u8[0] = (0xff000000 & v) >> 24;
+	u8[1] = (0x00ff0000 & v) >> 16;
+	u8[2] = (0x0000ff00 & v) >> 8;
+	u8[3] = (0x000000ff & v);
+
+	memcpy(&bytes[*p], u8, 4);
+	*p += 4;
 }
 
 static unsigned int qoi_read_32(const unsigned char *bytes, int *p) {
-	unsigned int a = bytes[(*p)++];
-	unsigned int b = bytes[(*p)++];
-	unsigned int c = bytes[(*p)++];
-	unsigned int d = bytes[(*p)++];
-	return a << 24 | b << 16 | c << 8 | d;
+	unsigned char u8[4];
+	memcpy(u8, &bytes[*p], 4);
+	*p += 4;
+
+	return (unsigned int)u8[0] << 24 |
+	       (unsigned int)u8[1] << 16 |
+	       (unsigned int)u8[2] <<  8 |
+	       (unsigned int)u8[3];
 }
 
 void *qoi_encode(const void *data, const qoi_desc *desc, int *out_len) {
@@ -404,9 +417,10 @@ void *qoi_encode(const void *data, const qoi_desc *desc, int *out_len) {
 	channels = desc->channels;
 
 	for (px_pos = 0; px_pos < px_len; px_pos += channels) {
-		px.rgba.r = pixels[px_pos + 0];
+		// rom-properties NOTE: Swapped R/B
+		px.rgba.b = pixels[px_pos + 0];
 		px.rgba.g = pixels[px_pos + 1];
-		px.rgba.b = pixels[px_pos + 2];
+		px.rgba.r = pixels[px_pos + 2];
 
 		if (channels == 4) {
 			px.rgba.a = pixels[px_pos + 3];
@@ -427,7 +441,7 @@ void *qoi_encode(const void *data, const qoi_desc *desc, int *out_len) {
 				run = 0;
 			}
 
-			index_pos = QOI_COLOR_HASH(px) % 64;
+			index_pos = QOI_COLOR_HASH(px) & (64 - 1);
 
 			if (index[index_pos].v == px.v) {
 				bytes[p++] = QOI_OP_INDEX | index_pos;
@@ -574,12 +588,13 @@ void *qoi_decode(const void *data, int size, qoi_desc *desc, int channels) {
 				run = (b1 & 0x3f);
 			}
 
-			index[QOI_COLOR_HASH(px) % 64] = px;
+			index[QOI_COLOR_HASH(px) & (64 - 1)] = px;
 		}
 
-		pixels[px_pos + 0] = px.rgba.r;
+		// rom-properties NOTE: Swapped R/B
+		pixels[px_pos + 0] = px.rgba.b;
 		pixels[px_pos + 1] = px.rgba.g;
-		pixels[px_pos + 2] = px.rgba.b;
+		pixels[px_pos + 2] = px.rgba.r;
 		
 		if (channels == 4) {
 			pixels[px_pos + 3] = px.rgba.a;

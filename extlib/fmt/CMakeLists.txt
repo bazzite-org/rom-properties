@@ -67,6 +67,36 @@ function(add_module_library name)
   add_library(${name})
   set_target_properties(${name} PROPERTIES LINKER_LANGUAGE CXX)
 
+  # rom-properties
+  DO_SPLIT_DEBUG(${name})
+  SET_WINDOWS_SUBSYSTEM(${name} WIN32)
+
+  IF(INSTALL_DEBUG)
+    # FIXME: Generator expression $<TARGET_PROPERTY:${_target},PDB> didn't work with CPack-3.6.1.
+    INCLUDE(DirInstallPaths)
+    GET_TARGET_PROPERTY(DEBUG_FILENAME ${name} PDB)
+    IF(WIN32)
+      # TODO: Test on MinGW.
+      # FIXME: Generator PDB expression doesn't have the debug postfix for some reason,
+      # so cpack fails in debug builds if we get the PDB property.
+      SET(PDB_FILENAME_D "$<TARGET_FILE_DIR:${name}>/${name}-${CPACK_PACKAGE_VERSION_MAJOR}${CMAKE_DEBUG_POSTFIX}.pdb")
+      SET(PDB_FILENAME_R "$<TARGET_FILE_DIR:${name}>/${name}-${CPACK_PACKAGE_VERSION_MAJOR}${CMAKE_RELEASE_POSTFIX}.pdb")
+      INSTALL(FILES "${PDB_FILENAME_D}" "${PDB_FILENAME_R}"
+        DESTINATION "${DIR_INSTALL_DLL_DEBUG}"
+        COMPONENT "debug"
+        OPTIONAL
+        )
+      UNSET(PDB_FILENAME_D)
+      UNSET(PDB_FILENAME_R)
+    ELSE(WIN32)
+      INSTALL(FILES "${DEBUG_FILENAME}"
+        DESTINATION "${DIR_INSTALL_DLL_DEBUG}"
+        COMPONENT "debug"
+        )
+    ENDIF(WIN32)
+    UNSET(DEBUG_FILENAME)
+  ENDIF(INSTALL_DEBUG)
+
   if (NOT ${${AML_IF}})
     # Create a non-modular library.
     target_sources(${name} PRIVATE ${AML_FALLBACK})
@@ -214,8 +244,7 @@ if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
 endif ()
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
-  "${CMAKE_CURRENT_SOURCE_DIR}/support/cmake")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/support/cmake")
 
 include(CheckCXXCompilerFlag)
 include(JoinPaths)
@@ -333,11 +362,14 @@ if (FMT_PEDANTIC)
   target_compile_options(fmt PRIVATE ${PEDANTIC_COMPILE_FLAGS})
 endif ()
 
+# rom-properties FIXME: CMake 3.6 doesn't handle this properly.
+IF(CMAKE_VERSION VERSION_GREATER 3.6.99)
 if (cxx_std_11 IN_LIST CMAKE_CXX_COMPILE_FEATURES)
   target_compile_features(fmt PUBLIC cxx_std_11)
 else ()
   message(WARNING "Feature cxx_std_11 is unknown for the CXX compiler")
 endif ()
+ENDIF(CMAKE_VERSION VERSION_GREATER 3.6.99)
 
 target_include_directories(fmt ${FMT_SYSTEM_HEADERS_ATTRIBUTE} BEFORE PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
@@ -403,7 +435,10 @@ else ()
 endif ()
 
 target_compile_definitions(fmt-header-only INTERFACE FMT_HEADER_ONLY=1)
+# rom-properties FIXME: CMake 3.6 doesn't handle this properly.
+IF(CMAKE_VERSION VERSION_GREATER 3.6.99)
 target_compile_features(fmt-header-only INTERFACE cxx_std_11)
+ENDIF(CMAKE_VERSION VERSION_GREATER 3.6.99)
 
 target_include_directories(fmt-header-only
   ${FMT_SYSTEM_HEADERS_ATTRIBUTE} BEFORE INTERFACE
@@ -457,14 +492,15 @@ if (FMT_INSTALL)
   endif()
 
   # Install the library and headers.
-  # rom-properites: Only install the runtime. (DLL)
+  # rom-properties: Only install the DLL, and use our custom destination path.  
   install(TARGETS ${INSTALL_TARGETS}
           COMPONENT fmt-core
           EXPORT ${targets_export_name}
           #LIBRARY DESTINATION ${FMT_LIB_DIR}
           #ARCHIVE DESTINATION ${FMT_LIB_DIR}
           #PUBLIC_HEADER DESTINATION "${FMT_INC_DIR}/fmt"
-          RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+          #RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+          RUNTIME DESTINATION ${INSTALL_BIN_DIR}
           #${INSTALL_FILE_SET})
           )
 

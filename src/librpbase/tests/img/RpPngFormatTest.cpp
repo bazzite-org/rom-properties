@@ -398,7 +398,7 @@ void RpPngFormatTest::Load_Verify_IHDR(PNG_IHDR_t *ihdr, const uint8_t *ihdr_src
 	// This includes the chunk name and data section.
 	const uint32_t chunk_crc = static_cast<uint32_t>(
 		crc32(0, reinterpret_cast<const Bytef*>(ihdr_full.chunk_name),
-		      sizeof(ihdr_full.chunk_name) + sizeof(ihdr_full.data)));
+			static_cast<unsigned int>(sizeof(ihdr_full.chunk_name) + sizeof(ihdr_full.data))));
 
 	// Byteswap the values.
 #if SYS_BYTEORDER != SYS_BIG_ENDIAN
@@ -1001,7 +1001,7 @@ string RpPngFormatTest::test_case_suffix_generator(const ::testing::TestParamInf
 	// Replace all non-alphanumeric characters with '_'.
 	// See gtest-param-util.h::IsValidParamName().
 	std::replace_if(suffix.begin(), suffix.end(),
-		[](char c) noexcept -> bool { return !ISALNUM(c); }, '_');
+		[](char c) noexcept -> bool { return !isalnum_ascii(c); }, '_');
 
 	return suffix;
 }

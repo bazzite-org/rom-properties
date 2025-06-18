@@ -12,6 +12,8 @@
 
 // TextFuncs
 #include "../conversion.hpp"
+#include "../formatting.hpp"
+#include "../fourCC.hpp"
 #include "../utf8_strlen.hpp"
 #include "librpbyteswap/byteorder.h"
 using namespace LibRpText;
@@ -20,8 +22,14 @@ using namespace LibRpText;
 #include <cstdio>
 #include <cstring>
 
+// glibc
+#ifdef __GLIBC__
+#  include <gnu/libc-version.h>
+#endif /* __GLIBC__ */
+
 // C++ includes
 #include <array>
+#include <iomanip>
 #include <string>
 using std::array;
 using std::string;
@@ -504,7 +512,11 @@ TEST_F(TextFuncsTest, utf16_bswap_BEtoLE)
 	str = utf16_bswap(C16(utf16be_data), C16_ARRAY_SIZE_I(utf16be_data));
 	EXPECT_EQ(C16_ARRAY_SIZE(utf16le_data), str.size());
 	// Remove the extra NULL before comparing.
-	str.resize(str.size()-1);
+	// NOTE: The str.empty() check is required to fix an aggressive loop
+	// optimization warning when compiling with LTO on gcc-14.2.0.
+	if (!str.empty()) {
+		str.resize(str.size()-1);
+	}
 	EXPECT_EQ(C16(utf16le_data), str);
 }
 
@@ -533,7 +545,11 @@ TEST_F(TextFuncsTest, utf16_bswap_LEtoBE)
 	str = utf16_bswap(C16(utf16le_data), C16_ARRAY_SIZE_I(utf16le_data));
 	EXPECT_EQ(C16_ARRAY_SIZE(utf16be_data), str.size());
 	// Remove the extra NULL before comparing.
-	str.resize(str.size()-1);
+	// NOTE: The str.empty() check is required to fix an aggressive loop
+	// optimization warning when compiling with LTO on gcc-14.2.0.
+	if (!str.empty()) {
+		str.resize(str.size()-1);
+	}
 	EXPECT_EQ(C16(utf16be_data), str);
 }
 
@@ -754,6 +770,34 @@ TEST_F(TextFuncsTest, utf8_disp_strlen)
 	static constexpr char utf8_3byte_text[] = "╔╗╚╝┼";
 	EXPECT_EQ(15U, strlen(utf8_3byte_text));
 	EXPECT_EQ(5U, utf8_disp_strlen(utf8_3byte_text));
+
+	// Test string with Japanese katakana.
+	static constexpr char utf8_katakana_text[] = "ソニック";
+	EXPECT_EQ(12U, strlen(utf8_katakana_text));
+	EXPECT_EQ(8U, utf8_disp_strlen(utf8_katakana_text));
+}
+
+/**
+ * Test utf8_disp_strlen() with emojis.
+ */
+TEST_F(TextFuncsTest, utf8_disp_strlen_emojis)
+{
+	// NOTE: If using glibc, this test will fail if not using
+	// glibc-2.26 or newer, since older glibc doesn't properly
+	// have emojis listed as "wide" characters.
+
+#ifdef __GLIBC__
+	// Check if this is glibc-2.26 or newer.
+	const char *const glibc_version = gnu_get_libc_version();
+	unsigned int major, minor;
+	int n = sscanf(glibc_version, "%u.%u", &major, &minor);
+	if (n == 2 && (major > 2 || (major == 2 && minor >= 26))) {
+		// This is glibc-2.26 or newer.
+	} else {
+		// Not glibc-2.26 or newer. Skip the test.
+		GTEST_SKIP() << "glibc-" << glibc_version << " does not have proper wcwidth() values for emojis. Skipping test.";
+	}
+#endif /* __GLIBC__ */
 
 	// Test string with 4-byte UTF-8 code points. (U+10000 - U+10FFFF)
 	// U+1F5AC (SOFT SHELL FLOPPY DISK) is w=1 for some reason.
@@ -1294,6 +1338,57 @@ TEST_F(TextFuncsTest, convSampleToMs)
 	EXPECT_EQ(3250U, convSampleToMs(24000U*13U/4U, 24000U));
 	EXPECT_EQ(3250U, convSampleToMs(44100U*13U/4U, 44100U));
 	EXPECT_EQ(3250U, convSampleToMs(48000U*13U/4U, 48000U));
+}
+
+struct fourCC_test_data_t {
+	char s[5];
+	uint32_t u32;
+};
+
+static const array<fourCC_test_data_t, 7> fourCC_test_data = {{
+	{"ABCD",       'ABCD'},
+	{"ABCD",       0x41424344},
+	{"ABC\x00",    0x41424300},
+	{"AB\x00" "D", 0x41420044},
+	{"A\x00" "CD", 0x41004344},
+	{"\x00" "BCD", 0x00424344},
+	{"sBIT",       'sBIT'},
+}};
+
+/**
+ * Test fourCCtoString(). (char* version)
+ */
+TEST_F(TextFuncsTest, fourCCtoString_char)
+{
+	char fourCC_hex[16];
+	char buf[5];
+
+	for (const fourCC_test_data_t &p : fourCC_test_data) {
+		snprintf(fourCC_hex, sizeof(fourCC_hex), "0x%08X", p.u32);
+		int ret = fourCCtoString(buf, sizeof(buf), p.u32);
+		EXPECT_EQ(0, ret) << "Failed to convert FourCC: " << fourCC_hex;
+		if (ret == 0) {
+			EXPECT_EQ('\0', buf[4]) << "Failed to convert FourCC: " << fourCC_hex;
+			EXPECT_EQ(0, memcmp(buf, p.s, 4)) << "Failed to convert FourCC: " << fourCC_hex;
+		}
+	}
+}
+
+/**
+ * Test fourCCtoString(). (std::string version)
+ */
+TEST_F(TextFuncsTest, fourCCtoString_string)
+{
+	char fourCC_hex[16];
+
+	for (const fourCC_test_data_t &p : fourCC_test_data) {
+		snprintf(fourCC_hex, sizeof(fourCC_hex), "0x%08X", p.u32);
+		string str = fourCCtoString(p.u32);
+		EXPECT_EQ(4U, str.size()) << "Failed to convert FourCC: " << fourCC_hex;
+		if (str.size() == 4) {
+			EXPECT_EQ(0, memcmp(str.data(), p.s, 4)) << "Failed to convert FourCC: " << fourCC_hex;
+		}
+	}
 }
 
 } }

@@ -2,7 +2,7 @@
  * ROM Properties Page shell extension. (Win32)                            *
  * ConfigDialog.cpp: Configuration dialog.                                 *
  *                                                                         *
- * Copyright (c) 2016-2024 by David Korth.                                 *
+ * Copyright (c) 2016-2025 by David Korth.                                 *
  * SPDX-License-Identifier: GPL-2.0-or-later                               *
  ***************************************************************************/
 
@@ -29,7 +29,7 @@ using std::tstring;
 // MSVC: Exception handling for /DELAYLOAD.
 #  include "libwin32common/DelayLoadHelper.h"
 // DelayLoad test implementation.
-DELAYLOAD_TEST_FUNCTION_IMPL1(textdomain, nullptr);
+DELAYLOAD_TEST_FUNCTION_IMPL1(libintl_textdomain, nullptr);
 #endif /* defined(_MSC_VER) && defined(ENABLE_NLS) */
 
 // rp_image backend registration
@@ -498,17 +498,16 @@ int CALLBACK rp_show_config_dialog(
 
 #if defined(_MSC_VER) && defined(ENABLE_NLS)
 	// Delay load verification.
-	// TODO: Only if linked with /DELAYLOAD?
-	if (DelayLoad_test_textdomain() != 0) {
+	if (DelayLoad_test_libintl_textdomain() != 0) {
 		// Delay load failed.
 		// TODO: Use a CMake macro for the soversion?
 		MessageBox(hWnd,
-			LIBGNUINTL_DLL _T(" could not be loaded.\n\n")
+			_T(LIBGNUINTL_DLL) _T(" could not be loaded.\n\n")
 			_T("This build of rom-properties has localization enabled,\n")
 			_T("which requires the use of GNU texttext.\n\n")
 			_T("Please redownload rom-properties and copy the\n")
-			LIBGNUINTL_DLL _T(" file to the installation directory."),
-			LIBGNUINTL_DLL _T(" not found"),
+			_T(LIBGNUINTL_DLL) _T(" file to the installation directory."),
+			_T(LIBGNUINTL_DLL) _T(" not found"),
 			MB_ICONSTOP);
 		return EXIT_FAILURE;
 	}

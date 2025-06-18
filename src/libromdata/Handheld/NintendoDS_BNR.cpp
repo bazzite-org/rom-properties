@@ -149,7 +149,8 @@ rp_image_const_ptr NintendoDS_BNR_Private::loadIcon(void)
 	// NDS icon for the standard icon instead of the first frame
 	// of the animated DSi icon? (Except for DSiWare...)
 	if (le16_to_cpu(nds_icon_title.version) < NDS_ICON_VERSION_DSi ||
-	    (nds_icon_title.dsi_icon_seq[0] & cpu_to_le16(0xFF)) == 0)
+	    (nds_icon_title.dsi_icon_seq[0] & cpu_to_le16(0xFF)) == 0 ||
+	    (nds_icon_title.dsi_icon_seq[1] & cpu_to_le16(0xFF)) == 0)
 	{
 		// Either this isn't a DSi icon/title struct (pre-v0103),
 		// or the animated icon sequence is invalid.
@@ -553,10 +554,22 @@ uint32_t NintendoDS_BNR::imgpf(ImageType imageType) const
 
 	uint32_t ret = 0;
 	switch (imageType) {
-		case IMG_INT_ICON:
-			// Use nearest-neighbor scaling.
-			ret = IMGPF_RESCALE_NEAREST;
+		case IMG_INT_ICON: {
+			// Is this an animated icon?
+			RP_D(const NintendoDS_BNR);
+			if (le16_to_cpu(d->nds_icon_title.version) < NDS_ICON_VERSION_DSi ||
+			    (d->nds_icon_title.dsi_icon_seq[0] & cpu_to_le16(0xFF)) == 0 ||
+			    (d->nds_icon_title.dsi_icon_seq[1] & cpu_to_le16(0xFF)) == 0)
+			{
+				// Not an animated icon.
+				ret = IMGPF_RESCALE_NEAREST;
+			} else {
+				// This is an animated icon.
+				ret = IMGPF_RESCALE_NEAREST | IMGPF_ICON_ANIMATED;
+			}
 			break;
+		}
+
 		default:
 			break;
 	}

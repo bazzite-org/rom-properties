@@ -41,7 +41,7 @@ private:
 
 public:
 	/** RomDataInfo **/
-	static const array<const char*, 1+1> exts;
+	static const array<const char*, 2+1> exts;
 	static const array<const char*, 2+1> mimeTypes;
 	static const RomDataInfo romDataInfo;
 
@@ -86,8 +86,9 @@ ROMDATA_IMPL_IMG_SIZES(Nintendo3DS_SMDH)
 
 /* RomDataInfo */
 // NOTE: Using the same image settings as Nintendo3DS.
-const array<const char*, 1+1> Nintendo3DS_SMDH_Private::exts = {{
-	".smdh",	// SMDH (icon) file.
+const array<const char*, 2+1> Nintendo3DS_SMDH_Private::exts = {{
+	".smdh",	// SMDH (icon) file
+	".icn",
 
 	nullptr
 }};
@@ -584,7 +585,7 @@ int Nintendo3DS_SMDH::loadFieldData(void)
 		// NOTE: Stored as ASCII, not UTF-16!
 		const char *const ique_data =
 			&reinterpret_cast<const char*>(smdhHeader->titles[N3DS_LANG_CHINESE_SIMP].desc_long)[218];
-		if (ISDIGIT(ique_data[0])) {
+		if (isdigit_ascii(ique_data[0])) {
 			// Found it.
 			// Each field is fixed-width.
 			// Format:

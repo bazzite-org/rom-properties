@@ -18,7 +18,7 @@ using namespace LibRpFile;
 using namespace LibRpText;
 
 // IsoPartition
-#include "../cdrom_structs.h"
+#include "cdrom_structs.h"
 #include "../iso_structs.h"
 #include "../disc/Cdrom2352Reader.hpp"
 #include "../disc/IsoPartition.hpp"
@@ -213,15 +213,16 @@ int PlayStationDiscPrivate::loadSystemCnf(const IsoPartitionPtr &pt)
 		return ret;
 	}
 
-	// CNF file should be less than 2048 bytes.
+	// CNF file should be 2048 bytes or less.
+	static constexpr size_t SYSTEM_CNF_SIZE_MAX = 2048;
 	const off64_t fileSize = f_system_cnf->size();
-	if (fileSize > 2048) {
+	if (fileSize > static_cast<off64_t>(SYSTEM_CNF_SIZE_MAX)) {
 		return -ENOMEM;
 	}
 
 	// Read the entire file into memory.
-	char buf[2049];
-	size_t size = f_system_cnf->read(buf, 2048);
+	char buf[SYSTEM_CNF_SIZE_MAX + 1];
+	size_t size = f_system_cnf->read(buf, SYSTEM_CNF_SIZE_MAX);
 	if (size != static_cast<size_t>(fileSize)) {
 		// Short read.
 		return -EIO;
@@ -457,7 +458,7 @@ PlayStationDisc::PlayStationDisc(const IRpFilePtr &file)
 	// Remove the ISO version number.
 	const size_t len = d->boot_filename.size();
 	if (len > 2) {
-		if (ISDIGIT(d->boot_filename[len-1]) && d->boot_filename[len-2] == ';') {
+		if (isdigit_ascii(d->boot_filename[len-1]) && d->boot_filename[len-2] == ';') {
 			d->boot_filename.resize(len-2);
 		}
 	}

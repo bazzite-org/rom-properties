@@ -80,7 +80,7 @@ public:
 		HEADER_TMD	= (1U << 3),	// ticket, tmd_header
 		HEADER_NCSD	= (1U << 4),	// ncsd_header, cinfo_header
 	};
-	uint32_t headers_loaded;	// HeadersPresent
+	uint8_t headers_loaded;	// HeadersPresent
 
 	// Media unit shift
 	// This is usually 9 (512 bytes), though NCSD images
@@ -145,17 +145,6 @@ public:
 	// - If SMDH is present, this is Nintendo3DS_SMDH.
 	// - If SRL is present, this is NintendoDS.
 	LibRpBase::RomDataPtr mainContent;
-
-	/**
-	 * Round a value to the next highest multiple of 64.
-	 * @param value Value.
-	 * @return Next highest multiple of 64.
-	 */
-	template<typename T>
-	static inline constexpr T toNext64(T val)
-	{
-		return (val + static_cast<T>(63)) & ~(static_cast<T>(63));
-	}
 
 	/**
 	 * Load the SMDH section.

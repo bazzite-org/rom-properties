@@ -53,7 +53,10 @@ public:
 	 * Check if an fst_entry is a directory.
 	 * @return True if this is a directory; false if it's a regular file.
 	 */
-	static inline bool is_dir(const GCN_FST_Entry *fst_entry);
+	static inline bool is_dir(const GCN_FST_Entry *fst_entry)
+	{
+		return ((be32_to_cpu(fst_entry->file_type_name_offset) >> 24) == 1);
+	}
 
 	/**
 	 * Get an FST entry's name.
@@ -150,15 +153,6 @@ GcnFstPrivate::~GcnFstPrivate()
 {
 	assert(fstDirCount == 0);
 	delete[] fstData;
-}
-
-/**
- * Check if an fst_entry is a directory.
- * @return True if this is a directory; false if it's a regular file.
- */
-inline bool GcnFstPrivate::is_dir(const GCN_FST_Entry *fst_entry)
-{
-	return ((be32_to_cpu(fst_entry->file_type_name_offset) >> 24) == 1);
 }
 
 /**
@@ -428,14 +422,15 @@ IFst::Dir *GcnFst::opendir(const char *path)
 		return nullptr;
 	}
 
-	IFst::Dir *dirp = new IFst::Dir(this);
-	d->fstDirCount++;
 	// TODO: Better way to get dir_idx?
-	dirp->dir_idx = static_cast<int>(fst_entry - d->fstData);
+	const int dir_idx = static_cast<int>(fst_entry - d->fstData);
+	IFst::Dir *dirp = new IFst::Dir(this, dir_idx);
+	d->fstDirCount++;
 
 	// Initialize the entry to this directory.
 	// readdir() will automatically seek to the next entry.
-	dirp->entry.ptnum = 0;	// not used for GCN/Wii
+	dirp->entry.extra = nullptr;	// not used for GCN/Wii
+	dirp->entry.ptnum = 0;		// not used for GCN/Wii
 	dirp->entry.idx = dirp->dir_idx;
 	dirp->entry.type = DT_DIR;
 	dirp->entry.name = d->entry_name(fst_entry);
@@ -453,7 +448,7 @@ IFst::Dir *GcnFst::opendir(const char *path)
  * @return IFst::DirEnt*, or nullptr if end of directory or on error.
  * (End of directory does not set lastError; an error does.)
  */
-IFst::DirEnt *GcnFst::readdir(IFst::Dir *dirp)
+const IFst::DirEnt *GcnFst::readdir(IFst::Dir *dirp)
 {
 	assert(dirp != nullptr);
 	assert(dirp->parent == this);

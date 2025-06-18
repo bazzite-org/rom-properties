@@ -24,6 +24,7 @@ SET(${PROJECT_NAME}_SRCS
 	ComBase.cpp
 	propsys_xp.c
 	userdirs.cpp
+	MiniU82T.cpp
 	)
 SET(${PROJECT_NAME}_H
 	RpWin32_sdk.h
@@ -32,6 +33,7 @@ SET(${PROJECT_NAME}_H
 	ComBase.hpp
 	propsys_xp.h
 	userdirs.hpp
+	MiniU82T.hpp
 	sdk/QITab.h
 	sdk/IListView.hpp
 	sdk/IOwnerDataCallback.hpp

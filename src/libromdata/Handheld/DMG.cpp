@@ -120,14 +120,14 @@ public:
 	 * @param type Cartridge type byte
 	 * @return dmg_cart_type struct
 	 */
-	static inline dmg_cart_type CartType(uint8_t type);
+	static dmg_cart_type CartType(uint8_t type);
 
 	/**
 	 * Convert the ROM size value to an actual size.
 	 * @param type ROM size value.
 	 * @return ROM size, in kilobytes. (-1 on error)
 	 */
-	static inline int RomSize(uint8_t type);
+	static int RomSize(uint8_t type);
 
 public:
 	// DMG RAM size array
@@ -353,7 +353,7 @@ uint32_t DMGPrivate::systemID(const DMG_RomHeader *pRomHeader)
  * @param type Cartridge type byte.
  * @return dmg_cart_type struct.
  */
-inline DMGPrivate::dmg_cart_type DMGPrivate::CartType(uint8_t type)
+DMGPrivate::dmg_cart_type DMGPrivate::CartType(uint8_t type)
 {
 	// Check for low cartridge types.
 	if (type < dmg_cart_types_start.size()) {
@@ -361,7 +361,7 @@ inline DMGPrivate::dmg_cart_type DMGPrivate::CartType(uint8_t type)
 	}
 
 	// Check for high cartridge types. (closer to 0xFF)
-	const unsigned end_offset = 0x100u - dmg_cart_types_end.size();
+	static constexpr uint8_t end_offset = static_cast<uint8_t>(0x100U - dmg_cart_types_end.size());
 	if (type >= end_offset) {
 		return dmg_cart_types_end[type-end_offset];
 	}
@@ -375,7 +375,7 @@ inline DMGPrivate::dmg_cart_type DMGPrivate::CartType(uint8_t type)
  * @param type ROM size value.
  * @return ROM size, in kilobytes. (-1 on error)
  */
-inline int DMGPrivate::RomSize(uint8_t type)
+int DMGPrivate::RomSize(uint8_t type)
 {
 	constexpr array<uint16_t, 8> rom_size = {{32, 64, 128, 256, 512, 1024, 2048, 4096}};
 	constexpr array<uint16_t, 4> rom_size_52 = {{1152, 1280, 1536}};
@@ -465,8 +465,8 @@ void DMGPrivate::getTitleAndGameID(const DMG_RomHeader *pRomHeader, string &s_ti
 
 		if (isGameID) {
 			// Second and third bytes must be uppercase and/or numeric.
-			if ((!ISUPPER(pRomHeader->title15[12]) && !ISDIGIT(pRomHeader->title15[12])) ||
-			    (!ISUPPER(pRomHeader->title15[13]) && !ISDIGIT(pRomHeader->title15[13])))
+			if ((!isupper_ascii(pRomHeader->title15[12]) && !isdigit_ascii(pRomHeader->title15[12])) ||
+			    (!isupper_ascii(pRomHeader->title15[13]) && !isdigit_ascii(pRomHeader->title15[13])))
 			{
 				// This is not a Game ID.
 				isGameID = false;
@@ -536,8 +536,8 @@ string DMGPrivate::getPublisher(void) const
 		if (publisher) {
 			s_publisher = publisher;
 		} else {
-			if (ISALNUM(romHeader.new_publisher_code[0]) &&
-			    ISALNUM(romHeader.new_publisher_code[1]))
+			if (isalnum_ascii(romHeader.new_publisher_code[0]) &&
+			    isalnum_ascii(romHeader.new_publisher_code[1]))
 			{
 				const array<char, 3> s_company = {{
 					romHeader.new_publisher_code[0],
@@ -1565,6 +1565,7 @@ int DMG::extURLs(ImageType imageType, vector<ExtURL> &extURLs, int size) const
 			case '?':
 			case ':':
 				c = '_';
+				break;
 			default:
 				break;
 		}

@@ -162,6 +162,17 @@ png_read_info(png_structrp png_ptr, png_inforp info_ptr)
          break;
       }
 
+#ifdef PNG_READ_APNG_SUPPORTED
+      else if (chunk_name == png_acTL)
+         png_handle_acTL(png_ptr, info_ptr, length);
+
+      else if (chunk_name == png_fcTL)
+         png_handle_fcTL(png_ptr, info_ptr, length);
+
+      else if (chunk_name == png_fdAT)
+         png_handle_fdAT(png_ptr, info_ptr, length);
+#endif
+
       else
          png_handle_chunk(png_ptr, info_ptr, length);
    }
@@ -878,7 +889,8 @@ png_read_destroy(png_structrp png_ptr)
 #endif
 
 #if defined(PNG_READ_EXPAND_SUPPORTED) && \
-    defined(PNG_ARM_NEON_IMPLEMENTATION)
+    (defined(PNG_ARM_NEON_IMPLEMENTATION) || \
+     defined(PNG_RISCV_RVV_IMPLEMENTATION))
    png_free(png_ptr, png_ptr->riffled_palette);
    png_ptr->riffled_palette = NULL;
 #endif
@@ -1397,7 +1409,7 @@ png_image_read_header(png_voidp argument)
 
 #ifdef PNG_STDIO_SUPPORTED
 int PNGAPI
-png_image_begin_read_from_stdio(png_imagep image, FILE* file)
+png_image_begin_read_from_stdio(png_imagep image, FILE *file)
 {
    if (image != NULL && image->version == PNG_IMAGE_VERSION)
    {

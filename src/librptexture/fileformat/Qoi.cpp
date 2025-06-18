@@ -162,7 +162,7 @@ rp_image_const_ptr QoiPrivate::loadImage(void)
 		px_src += src_stride;
 	}
 	free(pixels);
-	
+
 	img.reset(tmp_img);
 	return img;
 }
