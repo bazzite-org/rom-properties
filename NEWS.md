@@ -27,6 +27,10 @@
     handle older Windows disc images that use a long filename for the icon,
     and the disc is authored with Joliet for long filenames but an old version
     of ISO-9660, resulting in 8.3 filenames in the ISO-9660 directories.
+  * NES: Added title screen thumbnailing. Since NES ROMs generally don't have
+    a header with an identifiable game title or serial number, the mapper,
+    CRC32 of the first 8k of PRG ROM, and CRC32 of the first 8k of CHR ROM
+    (if present) are used.
 
 * Bug fixes:
   * Windows: Work around a potential libpng crash when attempting to read
@@ -36,12 +40,21 @@
   * Qoi: R/B channels were incorrectly swapped when this was first added in v2.5.
     * Affects: v2.5 - v2.5.1
   * Fix an issue where an 'abgr' swizzle might fail on little-endian systems.
+  * fmt: Don't attempt to install a split debug file if building the internal
+    copy of fmt as a static library. (Usually only on Linux systems.)
+    * Fixes #456: "sudo make install" Fails
+      * Reported by @Techokami.
 
 * Other changes:
   * rpcli: Added more colorization for warning messages.
   * rpcli: Refactored console handling into a separate library, libgsvt.
   * IsoPartition: Implemented readdir(). Not currently used by anything, though.
   * KDE (KF5, KF6): Improved image quality for RFT_LISTDATA fields with icons.
+  * KDE (KF5, KF6): RomThumbnailCreator now only has MIME types that can actually
+    be thumbnailed, which may reduce processing time slightly.
+  * Windows: Files marked as "offline" (e.g. not synchronized with a cloud backup
+    provider) will now be considered to be on a "slow" file system, and won't be
+    thumbnailed if the option to thumbnail network file systems is unchecked.
 
 ## v2.5.1 (released 2025/05/10)
 

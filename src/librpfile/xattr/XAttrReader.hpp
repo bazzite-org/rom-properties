@@ -54,22 +54,26 @@ public:
 	enum class ZAlgorithm {
 		None,
 
-#ifdef _WIN32
-		// NTFS-specific compression
+		// NTFS-specific compression algorithms
 		LZNT1,
 		XPRESS4K,
 		LZX,
 		XPRESS8K,
 		XPRESS16K,
-#endif /* _WIN32 */
 
-#ifndef _WIN32
 		// btrfs compression algorithms
 		ZLIB,
 		LZO,
 		ZSTD,
-#endif /* _WIN32 */
+
+		Max
 	};
+
+	/**
+	 * Get a string representation of a compression algorithm.
+	 * @return String representation, or nullptr if the value is invalid.
+	 */
+	static const char *zAlgorithmToString(ZAlgorithm zAlgorithm);
 
 public:
 	/**
@@ -132,6 +136,18 @@ public:
 	 * @return True if it does; false if not.
 	 */
 	bool hasZAlgorithm(void) const;
+
+	/**
+	 * Get the compression level used for this file.
+	 * @return Compression level (0 for not specified)
+	 */
+	int zLevel(void) const;
+
+	/**
+	 * Does this file have a compression level specified?
+	 * @return True if it does; false if not.
+	 */
+	bool hasZLevel(void) const;
 
 	/**
 	 * Does this file have generic extended attributes?

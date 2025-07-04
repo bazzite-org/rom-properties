@@ -32,6 +32,7 @@ public:
 	Ext2AttrViewPrivate()
 		: flags(0)
 		, zAlgorithm(XAttrReader::ZAlgorithm::None)
+		, zLevel(0)
 	{}
 
 private:
@@ -41,6 +42,7 @@ public:
 	Ui::Ext2AttrView ui;
 	int flags;
 	XAttrReader::ZAlgorithm zAlgorithm;
+	int zLevel;
 
 	// See Ext2AttrData.h
 	array<QCheckBox*, EXT2_ATTR_CHECKBOX_MAX> checkBoxes;
@@ -163,25 +165,15 @@ void Ext2AttrViewPrivate::updateFlagsCheckboxes(void)
  */
 void Ext2AttrViewPrivate::updateZAlgorithmLabel(void)
 {
-	QString s_alg;
-	switch (zAlgorithm) {
-		default:
-		case XAttrReader::ZAlgorithm::None:
-			// No compression...
-			break;
-		case XAttrReader::ZAlgorithm::ZLIB:
-			s_alg = QLatin1String("zlib");
-			break;
-		case XAttrReader::ZAlgorithm::LZO:
-			s_alg = QLatin1String("lzo");
-			break;
-		case XAttrReader::ZAlgorithm::ZSTD:
-			s_alg = QLatin1String("zstd");
-			break;
-	}
-
-	if (!s_alg.isEmpty()) {
-		ui.lblCompression->setText(QC_("Ext2AttrView", "Compression: %1").arg(s_alg));
+	const char *const s_alg = XAttrReader::zAlgorithmToString(zAlgorithm);
+	if (s_alg) {
+		string s_lbl;
+		if (likely(zLevel == 0)) {
+			s_lbl = fmt::format(FRUN(C_("Ext2AttrView", "Compression: {:s}")), s_alg);
+		} else {
+			s_lbl = fmt::format(FRUN(C_("Ext2AttrView", "Compression: {:s}:{:d}")), s_alg, zLevel);
+		}
+		ui.lblCompression->setText(U82Q(s_lbl));
 	} else {
 		// NOTE: Can't hide the label because that would break the layout.
 		// Clear it instead.
@@ -343,6 +335,73 @@ void Ext2AttrView::clearZAlgorithm(void)
 		d->zAlgorithm = XAttrReader::ZAlgorithm::None;
 		d->updateZAlgorithmLabel();
 	}
+}
+
+/**
+ * Get the current compression level.
+ * @return Compression level (0 for not specified)
+ */
+int Ext2AttrView::zLevel(void) const
+{
+	Q_D(const Ext2AttrView);
+	return d->zLevel;
+}
+
+/**
+ * Set the current compression level.
+ * @param zLevel Compression level (0 for not specified)
+ */
+void Ext2AttrView::setZLevel(int zLevel)
+{
+	Q_D(Ext2AttrView);
+	if (d->zLevel != zLevel) {
+		d->zLevel = zLevel;
+		d->updateZAlgorithmLabel();
+	}
+}
+
+/**
+ * Clear the current compression level.
+ */
+void Ext2AttrView::clearZLevel(void)
+{
+	Q_D(Ext2AttrView);
+	if (d->zLevel != 0) {
+		d->zLevel = 0;
+		d->updateZAlgorithmLabel();
+	}
+}
+
+/**
+ * Set the current compression algorithm and level.
+ * @param zAlgorithm Compression algorithm
+ * @param zLevel Compression level (0 for not specified)
+ */
+void Ext2AttrView::setZAlgorithmAndZLevel(XAttrReader::ZAlgorithm zAlgorithm, int zLevel)
+{
+	Q_D(Ext2AttrView);
+	bool doUpdate = false;
+
+	if (d->zAlgorithm != zAlgorithm) {
+		d->zAlgorithm = zAlgorithm;
+		doUpdate = true;
+	}
+	if (d->zLevel != zLevel) {
+		d->zLevel = zLevel;
+		doUpdate = true;
+	}
+
+	if (doUpdate) {
+		d->updateZAlgorithmLabel();
+	}
+}
+
+/**
+ * Clear the current compression algorithm and level.
+ */
+void Ext2AttrView::clearZAlgorithmAndZLevel(void)
+{
+	setZAlgorithmAndZLevel(XAttrReader::ZAlgorithm::None, 0);
 }
 
 /** Widget slots **/

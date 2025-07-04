@@ -114,6 +114,7 @@ int RP_XAttrView_Private::loadDosAttrs(void)
 int RP_XAttrView_Private::loadCompressionAlgorithm(void)
 {
 	HWND hCboZAlg = GetDlgItem(hDlgSheet, IDC_XATTRVIEW_NTFS_COMPRESSION_ALG);
+	int ret = 0;
 
 	if (!xattrReader->hasZAlgorithm()) {
 		// No compression algorithm...
@@ -126,13 +127,15 @@ int RP_XAttrView_Private::loadCompressionAlgorithm(void)
 				// File is compressed. Assume LZNT1.
 				zalg = XAttrReader::ZAlgorithm::LZNT1;
 			}
+		} else {
+			ret = -ENOENT;
 		}
 		ComboBox_SetCurSel(hCboZAlg, static_cast<int>(zalg));
-		return -ENOENT;
+		return ret;
 	}
 
 	ComboBox_SetCurSel(hCboZAlg, static_cast<int>(xattrReader->zAlgorithm()));
-	return 0;
+	return ret;
 }
 
 /**
@@ -299,13 +302,12 @@ void RP_XAttrView_Private::initDialog(void)
 
 	// Set up strings for NTFS compression.
 	// NOTE: Not localized!
+	// NOTE 2: Only adding NTFS algorithms, not general algorithms.
 	HWND hCboZAlg = GetDlgItem(hDlgSheet, IDC_XATTRVIEW_NTFS_COMPRESSION_ALG);
 	ComboBox_AddString(hCboZAlg, _T("None"));	// TODO: Localize this?
-	ComboBox_AddString(hCboZAlg, _T("LZNT1"));
-	ComboBox_AddString(hCboZAlg, _T("XPRESS4K"));
-	ComboBox_AddString(hCboZAlg, _T("LZX"));
-	ComboBox_AddString(hCboZAlg, _T("XPRESS8K"));
-	ComboBox_AddString(hCboZAlg, _T("XPRESS16K"));
+	for (int i = (int)XAttrReader::ZAlgorithm::LZNT1; i <= (int)XAttrReader::ZAlgorithm::XPRESS16K; i++) {
+		ComboBox_AddString(hCboZAlg, U82T_c(XAttrReader::zAlgorithmToString(static_cast<XAttrReader::ZAlgorithm>(i))));
+	}
 
 	// Initialize ADS ListView columns.
 	HWND hListViewADS = GetDlgItem(hDlgSheet, IDC_XATTRVIEW_LISTVIEW_ADS);
