@@ -1,0 +1,25 @@
+diff --git a/src/librpbase/config/Config.cpp b/src/librpbase/config/Config.cpp
+index 048ba9629..7c01adb24 100644
+--- a/src/librpbase/config/Config.cpp
++++ b/src/librpbase/config/Config.cpp
+@@ -103,7 +103,7 @@
+ 
+ 	// Download options
+ 	static const constexpr uint32_t palLanguageForGameTDB_default = 'en';
+-	static const constexpr bool extImgDownloadEnabled_default = true;
++	static const constexpr bool extImgDownloadEnabled_default = false;
+ 	static const constexpr bool useIntIconForSmallSizes_default = true;
+ 	static const constexpr bool storeFileOriginInfo_default = true;
+ 
+@@ -116,9 +116,9 @@
+ 	static const std::array<Config::DMG_TitleScreen_Mode, Config::DMG_TitleScreen_Mode::DMG_TS_MAX> dmgTSMode_default;
+ 
+ 	// Other options
+-	static const constexpr bool showDangerousPermissionsOverlayIcon_default = true;
++	static const constexpr bool showDangerousPermissionsOverlayIcon_default = false;
+ 	static const constexpr bool enableThumbnailOnNetworkFS_default = false;
+-	static const constexpr bool showXAttrView_default = true;
++	static const constexpr bool showXAttrView_default = false;
+ };
+ 
+ /** ConfigPrivate **/

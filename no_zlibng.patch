@@ -1,0 +1,73 @@
+--- a/src/librpbase/img/RpPng.cpp
++++ b/src/librpbase/img/RpPng.cpp
+@@ -741,36 +741,36 @@
+  */
+ bool zlib_is_ng(void)
+ {
+-#ifdef ZLIBNG_VERSION
+-	return true;
+-#else /* !ZLIBNG_VERSION */
++//#ifdef ZLIBNG_VERSION
++//	return true;
++//#else /* !ZLIBNG_VERSION */
+ 	return false;
+-#endif /* ZLIBNG_VERSION */
++//#endif /* ZLIBNG_VERSION */
+ }
+ 
+ // Use zlibng_version()?
+-#ifdef ZLIBNG_VERSION
++//#ifdef ZLIBNG_VERSION
+ // FIXME: zlibng_version() isn't exported on Windows
+ // if building with ZLIB_COMPAT.
+-#  ifdef _WIN32
+-#    if defined(ZLIB_IS_DLL) && defined(ZLIB_COMPAT)
+-       // zlib is a DLL, and ZLIB_COMPAT is enabled.
+-#    else
+-#      define USE_ZLIBNG_VERSION 1
+-#    endif
+-#  else /* !_WIN32 */
+-#    define USE_ZLIBNG_VERSION 1
+-#  endif /* _WIN32 */
+-#endif /* ZLIBNG_VERSION */
++//#  ifdef _WIN32
++//#    if defined(ZLIB_IS_DLL) && defined(ZLIB_COMPAT)
++//       // zlib is a DLL, and ZLIB_COMPAT is enabled.
++//#    else
++//#      define USE_ZLIBNG_VERSION 1
++//#    endif
++//#  else /* !_WIN32 */
++//#    define USE_ZLIBNG_VERSION 1
++//#  endif /* _WIN32 */
++//#endif /* ZLIBNG_VERSION */
+ 
+-#ifdef USE_ZLIBNG_VERSION
++//#ifdef USE_ZLIBNG_VERSION
+ // NOTE: Can't #include <zlib-ng.h> because zconf-ng.h isn't generated
+ // when using the internal copy of zlib-ng.
+ // Manually declare the version function.
+ // Also, MSVC doesn't like it when we put this in a function.
+ // (gcc is fine with that...)
+-extern "C" const char *zlibng_version(void);
+-#endif /* USE_ZLIBNG_VERSION */
++//extern "C" const char *zlibng_version(void);
++//#endif /* USE_ZLIBNG_VERSION */
+ 
+ /**
+  * Get the zlib version string.
+@@ -788,11 +788,11 @@
+ 	}
+ #endif /* defined(_MSC_VER) && (defined(ZLIB_IS_DLL) || defined(PNG_IS_DLL)) */
+ 
+-#ifdef USE_ZLIBNG_VERSION
+-	return zlibng_version();
+-#else /* !USE_ZLIBNG_VERSION */
++//#ifdef USE_ZLIBNG_VERSION
++//	return zlibng_version();
++//#else /* !USE_ZLIBNG_VERSION */
+ 	return zlibVersion();
+-#endif /* USE_ZLIBNG_VERSION */
++//#endif /* USE_ZLIBNG_VERSION */
+ }
+ 
+ /**

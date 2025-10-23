@@ -1,0 +1,13 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 59749bcd3..01c187dfc 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -50,7 +50,7 @@ SET(CMAKE_LINK_DEPENDS_NO_SHARED ON)
+ # Enable testing.
+ # TODO: INCLUDE(CTest) for more advanced testing after
+ # enough tests are added.
+-ENABLE_TESTING()
++# ENABLE_TESTING()
+ 
+ # Set the standards versions: C11, C++17
+ # C17 was added in CMake 3.21; for older versions, use C11.
